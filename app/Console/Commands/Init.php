@@ -33,6 +33,12 @@ class Init extends Command
         $this->info('Setting ASSET_URL...');
         $this->setAssetUrl();
 
+        $this->info('Seeding .env with recommended defaults...');
+        $this->seedEnvDefaults();
+
+        $this->info('Running migrations...');
+        Artisan::call('migrate', ['--force' => true]);
+
         $this->info('Updating README.md with Codespace URL...');
         $this->updateReadme();
 
@@ -42,10 +48,48 @@ class Init extends Command
         $this->info('Installing Playwright components...');
         $this->installPlaywright();
 
-        $this->info('Running migrations...');
-        Artisan::call('migrate');
-
         $this->info('Done!');
+    }
+
+    /**
+     * Seed the environment file with a set of recommended default values.
+     */
+    protected function seedEnvDefaults(): void
+    {
+        $defaults = [
+            'DB_HOST' => 'mysql',
+            'DB_DATABASE' => 'sample',
+            'DB_USERNAME' => 'laravel',
+            'DB_PASSWORD' => 'password',
+            'QUEUE_CONNECTION' => 'redis',
+            'CACHE_STORE' => 'redis',
+            'REDIS_HOST' => 'redis',
+            'SHARED_DB_HOST' => 'mysql',
+            'SHARED_DB_PORT' => '3306',
+            'SHARED_DB_DATABASE' => 'sample',
+            'SHARED_DB_USERNAME' => 'laravel',
+            'SHARED_DB_PASSWORD' => 'password',
+        ];
+
+        // Ensure APP_KEY exists in the file; if key:generate already ran, keep it.
+        $envFile = $this->laravel->environmentFilePath();
+        $envContents = file_exists($envFile) ? file_get_contents($envFile) : '';
+
+        if (preg_match('/^APP_KEY=(.+)$/m', $envContents, $matches) && !empty(trim($matches[1]))) {
+            $defaults['APP_KEY'] = trim($matches[1]);
+        } else {
+            // If APP_KEY wasn't generated for some reason, leave it blank so existing logic can generate it.
+            $defaults['APP_KEY'] = '';
+        }
+
+        foreach ($defaults as $key => $value) {
+            // Don't overwrite an existing non-empty value for APP_KEY
+            if ($key === 'APP_KEY' && $value === '') {
+                continue;
+            }
+
+            $this->setEnvVariable($key, $value);
+        }
     }
 
     /**
@@ -80,7 +124,7 @@ class Init extends Command
         $portDomain = env('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN');
 
         if (!$codespaceName || !$portDomain) {
-            $this->error('Missing required GitHub Codespaces environment variables.');
+            $this->info('GitHub Codespaces variables not found; skipping ASSET_URL setup.');
             return;
         }
 
@@ -100,7 +144,7 @@ class Init extends Command
         $portDomain = env('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN');
 
         if (!$codespaceName || !$portDomain) {
-            $this->error('Missing required GitHub Codespaces environment variables.');
+            $this->info('GitHub Codespaces variables not found; skipping README Codespace URL update.');
             return;
         }
 
