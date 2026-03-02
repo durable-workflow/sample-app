@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
+use Dotenv\Dotenv;
+use Illuminate\Support\Facades\DB;
 
 class Init extends Command
 {
@@ -37,6 +39,7 @@ class Init extends Command
         $this->seedEnvDefaults();
 
         $this->info('Running migrations...');
+        
         Artisan::call('migrate', ['--force' => true]);
 
         $this->info('Updating README.md with Codespace URL...');
@@ -90,6 +93,72 @@ class Init extends Command
 
             $this->setEnvVariable($key, $value);
         }
+
+        // After modifying the .env file, reload env and update runtime config values
+        $this->reloadEnvConfig();
+    }
+
+    /**
+     * Reload environment variables and update runtime config from env values.
+     */
+    protected function reloadEnvConfig(): void
+    {
+        $envFile = base_path('.env');
+        $pairs = [];
+
+        if (file_exists($envFile)) {
+            $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line === '' || strpos($line, '#') === 0) {
+                    continue;
+                }
+
+                if (! str_contains($line, '=')) {
+                    continue;
+                }
+
+                [$k, $v] = explode('=', $line, 2);
+                $k = trim($k);
+                $v = trim($v);
+
+                // Strip surrounding quotes if present
+                if ((str_starts_with($v, '"') && str_ends_with($v, '"')) || (str_starts_with($v, "'") && str_ends_with($v, "'"))) {
+                    $v = substr($v, 1, -1);
+                }
+
+                $pairs[$k] = $v;
+
+                // Populate runtime env
+                putenv("{$k}={$v}");
+                $_ENV[$k] = $v;
+                $_SERVER[$k] = $v;
+            }
+        }
+
+        $config = $this->laravel->make('config');
+
+        // Use parsed values (fallback to existing config)
+        $config->set('database.default', $pairs['DB_CONNECTION'] ?? $config->get('database.default'));
+
+        $config->set('database.connections.mysql.host', $pairs['DB_HOST'] ?? $config->get('database.connections.mysql.host'));
+        $config->set('database.connections.mysql.port', $pairs['DB_PORT'] ?? $config->get('database.connections.mysql.port'));
+        $config->set('database.connections.mysql.database', $pairs['DB_DATABASE'] ?? $config->get('database.connections.mysql.database'));
+        $config->set('database.connections.mysql.username', $pairs['DB_USERNAME'] ?? $config->get('database.connections.mysql.username'));
+        $config->set('database.connections.mysql.password', $pairs['DB_PASSWORD'] ?? $config->get('database.connections.mysql.password'));
+
+        $config->set('database.connections.shared.host', $pairs['SHARED_DB_HOST'] ?? $config->get('database.connections.shared.host'));
+        $config->set('database.connections.shared.port', $pairs['SHARED_DB_PORT'] ?? $config->get('database.connections.shared.port'));
+        $config->set('database.connections.shared.database', $pairs['SHARED_DB_DATABASE'] ?? $config->get('database.connections.shared.database'));
+        $config->set('database.connections.shared.username', $pairs['SHARED_DB_USERNAME'] ?? $config->get('database.connections.shared.username'));
+        $config->set('database.connections.shared.password', $pairs['SHARED_DB_PASSWORD'] ?? $config->get('database.connections.shared.password'));
+
+        try {
+            DB::purge('mysql');
+            DB::purge('shared');
+        } catch (\Throwable $e) {
+            // ignore
+        }
     }
 
     /**
@@ -103,6 +172,13 @@ class Init extends Command
         if (! file_exists($envFile) && file_exists($exampleFile)) {
             copy($exampleFile, $envFile);
             $this->info('.env created from .env.example');
+            try {
+                if (class_exists(Dotenv::class)) {
+                    Dotenv::createImmutable(base_path())->safeLoad();
+                }
+            } catch (\Throwable $e) {
+                // If we can't reload env here, continue; later steps may still work.
+            }
         }
 
         // If .env exists but APP_KEY is empty or missing, run key:generate
@@ -112,6 +188,13 @@ class Init extends Command
         if (! $hasKey) {
             Artisan::call('key:generate', ['--ansi' => true]);
             $this->info('Application key generated.');
+            try {
+                if (class_exists(Dotenv::class)) {
+                    Dotenv::createImmutable(base_path())->safeLoad();
+                }
+            } catch (\Throwable $e) {
+                // ignore
+            }
         }
     }
 
