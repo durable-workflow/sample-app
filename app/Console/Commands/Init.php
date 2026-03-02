@@ -27,6 +27,9 @@ class Init extends Command
      */
     public function handle()
     {
+        $this->info('Ensuring .env file exists and APP_KEY is set...');
+        $this->ensureEnv();
+
         $this->info('Setting ASSET_URL...');
         $this->setAssetUrl();
 
@@ -43,6 +46,29 @@ class Init extends Command
         Artisan::call('migrate');
 
         $this->info('Done!');
+    }
+
+    /**
+     * Ensure an .env file exists (copy from .env.example if needed) and generate APP_KEY.
+     */
+    protected function ensureEnv(): void
+    {
+        $envFile = base_path('.env');
+        $exampleFile = base_path('.env.example');
+
+        if (! file_exists($envFile) && file_exists($exampleFile)) {
+            copy($exampleFile, $envFile);
+            $this->info('.env created from .env.example');
+        }
+
+        // If .env exists but APP_KEY is empty or missing, run key:generate
+        $envContents = file_exists($envFile) ? file_get_contents($envFile) : '';
+        $hasKey = preg_match('/^APP_KEY=(.+)$/m', $envContents, $matches) && !empty(trim($matches[1]));
+
+        if (! $hasKey) {
+            Artisan::call('key:generate', ['--ansi' => true]);
+            $this->info('Application key generated.');
+        }
     }
 
     /**
