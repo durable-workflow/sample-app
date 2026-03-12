@@ -211,7 +211,7 @@ class Init extends Command
             return;
         }
 
-        $assetUrl = "https://{$codespaceName}-80.{$portDomain}";
+        $assetUrl = "https://{$codespaceName}-18080.{$portDomain}";
 
         if ($this->setEnvVariable('ASSET_URL', $assetUrl)) {
             $this->info('ASSET_URL set successfully in .env file.');
@@ -231,7 +231,7 @@ class Init extends Command
             return;
         }
 
-        $realUrl = "https://{$codespaceName}-80.{$portDomain}";
+        $realUrl = "https://{$codespaceName}-18080.{$portDomain}";
 
         $readmeFile = base_path('README.md');
         if (!file_exists($readmeFile)) {
@@ -241,7 +241,7 @@ class Init extends Command
 
         $readmeContents = file_get_contents($readmeFile);
         $updatedReadme = preg_replace(
-            '/https:\/\/\[your-codespace-name\]-80\.preview\.app\.github\.dev/',
+            '/https:\/\/\[your-codespace-name\]-18080\.preview\.app\.github\.dev/',
             $realUrl,
             $readmeContents
         );
