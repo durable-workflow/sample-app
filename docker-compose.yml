@@ -1,0 +1,111 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: sample
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: password
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      retries: 30
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: sample
+      DB_USERNAME: laravel
+      DB_PASSWORD: password
+      SHARED_DB_HOST: mysql
+      SHARED_DB_PORT: 3306
+      SHARED_DB_DATABASE: sample
+      SHARED_DB_USERNAME: laravel
+      SHARED_DB_PASSWORD: password
+      REDIS_HOST: redis
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/up"]
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  worker:
+    build: .
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: sample
+      DB_USERNAME: laravel
+      DB_PASSWORD: password
+      SHARED_DB_HOST: mysql
+      SHARED_DB_PORT: 3306
+      SHARED_DB_DATABASE: sample
+      SHARED_DB_USERNAME: laravel
+      SHARED_DB_PASSWORD: password
+      REDIS_HOST: redis
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+    command: php artisan queue:work redis --tries=3 --timeout=60
+
+  seed:
+    build: .
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_DATABASE: sample
+      DB_USERNAME: laravel
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      SHARED_DB_HOST: mysql
+      SHARED_DB_PORT: 3306
+      SHARED_DB_DATABASE: sample
+      SHARED_DB_USERNAME: laravel
+      SHARED_DB_PASSWORD: password
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+    command: php artisan db:seed --force
+    profiles:
+      - seed
+
+volumes:
+  mysql_data:
+  redis_data:
