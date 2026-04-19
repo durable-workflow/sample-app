@@ -8,30 +8,24 @@ use Exception;
 use Laravel\Ai\Messages\AssistantMessage;
 use Laravel\Ai\Messages\UserMessage;
 use Throwable;
-use Workflow\Inbox;
 use Workflow\Outbox;
-use Workflow\SignalMethod;
 use Workflow\UpdateMethod;
+use Workflow\V2\Attributes\Signal;
 use Workflow\V2\Workflow;
 
 use function Workflow\V2\activity;
 use function Workflow\V2\await;
 
+#[Signal('send', [
+    ['name' => 'message', 'type' => 'string'],
+])]
 class AiWorkflow extends Workflow
 {
     private const INACTIVITY_TIMEOUT = '2 minutes';
 
     private const MAX_MESSAGES = 20;
 
-    public Inbox $inbox;
-
     public Outbox $outbox;
-
-    #[SignalMethod]
-    public function send(string $message): void
-    {
-        $this->ensureInbox()->receive($message);
-    }
 
     #[UpdateMethod]
     public function receive(): mixed
@@ -41,25 +35,24 @@ class AiWorkflow extends Workflow
 
     public function handle(?string $injectFailure = null): array
     {
-        $this->ensureInbox();
         $this->ensureOutbox();
 
         $messages = [];
 
         try {
             while (count($messages) < self::MAX_MESSAGES) {
-                $receivedMessage = await(
-                    fn (): bool => $this->inbox->hasUnread(),
-                    self::INACTIVITY_TIMEOUT,
-                );
+                // v2 pull-style signal: blocks until a `send` signal arrives or
+                // the inactivity timeout elapses. Returns the signal's `message`
+                // arg, or null on timeout.
+                $userMessage = await('send', self::INACTIVITY_TIMEOUT);
 
-                if (! $receivedMessage) {
+                if ($userMessage === null) {
                     throw new Exception(
                         'Session ended due to inactivity. Please start a new conversation.'
                     );
                 }
 
-                $messages[] = new UserMessage($this->inbox->nextUnread());
+                $messages[] = new UserMessage((string) $userMessage);
                 $result = activity(TravelAgentActivity::class, $messages);
                 $data = json_decode($result, true);
 
@@ -135,15 +128,6 @@ class AiWorkflow extends Workflow
         $this->addCompensation(fn () => activity(CancelRentalCarActivity::class, $rentalCar));
 
         return $rentalCar;
-    }
-
-    private function ensureInbox(): Inbox
-    {
-        if (! isset($this->inbox)) {
-            $this->inbox = new Inbox();
-        }
-
-        return $this->inbox;
     }
 
     private function ensureOutbox(): Outbox

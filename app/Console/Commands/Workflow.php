@@ -18,7 +18,7 @@ class Workflow extends Command
     {
         $workflow = WorkflowStub::make(SimpleWorkflow::class);
         $workflow->start();
-        while ($workflow->running()) {
+        while ($workflow->refresh()->running()) {
             usleep(100_000);
         }
         $this->info($workflow->output());

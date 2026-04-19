@@ -18,7 +18,7 @@ class Prism extends Command
     {
         $workflow = WorkflowStub::make(PrismWorkflow::class);
         $workflow->start();
-        while ($workflow->running()) {
+        while ($workflow->refresh()->running()) {
             usleep(100_000);
         }
         $user = $workflow->output();

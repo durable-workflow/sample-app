@@ -32,6 +32,11 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # Stable APP_KEY shared across app, worker, and seed services so
+      # serialized closures encrypted by one container can be decrypted
+      # by another. Local-dev only — override via .env (APP_KEY=...) or
+      # the shell when running the stack outside this repo.
+      APP_KEY: ${APP_KEY:-base64:RnT2yvrznADdoG2WROIIFaUTmlbgNRDIFV9bqCCBWLg=}
       APP_ENV: local
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
@@ -64,6 +69,7 @@ services:
       app:
         condition: service_healthy
     environment:
+      APP_KEY: ${APP_KEY:-base64:RnT2yvrznADdoG2WROIIFaUTmlbgNRDIFV9bqCCBWLg=}
       APP_ENV: local
       APP_DEBUG: "true"
       DB_CONNECTION: mysql
@@ -88,6 +94,7 @@ services:
       app:
         condition: service_healthy
     environment:
+      APP_KEY: ${APP_KEY:-base64:RnT2yvrznADdoG2WROIIFaUTmlbgNRDIFV9bqCCBWLg=}
       APP_ENV: local
       DB_CONNECTION: mysql
       DB_HOST: mysql

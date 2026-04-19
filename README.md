@@ -138,12 +138,41 @@ Key differences:
 
 ##### Signals & Updates
 
-The `#[Workflow\SignalMethod]` and `#[Workflow\UpdateMethod]` attributes still work on v2 workflow methods. Invocation from outside the workflow uses an explicit name:
+**Signals shifted from push to pull in v2.** v1 declared a method handler and the engine called it on signal arrival; v2 declares the signal contract at the class level and the workflow code blocks on `await($signalName)` to receive it:
+
+```diff
+-use Workflow\SignalMethod;
++use Workflow\V2\Attributes\Signal;
++use function Workflow\V2\await;
+
++#[Signal('approve', [['name' => 'reason', 'type' => 'string']])]
+ class ApprovalWorkflow extends Workflow
+ {
+-    #[SignalMethod]
+-    public function approve(string $reason): void {
+-        $this->approved = true;
+-        $this->reason = $reason;
+-    }
+
+-    public function execute() {
+-        yield await(fn () => $this->approved);
+-        return $this->reason;
++    public function handle(): string {
++        return await('approve');           // blocks for the signal, returns its arg
+     }
+ }
+```
+
+For workflows that need to drain *many* signals over time (chat-style loops), use `await($signalName, $timeout)` to bound each wait and check the return for `null` (timeout fired).
+
+**Updates and queries** still use method-level attributes — `#[Workflow\UpdateMethod]` and `#[Workflow\QueryMethod]` carry over verbatim.
+
+Invocation from outside the workflow uses explicit names:
 
 ```diff
 -$workflow->send($payload);          // v1 magic method
 -$result = $workflow->receive();
-+$workflow->signal('send', $payload); // v2 explicit
++$workflow->signal('send', $payload); // v2 explicit signal name
 +$result = $workflow->update('receive');
 ```
 
@@ -155,8 +184,9 @@ The `#[Workflow\SignalMethod]` and `#[Workflow\UpdateMethod]` attributes still w
 
  $stub = WorkflowStub::make(OrderWorkflow::class);
  $stub->start($orderId);
- while ($stub->running()) {
+-while ($stub->running()) {
 -    // tight loop
++while ($stub->refresh()->running()) {
 +    usleep(100_000);
  }
 ```

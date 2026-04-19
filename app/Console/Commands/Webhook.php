@@ -16,7 +16,9 @@ class Webhook extends Command
 
     public function handle(): int
     {
-        $start = Http::post('http://localhost/api/webhooks/start/webhook-workflow', [
+        $base = rtrim(config('app.url', 'http://localhost:8000'), '/');
+
+        $start = Http::post("{$base}/api/webhooks/start/webhook-workflow", [
             'message' => 'world',
         ]);
 
@@ -37,7 +39,7 @@ class Webhook extends Command
         $workflow = WorkflowStub::load($workflowId);
         $workflow->signal('ready');
 
-        while ($workflow->running()) {
+        while ($workflow->refresh()->running()) {
             usleep(100_000);
         }
 

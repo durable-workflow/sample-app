@@ -18,7 +18,7 @@ class Playwright extends Command
     {
         $workflow = WorkflowStub::make(CheckConsoleErrorsWorkflow::class);
         $workflow->start('https://example.com');
-        while ($workflow->running()) {
+        while ($workflow->refresh()->running()) {
             usleep(100_000);
         }
         $this->info($workflow->output()['mp4']);
