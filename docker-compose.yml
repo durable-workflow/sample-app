@@ -40,6 +40,10 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
+      # OPENAI_API_KEY is forwarded from the host (or workspace .env) so the
+      # TravelAgent / Prism workflows can talk to OpenAI. Leave unset to skip
+      # those workflows.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DB_CONNECTION: mysql
       DB_HOST: mysql
       DB_PORT: 3306
@@ -72,6 +76,7 @@ services:
       APP_KEY: ${APP_KEY:-base64:RnT2yvrznADdoG2WROIIFaUTmlbgNRDIFV9bqCCBWLg=}
       APP_ENV: local
       APP_DEBUG: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DB_CONNECTION: mysql
       DB_HOST: mysql
       DB_PORT: 3306

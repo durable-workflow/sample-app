@@ -48,21 +48,35 @@ class Ai extends Command
 
     /**
      * Poll the workflow outbox until one message arrives, then display it.
+     *
+     * Uses attemptUpdate() so that v2 protocol-level rejections like
+     * earlier_signal_pending (the signal we just sent has not been applied to
+     * the workflow yet) are treated as "try again shortly" rather than fatal.
      */
     private function waitForMessage(WorkflowStub $workflow, int $timeoutSeconds = 120): bool
     {
         $elapsed = 0;
 
         while ($elapsed < $timeoutSeconds) {
-            $message = $workflow->update('receive');
+            $result = $workflow->attemptUpdate('receive');
 
-            if ($message !== null) {
-                $this->newLine();
-                $this->line("<comment>Agent:</comment> {$message}");
-                $workflow->refresh();
+            if ($result->completed()) {
+                $message = $result->result();
 
-                return ! $workflow->failed() && ! $workflow->completed();
+                if ($message !== null) {
+                    $this->newLine();
+                    $this->line("<comment>Agent:</comment> {$message}");
+                    $workflow->refresh();
+
+                    return ! $workflow->failed() && ! $workflow->completed();
+                }
+            } elseif ($result->failed()) {
+                $this->error('Update failed: ' . ($result->failureMessage() ?? 'unknown'));
+
+                return false;
             }
+            // rejected (e.g. earlier_signal_pending) or accepted-but-not-yet-
+            // completed: fall through to sleep and retry.
 
             $workflow->refresh();
             if ($workflow->failed() || $workflow->completed()) {

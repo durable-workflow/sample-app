@@ -40,7 +40,12 @@ class BookFlight implements Tool
             'origin' => $schema->string()->required()->description('Departure airport or city'),
             'destination' => $schema->string()->required()->description('Arrival airport or city'),
             'departure_date' => $schema->string()->required()->description('Departure date (YYYY-MM-DD)'),
-            'return_date' => $schema->string()->description('Return date (YYYY-MM-DD). Omit for one-way flights.'),
+            // Optional in business terms (one-way flights), but OpenAI strict
+            // structured outputs require every property in `required` — model
+            // optionality with nullable() so the LLM emits explicit null for
+            // one-way flights.
+            'return_date' => $schema->string()->required()->nullable()
+                ->description('Return date (YYYY-MM-DD), or null for one-way flights.'),
         ];
     }
 }
