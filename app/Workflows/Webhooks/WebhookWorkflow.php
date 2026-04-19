@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace App\Workflows\Webhooks;
 
 use Workflow\SignalMethod;
+use Workflow\V2\Workflow;
 use Workflow\Webhook;
-use Workflow\Workflow;
-use function Workflow\{activity, await};
 
-/**
- * See: https://laravel-workflow.com/docs/features/webhooks
- */
+use function Workflow\V2\activity;
+use function Workflow\V2\await;
 
 #[Webhook]
 class WebhookWorkflow extends Workflow
@@ -20,17 +18,15 @@ class WebhookWorkflow extends Workflow
 
     #[SignalMethod]
     #[Webhook]
-    public function ready()
+    public function ready(): void
     {
         $this->ready = true;
     }
 
-    public function execute($message)
+    public function handle(string $message): string
     {
-        yield await(fn () => $this->ready);
+        await(fn () => $this->ready);
 
-        $result = yield activity(WebhookActivity::class, $message);
-
-        return $result;
+        return activity(WebhookActivity::class, $message);
     }
 }

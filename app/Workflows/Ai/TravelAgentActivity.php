@@ -1,16 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Workflows\Ai;
 
 use App\Ai\Agents\TravelAgent;
 use App\Ai\Tools\BookFlight;
 use App\Ai\Tools\BookHotel;
 use App\Ai\Tools\BookRentalCar;
-use Workflow\Activity;
+use Workflow\V2\Activity;
 
 class TravelAgentActivity extends Activity
 {
-    public function execute($messages)
+    public function handle(array $messages): string
     {
         BookHotel::$pending = [];
         BookFlight::$pending = [];

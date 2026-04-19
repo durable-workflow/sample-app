@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Workflows\Simple;
 
-use Workflow\Workflow;
-use function Workflow\activity;
+use Workflow\V2\Workflow;
+
+use function Workflow\V2\activity;
 
 class SimpleWorkflow extends Workflow
 {
-    public function execute()
+    public function handle(): string
     {
-        $result = yield activity(SimpleActivity::class);
+        $result = activity(SimpleActivity::class);
 
-        $otherResult = yield activity(SimpleOtherActivity::class, 'other');
+        $otherResult = activity(SimpleOtherActivity::class, 'other');
 
         return 'workflow_' . $result . '_' . $otherResult;
     }

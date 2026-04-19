@@ -1,21 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Workflows\Playwright;
 
-use Workflow\Workflow;
-use function Workflow\activity;
+use Workflow\V2\Workflow;
 
-/**
- * See: https://laravel-workflow.com/blog/automating-qa-with-playwright-and-laravel-workflow
- */
+use function Workflow\V2\activity;
 
 class CheckConsoleErrorsWorkflow extends Workflow
 {
-    public function execute(string $url)
+    public function handle(string $url): array
     {
-        $result = yield activity(CheckConsoleErrorsActivity::class, $url);
+        $result = activity(CheckConsoleErrorsActivity::class, $url);
 
-        $mp4 = yield activity(ConvertVideoActivity::class, $result['video']);
+        $mp4 = activity(ConvertVideoActivity::class, $result['video']);
 
         return [
             'errors' => $result['errors'],

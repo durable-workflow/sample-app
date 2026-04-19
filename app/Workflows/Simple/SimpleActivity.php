@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Workflows\Simple;
 
-use Workflow\Activity;
+use Workflow\V2\Activity;
 
 class SimpleActivity extends Activity
 {
-    public function execute()
+    public function handle(): string
     {
         return 'activity';
     }

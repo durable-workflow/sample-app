@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Console\Commands;
 
 use App\Workflows\Ai\AiWorkflow;
 use Illuminate\Console\Command;
-use Workflow\WorkflowStub;
+use Workflow\V2\WorkflowStub;
 
 class Ai extends Command
 {
@@ -12,7 +14,7 @@ class Ai extends Command
 
     protected $description = 'Interactive AI travel agent powered by a durable workflow';
 
-    public function handle()
+    public function handle(): int
     {
         $injectFailure = $this->option('inject-failure');
 
@@ -34,7 +36,8 @@ class Ai extends Command
                 continue;
             }
 
-            $workflow->send($input);
+            $workflow->signal('send', $input);
+
             if (! $this->waitForMessage($workflow)) {
                 break;
             }
@@ -46,20 +49,23 @@ class Ai extends Command
     /**
      * Poll the workflow outbox until one message arrives, then display it.
      */
-    private function waitForMessage($workflow, int $timeout = 120): bool
+    private function waitForMessage(WorkflowStub $workflow, int $timeoutSeconds = 120): bool
     {
         $elapsed = 0;
 
-        while ($elapsed < $timeout) {
-            $message = $workflow->receive();
+        while ($elapsed < $timeoutSeconds) {
+            $message = $workflow->update('receive');
 
             if ($message !== null) {
                 $this->newLine();
                 $this->line("<comment>Agent:</comment> {$message}");
-                return ! $workflow->fresh()->failed() && ! $workflow->fresh()->completed();
+                $workflow->refresh();
+
+                return ! $workflow->failed() && ! $workflow->completed();
             }
 
-            if ($workflow->fresh()->failed() || $workflow->fresh()->completed()) {
+            $workflow->refresh();
+            if ($workflow->failed() || $workflow->completed()) {
                 return false;
             }
 
@@ -68,6 +74,7 @@ class Ai extends Command
         }
 
         $this->error('Timed out waiting for a response.');
+
         return false;
     }
 }

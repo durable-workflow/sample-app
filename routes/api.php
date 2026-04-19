@@ -1,5 +1,10 @@
 <?php
 
-use Workflow\Webhooks;
+declare(strict_types=1);
 
-Webhooks::routes();
+use App\Workflows\Webhooks\WebhookWorkflow;
+use Workflow\V2\Webhooks;
+
+Webhooks::routes([
+    'webhook-workflow' => WebhookWorkflow::class,
+]);

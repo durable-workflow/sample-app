@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\Workflows\Microservice;
 
-use Workflow\Activity;
+use Workflow\V2\Activity;
 
 class MicroserviceOtherActivity extends Activity
 {
-    public $queue = 'activity';
+    public ?string $queue = 'activity';
+
+    public function handle(string $string): string
+    {
+        return $string;
+    }
 }

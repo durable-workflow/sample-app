@@ -1,15 +1,22 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Workflows\Ai;
 
 use Illuminate\Support\Facades\Log;
-use Workflow\Activity;
 use Workflow\Exceptions\NonRetryableException;
+use Workflow\V2\Activity;
 
 class BookFlightActivity extends Activity
 {
-    public function execute(string $origin, string $destination, string $departureDate, ?string $returnDate = null, bool $shouldFail = false)
-    {
+    public function handle(
+        string $origin,
+        string $destination,
+        string $departureDate,
+        ?string $returnDate = null,
+        bool $shouldFail = false,
+    ): string {
         if ($shouldFail) {
             throw new NonRetryableException("Flight booking failed: {$origin} to {$destination}.");
         }

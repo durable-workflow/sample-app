@@ -1,6 +1,8 @@
 # Durable Workflow Sample App
 
-This is a sample Laravel 12 application with example workflows that you can run inside a GitHub codespace.
+This is a sample Laravel 13 application built on **Durable Workflow 2.0 (alpha)** with example workflows that you can run inside a GitHub Codespace.
+
+> **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
 ### Step 1
 Create a codespace from the main branch of this repo.
@@ -75,6 +77,118 @@ In addition to the basic example workflow, you can try these other workflows inc
 * `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled.
 
 Try them out to see workflows in action across different use cases!
+
+----
+
+#### Migrating from Durable Workflow 1.x
+
+This app shipped on Durable Workflow 1.x (Laravel 12) until April 2026 — the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12) is the snapshot of that state. The v2 API is straight-line and Fiber-driven; here are the patterns you need to update when porting your own workflows.
+
+##### Workflows
+
+```diff
+-use Workflow\Workflow;
+-use function Workflow\activity;
++use Workflow\V2\Workflow;
++use function Workflow\V2\activity;
+
+ class OrderWorkflow extends Workflow
+ {
+-    public function execute(string $orderId)
++    public function handle(string $orderId): array
+     {
+-        $order = yield activity(LoadOrderActivity::class, $orderId);
+-        yield activity(ChargeActivity::class, $order);
++        $order  = activity(LoadOrderActivity::class, $orderId);
++        $charge = activity(ChargeActivity::class, $order);
+
+-        return $order;
++        return ['order' => $order, 'charge' => $charge];
+     }
+ }
+```
+
+Key differences:
+
+- **Base class:** `extends Workflow\V2\Workflow` (not `Workflow\Workflow`).
+- **Helper imports:** `use function Workflow\V2\{activity, sideEffect, await, timer, …}` — every helper has a `Workflow\V2\` namespaced equivalent.
+- **No `yield`:** `activity(...)` is straight-line and returns the result directly. The Fiber-based runtime suspends transparently.
+- **Entry method:** `handle()` is canonical (`execute()` is also accepted for transitional code).
+- **`await`:** A single `await($condition, $timeout, $key)` replaces both `await()` and `awaitWithTimeout()`. Returns `true` if the condition was satisfied, `false` if the timeout fired.
+
+##### Activities
+
+```diff
+-use Workflow\Activity;
++use Workflow\V2\Activity;
+
+ class ChargeActivity extends Activity
+ {
+-    public function execute($order)
++    public function handle(array $order): array
+     {
+         // …
+     }
+ }
+```
+
+- **Base class:** `extends Workflow\V2\Activity`.
+- **Method name:** `handle()` is canonical (`execute()` is still accepted).
+- **Type hints:** Strongly recommended — argument and return types are part of the durable activity contract.
+
+##### Signals & Updates
+
+The `#[Workflow\SignalMethod]` and `#[Workflow\UpdateMethod]` attributes still work on v2 workflow methods. Invocation from outside the workflow uses an explicit name:
+
+```diff
+-$workflow->send($payload);          // v1 magic method
+-$result = $workflow->receive();
++$workflow->signal('send', $payload); // v2 explicit
++$result = $workflow->update('receive');
+```
+
+##### Workflow stub
+
+```diff
+-use Workflow\WorkflowStub;
++use Workflow\V2\WorkflowStub;
+
+ $stub = WorkflowStub::make(OrderWorkflow::class);
+ $stub->start($orderId);
+ while ($stub->running()) {
+-    // tight loop
++    usleep(100_000);
+ }
+```
+
+`make()`, `load($workflowId)`, `start(...)`, `running()`, `completed()`, `failed()`, `output()`, `refresh()`, `signal($name, ...$args)`, `update($name, ...$args)` all carry over.
+
+##### Webhooks
+
+```diff
+-use Workflow\Webhooks;
+-Webhooks::routes();
++use App\Workflows\Webhooks\WebhookWorkflow;
++use Workflow\V2\Webhooks;
++Webhooks::routes([
++    'webhook-workflow' => WebhookWorkflow::class,
++]);
+```
+
+The v2 router takes an explicit alias → workflow class map (no auto-discovery). The `#[Webhook]` attribute on the workflow class continues to mark which signal/update methods are exposed via webhook URLs.
+
+##### Inbox / Outbox
+
+`Workflow\Inbox` and `Workflow\Outbox` are plain helper classes and work the same in v2 — see `app/Workflows/Ai/AiWorkflow.php` for a reference. Because the v2 base class has a `final` constructor, declare them as plain typed properties and lazy-initialize them inside the entry method (and in any signal handler that runs before `handle()`).
+
+##### Saga compensation
+
+The `addCompensation(callable)` / `compensate()` API is unchanged on the v2 `Workflow` base class. Compensation closures should call activities straight-line (no `yield from`):
+
+```diff
+-$this->addCompensation(fn () => yield activity(CancelHotelActivity::class, $hotel));
++$this->addCompensation(fn () => activity(CancelHotelActivity::class, $hotel));
+```
 
 ----
 

@@ -1,54 +1,48 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
-use Workflow\Models\StoredWorkflow;
-use Workflow\WorkflowStub;
+use Workflow\V2\WorkflowStub;
 
 class Webhook extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'app:webhook';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
     protected $description = 'Runs a workflow via a webhook and then signals it';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(): int
     {
-        /**
-         * See: https://laravel-workflow.com/docs/features/webhooks
-         */
-
-        $workflowCount = StoredWorkflow::count();
-
-        Http::post('http://localhost/api/webhooks/start/webhook-workflow', [
+        $start = Http::post('http://localhost/api/webhooks/start/webhook-workflow', [
             'message' => 'world',
         ]);
 
-        $id = StoredWorkflow::count();
+        if (! $start->successful()) {
+            $this->error('Webhook start failed: ' . $start->status() . ' ' . $start->body());
 
-        if ($workflowCount === $id) {
-            $this->error('Workflow did not start');
-            return;
+            return 1;
         }
 
-        Http::post("http://localhost/api/webhooks/signal/webhook-workflow/{$id}/ready");
+        $workflowId = $start->json('workflow_id');
 
-        $workflow = WorkflowStub::load($id);
-        while ($workflow->running());
+        if (! is_string($workflowId) || $workflowId === '') {
+            $this->error('Webhook response missing workflow_id: ' . $start->body());
+
+            return 1;
+        }
+
+        $workflow = WorkflowStub::load($workflowId);
+        $workflow->signal('ready');
+
+        while ($workflow->running()) {
+            usleep(100_000);
+        }
+
         $this->info($workflow->output());
+
+        return 0;
     }
 }

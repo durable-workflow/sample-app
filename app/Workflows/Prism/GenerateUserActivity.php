@@ -1,17 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Workflows\Prism;
 
-use Prism\Prism\Prism;
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Prism;
 use Prism\Prism\Schema\ArraySchema;
 use Prism\Prism\Schema\ObjectSchema;
 use Prism\Prism\Schema\StringSchema;
-use Workflow\Activity;
+use Workflow\V2\Activity;
 
 class GenerateUserActivity extends Activity
 {
-    public function execute()
+    public function handle(): array
     {
         $schema = new ObjectSchema(
             name: 'user',

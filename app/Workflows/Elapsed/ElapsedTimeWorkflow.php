@@ -4,22 +4,20 @@ declare(strict_types=1);
 
 namespace App\Workflows\Elapsed;
 
-use Workflow\Workflow;
-use function Workflow\{activity, now, sideEffect};
+use Workflow\V2\Workflow;
 
-/**
- * See: https://laravel-workflow.com/docs/features/timers
- */
+use function Workflow\V2\activity;
+use function Workflow\V2\sideEffect;
 
 class ElapsedTimeWorkflow extends Workflow
 {
-    public function execute()
+    public function handle(): string
     {
-        $start = yield sideEffect(fn () => now());
+        $start = sideEffect(fn () => now());
 
-        yield activity(SleepActivity::class, 3);
+        activity(SleepActivity::class, 3);
 
-        $end = yield sideEffect(fn () => now());
+        $end = sideEffect(fn () => now());
 
         return 'Elapsed Time: ' . $start->diffInSeconds($end) . ' seconds';
     }

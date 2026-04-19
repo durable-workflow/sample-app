@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Workflows\Microservice;
 
-use Workflow\Workflow;
-use function Workflow\activity;
+use Workflow\V2\Workflow;
+
+use function Workflow\V2\activity;
 
 class MicroserviceWorkflow extends Workflow
 {
-    public function execute()
+    public function handle(): string
     {
-        $result = yield activity(MicroserviceActivity::class);
+        $result = activity(MicroserviceActivity::class);
 
-        $otherResult = yield activity(MicroserviceOtherActivity::class, 'other');
+        $otherResult = activity(MicroserviceOtherActivity::class, 'other');
 
         return 'workflow_' . $result . '_' . $otherResult;
     }

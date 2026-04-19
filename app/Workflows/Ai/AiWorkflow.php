@@ -1,15 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Workflows\Ai;
 
 use Exception;
 use Laravel\Ai\Messages\AssistantMessage;
 use Laravel\Ai\Messages\UserMessage;
 use Throwable;
+use Workflow\Inbox;
+use Workflow\Outbox;
 use Workflow\SignalMethod;
 use Workflow\UpdateMethod;
-use Workflow\Workflow;
-use function Workflow\{activity, awaitWithTimeout};
+use Workflow\V2\Workflow;
+
+use function Workflow\V2\activity;
+use function Workflow\V2\await;
 
 class AiWorkflow extends Workflow
 {
@@ -17,39 +23,48 @@ class AiWorkflow extends Workflow
 
     private const MAX_MESSAGES = 20;
 
+    public Inbox $inbox;
+
+    public Outbox $outbox;
+
     #[SignalMethod]
     public function send(string $message): void
     {
-        $this->inbox->receive($message);
+        $this->ensureInbox()->receive($message);
     }
 
     #[UpdateMethod]
-    public function receive()
+    public function receive(): mixed
     {
-        return $this->outbox->nextUnsent();
+        return $this->ensureOutbox()->nextUnsent();
     }
 
-    public function execute($injectFailure = null)
+    public function handle(?string $injectFailure = null): array
     {
+        $this->ensureInbox();
+        $this->ensureOutbox();
+
         $messages = [];
 
         try {
             while (count($messages) < self::MAX_MESSAGES) {
-                $receivedMessage = yield awaitWithTimeout(
+                $receivedMessage = await(
+                    fn (): bool => $this->inbox->hasUnread(),
                     self::INACTIVITY_TIMEOUT,
-                    fn () => $this->inbox->hasUnread(),
                 );
 
                 if (! $receivedMessage) {
-                    throw new Exception('Session ended due to inactivity. Please start a new conversation.');
+                    throw new Exception(
+                        'Session ended due to inactivity. Please start a new conversation.'
+                    );
                 }
 
                 $messages[] = new UserMessage($this->inbox->nextUnread());
-                $result = yield activity(TravelAgentActivity::class, $messages);
+                $result = activity(TravelAgentActivity::class, $messages);
                 $data = json_decode($result, true);
 
                 foreach ($data['bookings'] as $booking) {
-                    yield from $this->handleBooking($booking, $injectFailure);
+                    $this->handleBooking($booking, $injectFailure);
                 }
 
                 $messages[] = new AssistantMessage($data['text']);
@@ -57,18 +72,19 @@ class AiWorkflow extends Workflow
             }
 
             if (count($messages) >= self::MAX_MESSAGES) {
-                throw new Exception('This conversation has reached its message limit. Please start a new conversation to continue.');
+                throw new Exception(
+                    'This conversation has reached its message limit. Please start a new conversation to continue.'
+                );
             }
-
         } catch (Throwable $th) {
-            yield from $this->compensate();
+            $this->compensate();
             $this->outbox->send($th->getMessage() . ' Any previous bookings have been cancelled.');
         }
 
         return $messages;
     }
 
-    private function handleBooking(array $data, ?string $injectFailure)
+    private function handleBooking(array $data, ?string $injectFailure): mixed
     {
         return match ($data['type']) {
             'book_hotel' => $this->bookHotel($data, $injectFailure),
@@ -77,9 +93,9 @@ class AiWorkflow extends Workflow
         };
     }
 
-    private function bookHotel(array $data, ?string $injectFailure)
+    private function bookHotel(array $data, ?string $injectFailure): mixed
     {
-        $hotel = yield activity(
+        $hotel = activity(
             BookHotelActivity::class,
             $data['hotel_name'],
             $data['check_in_date'],
@@ -92,9 +108,9 @@ class AiWorkflow extends Workflow
         return $hotel;
     }
 
-    private function bookFlight(array $data, ?string $injectFailure)
+    private function bookFlight(array $data, ?string $injectFailure): mixed
     {
-        $flight = yield activity(
+        $flight = activity(
             BookFlightActivity::class,
             $data['origin'],
             $data['destination'],
@@ -107,9 +123,9 @@ class AiWorkflow extends Workflow
         return $flight;
     }
 
-    private function bookRentalCar(array $data, ?string $injectFailure)
+    private function bookRentalCar(array $data, ?string $injectFailure): mixed
     {
-        $rentalCar = yield activity(
+        $rentalCar = activity(
             BookRentalCarActivity::class,
             $data['pickup_location'],
             $data['pickup_date'],
@@ -119,5 +135,23 @@ class AiWorkflow extends Workflow
         $this->addCompensation(fn () => activity(CancelRentalCarActivity::class, $rentalCar));
 
         return $rentalCar;
+    }
+
+    private function ensureInbox(): Inbox
+    {
+        if (! isset($this->inbox)) {
+            $this->inbox = new Inbox();
+        }
+
+        return $this->inbox;
+    }
+
+    private function ensureOutbox(): Outbox
+    {
+        if (! isset($this->outbox)) {
+            $this->outbox = new Outbox();
+        }
+
+        return $this->outbox;
     }
 }
