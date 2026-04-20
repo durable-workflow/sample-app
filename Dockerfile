@@ -1,7 +1,7 @@
 FROM php:8.4-cli AS base
 
 RUN apt-get update && apt-get install -y \
-    curl libpq-dev libzip-dev unzip git \
+    curl ffmpeg libnspr4 libnss3 libpq-dev libzip-dev unzip git \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
     && pecl install redis && docker-php-ext-enable redis \
     && rm -rf /var/lib/apt/lists/*
@@ -34,8 +34,15 @@ RUN npm run build
 FROM base AS production
 
 COPY --from=vendor /app /app
+COPY --from=assets /usr/local/bin/node /usr/local/bin/node
+COPY --from=assets /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=assets /app/node_modules /app/node_modules
 COPY --from=assets /app/public/build /app/public/build
 COPY .env.example /app/.env.example
+
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && npx playwright install chromium
 
 # Create .env so artisan commands work at build time
 RUN cp .env.example .env 2>/dev/null || echo "APP_KEY=" > .env

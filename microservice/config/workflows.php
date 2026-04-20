@@ -19,7 +19,7 @@ return [
 
     'workflow_relationships_table' => 'workflow_relationships',
 
-    'serializer' => Workflow\Serializers\Y::class,
+    'serializer' => env('WORKFLOW_SERIALIZER', 'avro'),
 
     'prune_age' => '1 month',
 

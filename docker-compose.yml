@@ -91,7 +91,7 @@ services:
       REDIS_HOST: redis
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
-    command: php artisan queue:work redis --tries=3 --timeout=60
+    command: php artisan queue:work redis --queue=default,activity --tries=3 --timeout=60
 
   seed:
     build: .

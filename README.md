@@ -29,7 +29,7 @@ php artisan app:init
 Start the queue worker. This will enable the processing of workflows and activities.
 
 ```bash
-php artisan queue:work
+php artisan queue:work redis --queue=default,activity
 ```
 
 ### Step 6
