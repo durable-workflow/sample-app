@@ -15,6 +15,7 @@ use App\Workflows\Simple\SimpleWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Tests\TestCase;
+use Workflow\V2\Models\WorkflowRun;
 
 class McpWorkflowServerTest extends TestCase
 {
@@ -112,6 +113,53 @@ class McpWorkflowServerTest extends TestCase
                     ->where('events.0.event_type', 'StartAccepted')
                     ->where('events.1.event_type', 'WorkflowStarted')
                     ->has('events', 2)
+                    ->etc();
+            });
+    }
+
+    public function test_workflow_history_payloads_are_returned_as_bounded_previews(): void
+    {
+        config(['queue.default' => 'database']);
+
+        $instanceId = 'mcp-large-payload-test';
+
+        WorkflowServer::tool(StartWorkflowTool::class, [
+            'workflow' => 'simple',
+            'instance_id' => $instanceId,
+        ])->assertOk();
+
+        $run = WorkflowRun::query()
+            ->where('workflow_instance_id', $instanceId)
+            ->firstOrFail();
+
+        $run->historyEvents()
+            ->where('sequence', 2)
+            ->firstOrFail()
+            ->forceFill([
+                'payload' => [
+                    'large' => str_repeat('x', 12000),
+                ],
+            ])
+            ->save();
+
+        WorkflowServer::tool(GetWorkflowHistoryTool::class, [
+            'workflow_id' => $instanceId,
+            'include_payloads' => true,
+            'limit' => 10,
+        ])
+            ->assertOk()
+            ->assertStructuredContent(function (AssertableJson $json): void {
+                $json
+                    ->where('found', true)
+                    ->where('payloads_included', true)
+                    ->where('payload_preview_limit_bytes', 4096)
+                    ->where('events.1.payload_keys.0', 'large')
+                    ->where('events.1.payload_size_bytes', fn (int $bytes): bool => $bytes > 4096)
+                    ->where('events.1.payload_preview.encoding', 'json')
+                    ->where('events.1.payload_preview.truncated', true)
+                    ->where('events.1.payload_preview.preview_bytes', 4096)
+                    ->where('events.1.payload_preview.preview', fn (string $preview): bool => strlen($preview) === 4096)
+                    ->missing('events.1.payload')
                     ->etc();
             });
     }

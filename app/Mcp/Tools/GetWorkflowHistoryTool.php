@@ -18,6 +18,8 @@ use Workflow\V2\WorkflowStub;
 
 class GetWorkflowHistoryTool extends Tool
 {
+    private const PAYLOAD_PREVIEW_BYTES = 4096;
+
     protected string $name = 'get_workflow_history';
 
     /**
@@ -122,6 +124,7 @@ class GetWorkflowHistoryTool extends Tool
             'returned_event_count' => count($events),
             'events_are_most_recent' => true,
             'payloads_included' => $includePayloads,
+            'payload_preview_limit_bytes' => self::PAYLOAD_PREVIEW_BYTES,
             'events' => $events,
             'failures' => $failures,
         ]);
@@ -147,6 +150,8 @@ class GetWorkflowHistoryTool extends Tool
     private function historyEvent(WorkflowHistoryEvent $event, bool $includePayload): array
     {
         $payload = is_array($event->payload) ? $event->payload : [];
+        $encodedPayload = $this->encodePayload($payload);
+        $payloadSizeBytes = strlen($encodedPayload);
 
         $summary = [
             'id' => $event->id,
@@ -156,13 +161,36 @@ class GetWorkflowHistoryTool extends Tool
             'workflow_command_id' => $event->workflow_command_id,
             'recorded_at' => $event->recorded_at?->toIso8601String(),
             'payload_keys' => array_keys($payload),
+            'payload_size_bytes' => $payloadSizeBytes,
         ];
 
         if ($includePayload) {
-            $summary['payload'] = $payload;
+            $preview = substr($encodedPayload, 0, self::PAYLOAD_PREVIEW_BYTES);
+
+            $summary['payload_preview'] = [
+                'encoding' => 'json',
+                'size_bytes' => $payloadSizeBytes,
+                'preview_bytes' => strlen($preview),
+                'truncated' => $payloadSizeBytes > self::PAYLOAD_PREVIEW_BYTES,
+                'preview' => $preview,
+            ];
         }
 
         return $summary;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function encodePayload(array $payload): string
+    {
+        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+        if (is_string($encoded)) {
+            return $encoded;
+        }
+
+        return '{}';
     }
 
     /**
@@ -183,7 +211,7 @@ class GetWorkflowHistoryTool extends Tool
                 ->description('Maximum events to return from the tail of typed history (default: 50, max: 100).'),
 
             'include_payloads' => $schema->boolean()
-                ->description('Whether to include raw typed history payloads. Defaults to false for concise diagnostics.'),
+                ->description('Whether to include byte-limited JSON payload previews. Defaults to false; each preview is capped at 4096 bytes.'),
         ];
     }
 }
