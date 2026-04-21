@@ -49,6 +49,45 @@ You can view the waterline dashboard at https://[your-codespace-name]-18080.prev
 
 <img src="https://user-images.githubusercontent.com/1130888/233669600-3340ada6-5f73-4602-8d82-a81a9d43f883.png" alt="image" width="600">
 
+### Step 8a
+Check the two observability surfaces separately:
+
+| Surface | Use it for | Where to look |
+|---------|------------|---------------|
+| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | `/waterline/dashboard`, selected run detail, and `php artisan workflow:v2:history-export` |
+| Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for this PHP sample app; SDK metrics endpoints for external workers |
+
+For this Laravel-only sample, Waterline proves that the durable run exists and shows what the engine committed. If you add a Python or other external worker, enable that worker's SDK metrics as a separate endpoint; those metrics will not appear inside Waterline unless you scrape them with your metrics stack.
+
+Minimal Python worker Prometheus wiring looks like this:
+
+```bash
+pip install 'durable-workflow[prometheus]'
+```
+
+```python
+from prometheus_client import start_http_server
+
+from durable_workflow import Client, PrometheusMetrics, Worker
+
+metrics = PrometheusMetrics()
+start_http_server(9102)
+
+async with Client("http://localhost:8080", token="secret", metrics=metrics) as client:
+    worker = Worker(
+        client,
+        task_queue="default",
+        workflows=[GreeterWorkflow],
+        activities=[greet],
+        metrics=metrics,
+    )
+    await worker.run()
+```
+
+Replace `GreeterWorkflow` and `greet` with the workflow and activity handlers registered by that worker.
+
+Scrape `:9102/metrics` for `durable_workflow_worker_*` and `durable_workflow_client_*` series. Use Waterline for the matching workflow history and status.
+
 ### Step 9
 Run the workflow and activity tests.
 
