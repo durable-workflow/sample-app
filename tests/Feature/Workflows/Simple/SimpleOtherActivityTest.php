@@ -1,26 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature\Workflows\Simple;
 
 use App\Workflows\Simple\SimpleOtherActivity;
-use App\Workflows\Simple\SimpleWorkflow;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use ReflectionClass;
 use Tests\TestCase;
-use Workflow\Models\StoredWorkflow;
-use Workflow\WorkflowStub;
 
 class SimpleOtherActivityTest extends TestCase
 {
-    use RefreshDatabase;
-
-    public function testActivity(): void
+    public function test_activity(): void
     {
-        $workflow = WorkflowStub::make(SimpleWorkflow::class);
+        $activity = (new ReflectionClass(SimpleOtherActivity::class))->newInstanceWithoutConstructor();
 
-        $activity = new SimpleOtherActivity(0, now()->toDateTimeString(), StoredWorkflow::findOrFail($workflow->id()), 'other');
+        $result = $activity->handle('other');
 
-        $result = $activity->handle();
-
-        $this->assertSame($result, 'other');
+        $this->assertSame('other', $result);
     }
 }

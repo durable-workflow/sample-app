@@ -1,6 +1,9 @@
 <?php
 
 declare(strict_types=1);
+use App\Workflows\Elapsed\ElapsedTimeWorkflow;
+use App\Workflows\Prism\PrismWorkflow;
+use App\Workflows\Simple\SimpleWorkflow;
 
 return [
     /*
@@ -19,8 +22,25 @@ return [
     'allow_fqcn' => env('WORKFLOW_MCP_ALLOW_FQCN', false),
 
     'workflows' => [
-        'simple' => App\Workflows\Simple\SimpleWorkflow::class,
-        'prism' => App\Workflows\Prism\PrismWorkflow::class,
-        // Add more workflow mappings here as needed
+        'simple' => [
+            'class' => SimpleWorkflow::class,
+            'description' => 'Small deterministic workflow that runs two local activities and returns a string.',
+            'requires' => [],
+            'arguments' => [],
+        ],
+        'elapsed' => [
+            'class' => ElapsedTimeWorkflow::class,
+            'description' => 'Timer/activity example that measures elapsed durable workflow time.',
+            'requires' => [],
+            'arguments' => [],
+        ],
+        'prism' => [
+            'class' => PrismWorkflow::class,
+            'description' => 'Durable AI workflow that generates and validates a profile through Prism.',
+            'requires' => ['OPENAI_API_KEY'],
+            'arguments' => [],
+        ],
+        // Add more workflow mappings here as needed. A value may be a class string
+        // or an array with class, description, requires, and arguments metadata.
     ],
 ];

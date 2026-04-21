@@ -224,7 +224,7 @@ The `addCompensation(callable)` / `compensate()` API is unchanged on the v2 `Wor
 
 #### MCP Integration for AI Clients
 
-This sample app includes an MCP (Model Context Protocol) server that allows AI clients (ChatGPT, Claude, Cursor, etc.) to start and monitor workflows.
+This sample app includes an MCP (Model Context Protocol) server that allows AI clients (ChatGPT, Claude, Cursor, etc.) to start and monitor Durable Workflow v2 workflows. Treat it as the agent-operable companion to Waterline: humans can inspect `/waterline/dashboard`, while AI clients receive structured workflow IDs, run IDs, statuses, recent typed history, and failure summaries.
 
 ##### Endpoint
 
@@ -234,33 +234,49 @@ The MCP server is available at: `/mcp/workflows`
 
 | Tool | Description |
 |------|-------------|
-| `list_workflows` | Discover available workflows and view recent workflow runs |
-| `start_workflow` | Start a workflow asynchronously and get a workflow ID |
-| `get_workflow_result` | Check workflow status and retrieve output when completed |
+| `list_workflows` | Discover configured workflow keys, credential requirements, status values, and recent v2 runs |
+| `start_workflow` | Start a configured v2 workflow asynchronously and get a workflow instance ID plus run ID |
+| `get_workflow_result` | Check workflow status, output, visibility metadata, and latest failure summary |
+| `get_workflow_history` | Inspect a bounded slice of typed v2 history events and latest durable failures |
 
 ##### Configuration
 
 Available workflows are defined in `config/workflow_mcp.php`. By default, the following workflows are exposed:
 
 - `simple` → `App\Workflows\Simple\SimpleWorkflow`
-- `prism` → `App\Workflows\Prism\PrismWorkflow`
+- `elapsed` → `App\Workflows\Elapsed\ElapsedTimeWorkflow`
+- `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 
 To add more workflows, update the config file:
 
 ```php
 'workflows' => [
-    'simple' => App\Workflows\Simple\SimpleWorkflow::class,
-    'prism' => App\Workflows\Prism\PrismWorkflow::class,
-    'my_workflow' => App\Workflows\MyWorkflow::class,
+    'simple' => [
+        'class' => App\Workflows\Simple\SimpleWorkflow::class,
+        'description' => 'Small deterministic workflow.',
+        'requires' => [],
+        'arguments' => [],
+    ],
+    'my_workflow' => [
+        'class' => App\Workflows\MyWorkflow::class,
+        'description' => 'What an agent should know before starting it.',
+        'requires' => ['EXTERNAL_API_KEY'],
+        'arguments' => [
+            ['name' => 'customer_id', 'type' => 'string'],
+        ],
+    ],
 ],
 ```
+
+Class-string mappings are still accepted for small local experiments, but the array form gives agents safer discovery metadata.
 
 ##### Example Usage
 
 An AI client would typically:
 
 1. Call `list_workflows` to see available workflows
-2. Call `start_workflow` with `{"workflow": "simple"}` 
-3. Receive a `workflow_id` in the response
-4. Poll `get_workflow_result` with the `workflow_id` until status is `WorkflowCompletedStatus`
+2. Call `start_workflow` with `{"workflow": "simple", "business_key": "demo-001"}`
+3. Receive `workflow_id` and `run_id` in the response
+4. Poll `get_workflow_result` with the `workflow_id` until status is `completed`
 5. Read the `output` field for the workflow result
+6. If status is `failed` or `waiting` longer than expected, call `get_workflow_history` with the `run_id`
