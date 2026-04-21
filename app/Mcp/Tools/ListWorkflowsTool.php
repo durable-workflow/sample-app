@@ -49,11 +49,19 @@ class ListWorkflowsTool extends Tool
                 'key' => $key,
                 'class' => $this->workflowClass($definition),
                 'description' => is_array($definition) ? ($definition['description'] ?? null) : null,
+                'pattern' => is_array($definition) ? ($definition['pattern'] ?? null) : null,
+                'command' => is_array($definition) ? ($definition['command'] ?? null) : null,
                 'requires' => is_array($definition) && is_array($definition['requires'] ?? null)
                     ? array_values($definition['requires'])
                     : [],
                 'arguments' => is_array($definition) && is_array($definition['arguments'] ?? null)
                     ? $definition['arguments']
+                    : [],
+                'signals' => is_array($definition) && is_array($definition['signals'] ?? null)
+                    ? $definition['signals']
+                    : [],
+                'updates' => is_array($definition) && is_array($definition['updates'] ?? null)
+                    ? $definition['updates']
                     : [],
             ];
         }

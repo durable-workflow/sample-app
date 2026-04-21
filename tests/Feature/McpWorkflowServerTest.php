@@ -10,8 +10,13 @@ use App\Mcp\Tools\GetWorkflowResultTool;
 use App\Mcp\Tools\ListWorkflowsTool;
 use App\Mcp\Tools\StartWorkflowTool;
 use App\Models\User;
+use App\Workflows\Ai\AiWorkflow;
+use App\Workflows\Elapsed\ElapsedTimeWorkflow;
+use App\Workflows\Microservice\MicroserviceWorkflow;
+use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
+use App\Workflows\Webhooks\WebhookWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Tests\TestCase;
@@ -39,13 +44,29 @@ class McpWorkflowServerTest extends TestCase
                     ->where('workflow_id_kind', 'workflow_instance_id')
                     ->where('run_id_kind', 'workflow_run_id')
                     ->has('status_values')
-                    ->has('available_workflows', 3)
+                    ->has('available_workflows', 7)
                     ->where('available_workflows.0.key', 'simple')
                     ->where('available_workflows.0.class', SimpleWorkflow::class)
+                    ->where('available_workflows.0.pattern', 'deterministic activity chain')
+                    ->where('available_workflows.0.command', 'php artisan app:workflow')
                     ->where('available_workflows.0.requires', [])
-                    ->where('available_workflows.2.key', 'prism')
-                    ->where('available_workflows.2.class', PrismWorkflow::class)
-                    ->where('available_workflows.2.requires.0', 'OPENAI_API_KEY')
+                    ->where('available_workflows.1.key', 'elapsed')
+                    ->where('available_workflows.1.class', ElapsedTimeWorkflow::class)
+                    ->where('available_workflows.2.key', 'microservice')
+                    ->where('available_workflows.2.class', MicroserviceWorkflow::class)
+                    ->where('available_workflows.3.key', 'playwright')
+                    ->where('available_workflows.3.class', CheckConsoleErrorsWorkflow::class)
+                    ->where('available_workflows.3.arguments.0.name', 'url')
+                    ->where('available_workflows.4.key', 'webhook')
+                    ->where('available_workflows.4.class', WebhookWorkflow::class)
+                    ->where('available_workflows.4.signals.0.name', 'ready')
+                    ->where('available_workflows.5.key', 'prism')
+                    ->where('available_workflows.5.class', PrismWorkflow::class)
+                    ->where('available_workflows.5.requires.0', 'OPENAI_API_KEY')
+                    ->where('available_workflows.6.key', 'ai')
+                    ->where('available_workflows.6.class', AiWorkflow::class)
+                    ->where('available_workflows.6.signals.0.name', 'send')
+                    ->where('available_workflows.6.updates.0.name', 'receive')
                     ->etc();
             });
     }

@@ -48,7 +48,9 @@ class StartWorkflowTool extends Tool
         ]);
 
         $workflowKey = $data['workflow'];
-        $args = $this->normalizeArguments(Arr::get($data, 'arguments', Arr::get($data, 'args', [])));
+        $args = Arr::has($data, 'arguments') || Arr::has($data, 'args')
+            ? $this->normalizeArguments(Arr::get($data, 'arguments', Arr::get($data, 'args', [])))
+            : $this->defaultArguments($workflowKey);
         $instanceId = $data['instance_id'] ?? null;
         $businessKey = $data['business_key'] ?? ($data['external_id'] ?? null);
 
@@ -115,7 +117,7 @@ class StartWorkflowTool extends Tool
     protected function resolveWorkflowClass(string $key): ?string
     {
         // First check the config mapping
-        $mapped = config("workflow_mcp.workflows.{$key}");
+        $mapped = $this->workflowDefinition($key);
         if (is_string($mapped)) {
             return $mapped;
         }
@@ -132,6 +134,11 @@ class StartWorkflowTool extends Tool
         return null;
     }
 
+    private function workflowDefinition(string $key): mixed
+    {
+        return config("workflow_mcp.workflows.{$key}");
+    }
+
     /**
      * @return array<int, mixed>
      */
@@ -144,6 +151,24 @@ class StartWorkflowTool extends Tool
         return array_is_list($arguments)
             ? $arguments
             : array_values($arguments);
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function defaultArguments(string $workflowKey): array
+    {
+        $definition = $this->workflowDefinition($workflowKey);
+
+        if (! is_array($definition) || ! is_array($definition['arguments'] ?? null)) {
+            return [];
+        }
+
+        return collect($definition['arguments'])
+            ->filter(static fn (mixed $argument): bool => is_array($argument) && array_key_exists('default', $argument))
+            ->map(static fn (array $argument): mixed => $argument['default'])
+            ->values()
+            ->all();
     }
 
     /**

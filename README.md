@@ -99,7 +99,19 @@ That's it! You can now create and test workflows.
 
 ----
 
-#### More Workflows to Explore
+#### Sample Index
+
+Use this index when you want a specific Durable Workflow pattern instead of another happy-path snippet.
+
+| Goal | Workflow | Command | MCP key |
+|------|----------|---------|---------|
+| Learn the smallest v2 workflow/activity shape | `App\Workflows\Simple\SimpleWorkflow` | `php artisan app:workflow` | `simple` |
+| Measure durable elapsed time without replay drift | `App\Workflows\Elapsed\ElapsedTimeWorkflow` | `php artisan app:elapsed` | `elapsed` |
+| Coordinate work across Laravel app boundaries | `App\Workflows\Microservice\MicroserviceWorkflow` | `php artisan app:microservice` | `microservice` |
+| Run browser automation and collect generated artifacts | `App\Workflows\Playwright\CheckConsoleErrorsWorkflow` | `php artisan app:playwright` | `playwright` |
+| Start from an external webhook and wait for a signal | `App\Workflows\Webhooks\WebhookWorkflow` | `php artisan app:webhook` | `webhook` |
+| Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
+| Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 
 In addition to the basic example workflow, you can try these other workflows included in this sample app:
 
@@ -280,11 +292,15 @@ The MCP server is available at: `/mcp/workflows`
 
 ##### Configuration
 
-Available workflows are defined in `config/workflow_mcp.php`. By default, the following workflows are exposed:
+Available workflows are defined in `config/workflow_mcp.php`. By default, every workflow in the sample index is exposed:
 
 - `simple` → `App\Workflows\Simple\SimpleWorkflow`
 - `elapsed` → `App\Workflows\Elapsed\ElapsedTimeWorkflow`
+- `microservice` → `App\Workflows\Microservice\MicroserviceWorkflow`
+- `playwright` → `App\Workflows\Playwright\CheckConsoleErrorsWorkflow` (requires local Playwright/Node/FFmpeg setup)
+- `webhook` → `App\Workflows\Webhooks\WebhookWorkflow` (waits for the `ready` signal)
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
+- `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 
 To add more workflows, update the config file:
 
@@ -293,6 +309,8 @@ To add more workflows, update the config file:
     'simple' => [
         'class' => App\Workflows\Simple\SimpleWorkflow::class,
         'description' => 'Small deterministic workflow.',
+        'pattern' => 'deterministic activity chain',
+        'command' => 'php artisan app:workflow',
         'requires' => [],
         'arguments' => [],
     ],
