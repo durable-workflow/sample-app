@@ -152,7 +152,7 @@ Key differences:
 - **Base class:** `extends Workflow\V2\Workflow` (not `Workflow\Workflow`).
 - **Helper imports:** `use function Workflow\V2\{activity, sideEffect, await, timer, …}` — every helper has a `Workflow\V2\` namespaced equivalent.
 - **No `yield`:** `activity(...)` is straight-line and returns the result directly. The Fiber-based runtime suspends transparently.
-- **Entry method:** `handle()` is canonical (`execute()` is also accepted for transitional code).
+- **Entry method:** define `handle(...)`; rename v1 workflow `execute(...)` methods during the port.
 - **`await`:** A single `await($condition, $timeout, $key)` replaces both `await()` and `awaitWithTimeout()`. Returns `true` if the condition was satisfied, `false` if the timeout fired.
 
 ##### Activities
@@ -172,7 +172,7 @@ Key differences:
 ```
 
 - **Base class:** `extends Workflow\V2\Activity`.
-- **Method name:** `handle()` is canonical (`execute()` is still accepted).
+- **Method name:** define `handle(...)`; rename v1 activity `execute(...)` methods during the port.
 - **Type hints:** Strongly recommended — argument and return types are part of the durable activity contract.
 
 ##### Signals & Updates
