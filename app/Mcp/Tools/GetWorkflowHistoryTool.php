@@ -165,7 +165,7 @@ class GetWorkflowHistoryTool extends Tool
         ];
 
         if ($includePayload) {
-            $preview = substr($encodedPayload, 0, self::PAYLOAD_PREVIEW_BYTES);
+            $preview = $this->utf8Preview($encodedPayload, self::PAYLOAD_PREVIEW_BYTES);
 
             $summary['payload_preview'] = [
                 'encoding' => 'json',
@@ -184,13 +184,36 @@ class GetWorkflowHistoryTool extends Tool
      */
     private function encodePayload(array $payload): string
     {
-        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
 
         if (is_string($encoded)) {
             return $encoded;
         }
 
         return '{}';
+    }
+
+    private function utf8Preview(string $value, int $limitBytes): string
+    {
+        if (strlen($value) <= $limitBytes) {
+            return $value;
+        }
+
+        $preview = substr($value, 0, $limitBytes);
+
+        if (preg_match('//u', $preview) === 1) {
+            return $preview;
+        }
+
+        for ($trimBytes = 1; $trimBytes <= 4; $trimBytes++) {
+            $candidate = substr($preview, 0, $limitBytes - $trimBytes);
+
+            if (preg_match('//u', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        return '';
     }
 
     /**

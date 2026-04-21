@@ -163,4 +163,52 @@ class McpWorkflowServerTest extends TestCase
                     ->etc();
             });
     }
+
+    public function test_workflow_history_payload_previews_do_not_split_multibyte_utf8(): void
+    {
+        config(['queue.default' => 'database']);
+
+        $instanceId = 'mcp-multibyte-payload-test';
+
+        WorkflowServer::tool(StartWorkflowTool::class, [
+            'workflow' => 'simple',
+            'instance_id' => $instanceId,
+        ])->assertOk();
+
+        $run = WorkflowRun::query()
+            ->where('workflow_instance_id', $instanceId)
+            ->firstOrFail();
+
+        $run->historyEvents()
+            ->where('sequence', 2)
+            ->firstOrFail()
+            ->forceFill([
+                'payload' => [
+                    'large' => str_repeat('a', 4085).'💡'.str_repeat('z', 100),
+                ],
+            ])
+            ->save();
+
+        WorkflowServer::tool(GetWorkflowHistoryTool::class, [
+            'workflow_id' => $instanceId,
+            'include_payloads' => true,
+            'limit' => 10,
+        ])
+            ->assertOk()
+            ->assertStructuredContent(function (AssertableJson $json): void {
+                $json
+                    ->where('found', true)
+                    ->where('payloads_included', true)
+                    ->where('events.1.payload_preview.encoding', 'json')
+                    ->where('events.1.payload_preview.truncated', true)
+                    ->where('events.1.payload_preview.preview_bytes', fn (int $bytes): bool => $bytes <= 4096)
+                    ->where('events.1.payload_preview.preview', function (string $preview): bool {
+                        return strlen($preview) <= 4096
+                            && preg_match('//u', $preview) === 1
+                            && str_ends_with($preview, 'a');
+                    })
+                    ->missing('events.1.payload')
+                    ->etc();
+            });
+    }
 }
