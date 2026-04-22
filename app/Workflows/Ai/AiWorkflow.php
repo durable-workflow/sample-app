@@ -6,20 +6,12 @@ namespace App\Workflows\Ai;
 
 use App\Models\AiWorkflowMessage;
 use Exception;
-use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Messages\AssistantMessage;
 use Laravel\Ai\Messages\UserMessage;
 use RuntimeException;
 use Throwable;
 use Workflow\UpdateMethod;
 use Workflow\V2\Attributes\Signal;
-use Workflow\V2\Enums\MessageChannel;
-use Workflow\V2\Enums\MessageConsumeState;
-use Workflow\V2\Enums\MessageDirection;
-use Workflow\V2\Models\WorkflowInstance;
-use Workflow\V2\Models\WorkflowMessage;
-use Workflow\V2\Support\MessageService;
-use Workflow\V2\Support\MessageStreamCursor;
 use Workflow\V2\Workflow;
 
 use function Workflow\V2\activity;
@@ -41,10 +33,7 @@ class AiWorkflow extends Workflow
     #[UpdateMethod]
     public function receive(): ?string
     {
-        $messageService = app(MessageService::class);
-        $streamMessage = $messageService
-            ->receiveMessages($this->run, self::ASSISTANT_STREAM, 1)
-            ->first();
+        $streamMessage = $this->inbox(self::ASSISTANT_STREAM)->receiveOne();
 
         if ($streamMessage === null) {
             return null;
@@ -62,8 +51,6 @@ class AiWorkflow extends Workflow
         if ($message === null) {
             throw new RuntimeException("Assistant message payload [{$reference}] was not found.");
         }
-
-        $messageService->consumeMessage($this->run, $streamMessage, (int) $streamMessage->sequence);
 
         return $message->content;
     }
@@ -185,31 +172,12 @@ class AiWorkflow extends Workflow
             ],
         );
 
-        DB::transaction(function () use ($reference): void {
-            $instance = WorkflowInstance::query()
-                ->where('id', $this->workflowId())
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $sequence = MessageStreamCursor::reserveNextSequence($instance);
-
-            WorkflowMessage::query()->create([
-                'workflow_instance_id' => $this->workflowId(),
-                'workflow_run_id' => $this->runId(),
-                'direction' => MessageDirection::Inbound,
-                'channel' => MessageChannel::WorkflowMessage->value,
-                'stream_key' => self::ASSISTANT_STREAM,
-                'sequence' => $sequence,
-                'source_workflow_instance_id' => $this->workflowId(),
-                'source_workflow_run_id' => $this->runId(),
-                'target_workflow_instance_id' => $this->workflowId(),
-                'target_workflow_run_id' => $this->runId(),
-                'payload_reference' => $reference,
-                'correlation_id' => $reference,
-                'idempotency_key' => $reference,
-                'metadata' => ['role' => 'assistant'],
-                'consume_state' => MessageConsumeState::Pending,
-            ]);
-        });
+        $this->outbox(self::ASSISTANT_STREAM)->sendReference(
+            targetInstanceId: $this->workflowId(),
+            payloadReference: $reference,
+            correlationId: $reference,
+            idempotencyKey: $reference,
+            metadata: ['role' => 'assistant'],
+        );
     }
 }

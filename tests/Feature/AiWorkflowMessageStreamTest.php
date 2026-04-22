@@ -34,7 +34,7 @@ class AiWorkflowMessageStreamTest extends TestCase
             'content' => 'I can help with that itinerary.',
         ]);
 
-        $this->assertSame(1, $run->refresh()->message_cursor_position);
+        $this->assertSame(2, $run->refresh()->message_cursor_position);
         $this->assertSame(
             MessageConsumeState::Consumed,
             WorkflowMessage::query()
@@ -43,6 +43,16 @@ class AiWorkflowMessageStreamTest extends TestCase
                 ->where('stream_key', 'ai.assistant')
                 ->firstOrFail()
                 ->consume_state,
+        );
+
+        $this->assertSame(
+            1,
+            WorkflowMessage::query()
+                ->where('workflow_run_id', $run->id)
+                ->where('direction', MessageDirection::Outbound)
+                ->where('stream_key', 'ai.assistant')
+                ->where('payload_reference', 'ai:ai-stream-test:1')
+                ->count(),
         );
     }
 
@@ -57,7 +67,7 @@ class AiWorkflowMessageStreamTest extends TestCase
         $this->assertSame('Second response.', $workflow->receive());
         $this->assertNull($workflow->receive());
 
-        $this->assertSame(2, $run->refresh()->message_cursor_position);
+        $this->assertSame(4, $run->refresh()->message_cursor_position);
         $this->assertSame(
             2,
             WorkflowMessage::query()
@@ -67,6 +77,19 @@ class AiWorkflowMessageStreamTest extends TestCase
                 ->where('consume_state', MessageConsumeState::Consumed)
                 ->count(),
         );
+    }
+
+    public function test_ai_workflow_uses_the_first_class_message_stream_facade(): void
+    {
+        $source = file_get_contents(app_path('Workflows/Ai/AiWorkflow.php'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('->inbox(self::ASSISTANT_STREAM)->receiveOne()', $source);
+        $this->assertStringContainsString('->outbox(self::ASSISTANT_STREAM)->sendReference(', $source);
+        $this->assertStringNotContainsString('Workflow\\V2\\Support\\MessageService', $source);
+        $this->assertStringNotContainsString('Workflow\\V2\\Models\\WorkflowMessage', $source);
+        $this->assertStringNotContainsString('Workflow\\V2\\Support\\MessageStreamCursor', $source);
+        $this->assertStringNotContainsString('WorkflowMessage::query()->create', $source);
     }
 
     private function publishAssistantMessage(AiWorkflow $workflow, string $content): void
