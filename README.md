@@ -45,7 +45,7 @@ php artisan app:workflow
 ```
 
 ### Step 8
-You can view the waterline dashboard at https://didactic-system-7v59r6xpjj3w7v-18080.app.github.dev/waterline/dashboard.
+You can view the waterline dashboard at https://[your-codespace-name]-18080.preview.app.github.dev/waterline/dashboard.
 
 <img src="https://user-images.githubusercontent.com/1130888/233669600-3340ada6-5f73-4602-8d82-a81a9d43f883.png" alt="image" width="600">
 
