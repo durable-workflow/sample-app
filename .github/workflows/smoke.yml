@@ -1,0 +1,34 @@
+name: smoke
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  compose:
+    name: docker compose sample workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}
+      APP_PORT: 18080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start stack
+        run: docker compose up -d --build --wait app worker
+
+      - name: Run deterministic workflow samples
+        run: scripts/compose-smoke.sh
+
+      - name: Dump compose logs
+        if: failure()
+        run: docker compose logs --no-color --timestamps
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v --remove-orphans
