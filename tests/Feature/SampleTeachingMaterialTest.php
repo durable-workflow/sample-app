@@ -14,9 +14,10 @@ class SampleTeachingMaterialTest extends TestCase
 
         $this->assertIsString($readme);
         $this->assertStringContainsString('#### Replay-Safety Teaching Notes', $readme);
-        $this->assertStringContainsString('$startedAt = sideEffect(fn () => now());', $readme);
+        $this->assertStringContainsString('$startedAt = sideEffect(fn () => now()->getTimestamp());', $readme);
         $this->assertStringContainsString('$startedAt = now();', $readme);
         $this->assertStringContainsString('replay can run the method again later', $readme);
+        $this->assertStringContainsString('Prefer scalar values inside `sideEffect()` callbacks', $readme);
     }
 
     public function test_workflow_entry_points_include_teaching_preambles(): void
