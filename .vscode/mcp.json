@@ -1,6 +1,6 @@
 {
   "servers": {
-    "laravel-workflow": {
+    "Durable Workflow": {
       "type": "http",
       "url": "http://localhost/mcp/workflows"
     }

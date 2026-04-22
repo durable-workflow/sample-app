@@ -17,7 +17,7 @@ class WorkflowServer extends Server
     /**
      * The MCP server's name.
      */
-    protected string $name = 'Laravel Workflow Server';
+    protected string $name = 'Durable Workflow';
 
     /**
      * The MCP server's version.

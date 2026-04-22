@@ -186,6 +186,7 @@ class StartWorkflowTool extends Tool
                 ->description("The workflow key or class to start. Available workflows: {$workflowList}"),
 
             'arguments' => $schema->array()
+                ->items($schema->string())
                 ->description('Ordered arguments for the workflow handle() method. Prefer this over the legacy args object.'),
 
             'args' => $schema->object()

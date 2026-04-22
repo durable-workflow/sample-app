@@ -26,10 +26,10 @@ php artisan app:init
 ```
 
 ### Step 5
-Start the queue worker. This will enable the processing of workflows and activities.
+Start the server. This will enable the processing of workflows and activities.
 
 ```bash
-php artisan queue:work redis --queue=default,activity
+composer run dev
 ```
 
 ### Step 6
@@ -45,48 +45,9 @@ php artisan app:workflow
 ```
 
 ### Step 8
-You can view the waterline dashboard at https://[your-codespace-name]-18080.preview.app.github.dev/waterline/dashboard.
+You can view the waterline dashboard at https://didactic-system-7v59r6xpjj3w7v-18080.app.github.dev/waterline/dashboard.
 
 <img src="https://user-images.githubusercontent.com/1130888/233669600-3340ada6-5f73-4602-8d82-a81a9d43f883.png" alt="image" width="600">
-
-### Step 8a
-Check the two observability surfaces separately:
-
-| Surface | Use it for | Where to look |
-|---------|------------|---------------|
-| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | `/waterline/dashboard`, selected run detail, and `php artisan workflow:v2:history-export` |
-| Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for this PHP sample app; SDK metrics endpoints for external workers |
-
-For this Laravel-only sample, Waterline proves that the durable run exists and shows what the engine committed. If you add a Python or other external worker, enable that worker's SDK metrics as a separate endpoint; those metrics will not appear inside Waterline unless you scrape them with your metrics stack.
-
-Minimal Python worker Prometheus wiring looks like this:
-
-```bash
-pip install 'durable-workflow[prometheus]'
-```
-
-```python
-from prometheus_client import start_http_server
-
-from durable_workflow import Client, PrometheusMetrics, Worker
-
-metrics = PrometheusMetrics()
-start_http_server(9102)
-
-async with Client("http://localhost:8080", token="secret", metrics=metrics) as client:
-    worker = Worker(
-        client,
-        task_queue="default",
-        workflows=[GreeterWorkflow],
-        activities=[greet],
-        metrics=metrics,
-    )
-    await worker.run()
-```
-
-Replace `GreeterWorkflow` and `greet` with the workflow and activity handlers registered by that worker.
-
-Scrape `:9102/metrics` for `durable_workflow_worker_*` and `durable_workflow_client_*` series. Use Waterline for the matching workflow history and status.
 
 ### Step 9
 Run the workflow and activity tests.
@@ -279,9 +240,24 @@ The `addCompensation(callable)` / `compensate()` API is unchanged on the v2 `Wor
 
 This sample app includes an MCP (Model Context Protocol) server that allows AI clients (ChatGPT, Claude, Cursor, etc.) to start and monitor Durable Workflow v2 workflows. Treat it as the agent-operable companion to Waterline: humans can inspect `/waterline/dashboard`, while AI clients receive structured workflow IDs, run IDs, statuses, recent typed history, and failure summaries.
 
+The MCP server is named `Durable Workflow`.
+
+It is not a separate daemon in this repo. The server is exposed by the Laravel application itself, so once the app is running, the MCP route is live as part of the normal HTTP server.
+
 ##### Endpoint
 
 The MCP server is available at: `/mcp/workflows`
+
+##### Running It
+
+To make the MCP server available locally:
+
+1. Run `php artisan app:init`
+2. Start the queue worker with `php artisan queue:work redis --queue=default,activity`
+3. Start the Laravel app with `php artisan serve`
+4. Connect your MCP client to `http://localhost:8000/mcp/workflows`
+
+If you prefer Docker, run `docker compose up --build` and then connect to `http://localhost:8000/mcp/workflows` once the containers are healthy.
 
 ##### Available Tools
 
