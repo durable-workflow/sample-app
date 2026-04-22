@@ -258,9 +258,11 @@ Invocation from outside the workflow uses explicit names:
 
 The v2 router takes an explicit alias → workflow class map (no auto-discovery). The `#[Webhook]` attribute on the workflow class continues to mark which signal/update methods are exposed via webhook URLs.
 
-##### Inbox / Outbox
+##### Message Streams
 
-`Workflow\Inbox` and `Workflow\Outbox` are plain helper classes and work the same in v2 — see `app/Workflows/Ai/AiWorkflow.php` for a reference. Because the v2 base class has a `final` constructor, declare them as plain typed properties and lazy-initialize them inside the entry method (and in any signal handler that runs before `handle()`).
+Repeated human-input workflows use pull-style signals for user input and a durable message stream for replies. Signals tell the workflow that new input arrived; the stream gives each reply an ordered, consumable cursor that survives retries and continue-as-new.
+
+`app/Workflows/Ai/AiWorkflow.php` is the reference pattern. It sends assistant replies through `Workflow\V2\Support\MessageService`, stores the reply body in the sample app's `ai_workflow_messages` table, and exposes a `receive` update that consumes one reply from the `ai.assistant` stream. The `workflow_messages` row owns stream ordering and the app table owns payload bytes.
 
 ##### Saga compensation
 

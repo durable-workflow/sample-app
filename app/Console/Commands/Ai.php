@@ -47,7 +47,7 @@ class Ai extends Command
     }
 
     /**
-     * Poll the workflow outbox until one message arrives, then display it.
+     * Poll the workflow's assistant message stream until one message arrives, then display it.
      *
      * Uses attemptUpdate() so that v2 protocol-level rejections like
      * earlier_signal_pending (the signal we just sent has not been applied to
@@ -71,12 +71,12 @@ class Ai extends Command
                     return ! $workflow->failed() && ! $workflow->completed();
                 }
             } elseif ($result->failed()) {
-                $this->error('Update failed: ' . ($result->failureMessage() ?? 'unknown'));
+                $this->error('Update failed: '.($result->failureMessage() ?? 'unknown'));
 
                 return false;
             }
-            // rejected (e.g. earlier_signal_pending) or accepted-but-not-yet-
-            // completed: fall through to sleep and retry.
+            // Rejected (for example earlier_signal_pending) or accepted but
+            // not completed yet: fall through to sleep and retry.
 
             $workflow->refresh();
             if ($workflow->failed() || $workflow->completed()) {

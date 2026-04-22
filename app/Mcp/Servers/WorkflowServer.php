@@ -47,6 +47,10 @@ class WorkflowServer extends Server
         ### get_workflow_history
         Inspect a bounded slice of typed v2 history and latest failure facts for debugging.
 
+        The `ai` workflow demonstrates the v2 repeated-human-input pattern:
+        callers signal user input with `send`, then poll the `receive` update
+        to consume assistant replies from a durable message stream.
+
         ## Typical Usage Pattern
 
         1. Call `list_workflows` to see what workflows are available.

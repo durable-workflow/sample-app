@@ -83,8 +83,8 @@ return [
         ],
         'ai' => [
             'class' => AiWorkflow::class,
-            'description' => 'Interactive travel-agent workflow with pull-style signals, updates, outbox, and compensation.',
-            'pattern' => 'signal-driven AI agent with saga compensation',
+            'description' => 'Interactive travel-agent workflow with pull-style signals, durable assistant message streams, and compensation.',
+            'pattern' => 'signal-driven AI agent with durable inbox/outbox stream',
             'command' => 'php artisan app:ai',
             'requires' => ['OPENAI_API_KEY'],
             'arguments' => [
@@ -94,7 +94,7 @@ return [
                 ['name' => 'send', 'arguments' => [['name' => 'message', 'type' => 'string']]],
             ],
             'updates' => [
-                ['name' => 'receive', 'description' => 'Reads the next unsent assistant message from the workflow outbox.'],
+                ['name' => 'receive', 'description' => 'Consumes the next assistant reply from the durable ai.assistant message stream.'],
             ],
         ],
     ],
