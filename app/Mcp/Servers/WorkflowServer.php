@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\DiagnoseWorkflowTool;
 use App\Mcp\Tools\GetWorkflowHistoryTool;
 use App\Mcp\Tools\GetWorkflowResultTool;
 use App\Mcp\Tools\ListWorkflowsTool;
@@ -47,6 +48,9 @@ class WorkflowServer extends Server
         ### get_workflow_history
         Inspect a bounded slice of typed v2 history and latest failure facts for debugging.
 
+        ### diagnose_workflow
+        Summarize workflow health facts and safe next actions for AI operators.
+
         The `ai` workflow demonstrates the v2 repeated-human-input pattern:
         callers signal user input with `send`, then poll the `receive` update
         to consume assistant replies from a durable message stream.
@@ -58,7 +62,7 @@ class WorkflowServer extends Server
         3. Store the returned `workflow_id`.
         4. Periodically call `get_workflow_result` with the `workflow_id` to check progress.
         5. When status becomes `completed`, read the `output` field for results.
-        6. If status becomes `failed`, check the `error` field and call `get_workflow_history`.
+        6. If status becomes `failed` or waits longer than expected, call `diagnose_workflow`, then inspect history.
 
         ## Status Values
 
@@ -81,6 +85,7 @@ class WorkflowServer extends Server
         StartWorkflowTool::class,
         GetWorkflowResultTool::class,
         GetWorkflowHistoryTool::class,
+        DiagnoseWorkflowTool::class,
     ];
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Mcp\Servers\WorkflowServer;
+use App\Mcp\Tools\DiagnoseWorkflowTool;
 use App\Mcp\Tools\GetWorkflowHistoryTool;
 use App\Mcp\Tools\GetWorkflowResultTool;
 use App\Mcp\Tools\ListWorkflowsTool;
@@ -19,8 +20,11 @@ use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;
+use RuntimeException;
 use Tests\TestCase;
+use Workflow\V2\Models\WorkflowFailure;
 use Workflow\V2\Models\WorkflowRun;
+use Workflow\V2\Models\WorkflowRunSummary;
 
 class McpWorkflowServerTest extends TestCase
 {
@@ -32,6 +36,7 @@ class McpWorkflowServerTest extends TestCase
         $this->assertSame('start_workflow', app(StartWorkflowTool::class)->name());
         $this->assertSame('get_workflow_result', app(GetWorkflowResultTool::class)->name());
         $this->assertSame('get_workflow_history', app(GetWorkflowHistoryTool::class)->name());
+        $this->assertSame('diagnose_workflow', app(DiagnoseWorkflowTool::class)->name());
     }
 
     public function test_list_workflows_returns_v2_agent_contract_metadata(): void
@@ -229,6 +234,126 @@ class McpWorkflowServerTest extends TestCase
                             && str_ends_with($preview, 'a');
                     })
                     ->missing('events.1.payload')
+                    ->etc();
+            });
+    }
+
+    public function test_agent_can_diagnose_waiting_workflow_with_safe_next_actions(): void
+    {
+        config(['queue.default' => 'database']);
+
+        $instanceId = 'mcp-diagnose-waiting-test';
+
+        WorkflowServer::tool(StartWorkflowTool::class, [
+            'workflow' => 'simple',
+            'instance_id' => $instanceId,
+            'business_key' => 'mcp-diagnose',
+        ])->assertOk();
+
+        $run = WorkflowRun::query()
+            ->where('workflow_instance_id', $instanceId)
+            ->firstOrFail();
+
+        $run->forceFill([
+            'status' => 'waiting',
+            'last_progress_at' => now()->subMinutes(4),
+        ])->save();
+
+        WorkflowRunSummary::query()
+            ->whereKey($run->id)
+            ->update([
+                'status' => 'waiting',
+                'wait_kind' => 'signal',
+                'liveness_state' => 'waiting_for_signal',
+                'wait_started_at' => now()->subMinutes(4),
+                'repair_attention' => false,
+                'task_problem' => false,
+            ]);
+
+        WorkflowServer::tool(DiagnoseWorkflowTool::class, [
+            'workflow_id' => $instanceId,
+            'history_limit' => 2,
+        ])
+            ->assertOk()
+            ->assertStructuredContent(function (AssertableJson $json) use ($instanceId): void {
+                $json
+                    ->where('found', true)
+                    ->where('workflow_id', $instanceId)
+                    ->where('diagnosis', 'waiting_for_signal')
+                    ->where('facts.status', 'waiting')
+                    ->where('facts.wait_kind', 'signal')
+                    ->where('facts.liveness_state', 'waiting_for_signal')
+                    ->where('facts.business_key', 'mcp-diagnose')
+                    ->where('latest_failure', null)
+                    ->where('next_actions.0.code', 'inspect_wait_signal')
+                    ->has('recent_history', 2)
+                    ->etc();
+            });
+    }
+
+    public function test_agent_diagnosis_surfaces_latest_failure_and_repair_attention(): void
+    {
+        config(['queue.default' => 'database']);
+
+        $instanceId = 'mcp-diagnose-failed-test';
+
+        WorkflowServer::tool(StartWorkflowTool::class, [
+            'workflow' => 'simple',
+            'instance_id' => $instanceId,
+        ])->assertOk();
+
+        $run = WorkflowRun::query()
+            ->where('workflow_instance_id', $instanceId)
+            ->firstOrFail();
+
+        $run->forceFill([
+            'status' => 'failed',
+            'closed_at' => now(),
+            'last_progress_at' => now()->subMinute(),
+        ])->save();
+
+        WorkflowRunSummary::query()
+            ->whereKey($run->id)
+            ->update([
+                'status' => 'failed',
+                'repair_attention' => true,
+                'task_problem' => true,
+                'repair_blocked_reason' => 'non_retryable_failure',
+                'liveness_state' => 'repair_needed',
+            ]);
+
+        WorkflowFailure::query()->create([
+            'workflow_run_id' => $run->id,
+            'source_kind' => 'activity',
+            'source_id' => 'activity-1',
+            'propagation_kind' => 'leaf',
+            'failure_category' => 'application',
+            'exception_class' => RuntimeException::class,
+            'message' => 'Activity failed during sample diagnosis.',
+            'file' => __FILE__,
+            'line' => __LINE__,
+            'non_retryable' => true,
+            'handled' => false,
+        ]);
+
+        WorkflowServer::tool(DiagnoseWorkflowTool::class, [
+            'workflow_id' => $instanceId,
+        ])
+            ->assertOk()
+            ->assertStructuredContent(function (AssertableJson $json): void {
+                $json
+                    ->where('found', true)
+                    ->where('diagnosis', 'failed')
+                    ->where('facts.status', 'failed')
+                    ->where('facts.repair_attention', true)
+                    ->where('facts.task_problem', true)
+                    ->where('facts.repair_blocked_reason', 'non_retryable_failure')
+                    ->where('latest_failure.source_kind', 'activity')
+                    ->where('latest_failure.exception_class', RuntimeException::class)
+                    ->where('latest_failure.non_retryable', true)
+                    ->where('next_actions.0.code', 'inspect_history')
+                    ->where('next_actions.1.code', 'open_waterline')
+                    ->where('next_actions.2.code', 'inspect_waterline_diagnostics')
                     ->etc();
             });
     }
