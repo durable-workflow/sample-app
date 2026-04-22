@@ -92,6 +92,20 @@ class AiWorkflowMessageStreamTest extends TestCase
         $this->assertStringNotContainsString('WorkflowMessage::query()->create', $source);
     }
 
+    public function test_readme_teaches_the_public_message_stream_authoring_api(): void
+    {
+        $source = file_get_contents(base_path('README.md'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('#### Message Streams', $source);
+        $this->assertStringContainsString('Workflow::inbox()', $source);
+        $this->assertStringContainsString('Workflow::outbox()', $source);
+        $this->assertStringContainsString('Workflow\\V2\\MessageStream', $source);
+        $this->assertStringContainsString("->outbox('ai.assistant')->sendReference(", $source);
+        $this->assertStringContainsString("->inbox('ai.assistant')->receiveOne()", $source);
+        $this->assertStringContainsString('App\\Workflows\\Ai\\AiWorkflow', $source);
+    }
+
     private function publishAssistantMessage(AiWorkflow $workflow, string $content): void
     {
         $method = new ReflectionMethod(AiWorkflow::class, 'publishAssistantMessage');

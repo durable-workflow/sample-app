@@ -113,6 +113,30 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 
+#### Message Streams
+
+Use message streams when a workflow needs to publish or consume repeated messages without writing Durable Workflow storage rows directly. The supported v2 authoring API is the first-class message stream facade exposed by `Workflow::inbox()`, `Workflow::outbox()`, and `Workflow\V2\MessageStream`.
+
+`App\Workflows\Ai\AiWorkflow` is the reference sample. It stores large assistant payloads in the app-owned `ai_workflow_messages` table, then publishes only a durable reference on the `ai.assistant` stream:
+
+```php
+$this->outbox('ai.assistant')->sendReference(
+    targetInstanceId: $this->workflowId(),
+    payloadReference: $reference,
+    correlationId: $reference,
+    idempotencyKey: $reference,
+    metadata: ['role' => 'assistant'],
+);
+```
+
+The `receive` update consumes the next assistant reply through the matching inbox stream:
+
+```php
+$streamMessage = $this->inbox('ai.assistant')->receiveOne();
+```
+
+That call advances the durable stream cursor, so repeated receives deliver new replies instead of replaying old ones. Keep app tables as payload/reference stores; let Durable Workflow own `workflow_messages` and stream cursor advancement through the facade.
+
 #### Replay-Safety Teaching Notes
 
 Durable Workflow v2 replays workflow code to rebuild local state from committed history. Keep workflow methods deterministic: call activities for side effects, use `sideEffect()` for values such as timestamps or random IDs, and wait for outside input through signals, updates, timers, or message streams.
