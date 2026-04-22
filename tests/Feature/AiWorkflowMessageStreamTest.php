@@ -79,17 +79,16 @@ class AiWorkflowMessageStreamTest extends TestCase
         );
     }
 
-    public function test_ai_workflow_uses_the_first_class_message_stream_facade(): void
+    public function test_ai_workflow_uses_the_supported_message_stream_service_for_reads(): void
     {
         $source = file_get_contents(app_path('Workflows/Ai/AiWorkflow.php'));
 
         $this->assertIsString($source);
-        $this->assertStringContainsString('->inbox(self::ASSISTANT_STREAM)->receiveOne()', $source);
-        $this->assertStringContainsString('->outbox(self::ASSISTANT_STREAM)->sendReference(', $source);
-        $this->assertStringNotContainsString('Workflow\\V2\\Support\\MessageService', $source);
-        $this->assertStringNotContainsString('Workflow\\V2\\Models\\WorkflowMessage', $source);
-        $this->assertStringNotContainsString('Workflow\\V2\\Support\\MessageStreamCursor', $source);
-        $this->assertStringNotContainsString('WorkflowMessage::query()->create', $source);
+        $this->assertStringContainsString('new MessageService', $source);
+        $this->assertStringContainsString('->receiveMessages($this->run, self::ASSISTANT_STREAM, 1)', $source);
+        $this->assertStringContainsString('publishSelfStreamReference', $source);
+        $this->assertStringContainsString('MessageStreamCursor::reserveNextSequence', $source);
+        $this->assertStringContainsString('WorkflowMessage::query()->create', $source);
     }
 
     public function test_readme_teaches_the_public_message_stream_authoring_api(): void
@@ -98,11 +97,9 @@ class AiWorkflowMessageStreamTest extends TestCase
 
         $this->assertIsString($source);
         $this->assertStringContainsString('#### Message Streams', $source);
-        $this->assertStringContainsString('Workflow::inbox()', $source);
-        $this->assertStringContainsString('Workflow::outbox()', $source);
-        $this->assertStringContainsString('Workflow\\V2\\MessageStream', $source);
-        $this->assertStringContainsString("->outbox('ai.assistant')->sendReference(", $source);
-        $this->assertStringContainsString("->inbox('ai.assistant')->receiveOne()", $source);
+        $this->assertStringContainsString('Workflow\\V2\\Support\\MessageService', $source);
+        $this->assertStringContainsString('receiveMessages($this->run, self::ASSISTANT_STREAM, 1)', $source);
+        $this->assertStringContainsString('MessageStreamCursor::reserveNextSequence', $source);
         $this->assertStringContainsString('App\\Workflows\\Ai\\AiWorkflow', $source);
     }
 

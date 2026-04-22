@@ -76,6 +76,11 @@ jobs:
           DB_DATABASE: sample
           DB_USERNAME: laravel
           DB_PASSWORD: password
+          SHARED_DB_HOST: 127.0.0.1
+          SHARED_DB_PORT: 3306
+          SHARED_DB_DATABASE: sample
+          SHARED_DB_USERNAME: laravel
+          SHARED_DB_PASSWORD: password
           REDIS_CLIENT: phpredis
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: 6379
