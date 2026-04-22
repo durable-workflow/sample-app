@@ -35,7 +35,8 @@ if [ -z "$(grep 'APP_KEY=base64:' /app/.env 2>/dev/null)" ]; then
     php artisan key:generate --force 2>/dev/null || true
 fi
 
-php artisan migrate --force 2>/dev/null || true
+# Migrations are intentionally explicit. Running them from every service
+# entrypoint can race on fresh databases and leave partially recorded schema.
 php artisan vendor:publish --tag=waterline-assets --force 2>/dev/null || true
 
 exec "$@"

@@ -196,7 +196,7 @@ To make the MCP server available locally:
 3. Start the Laravel app with `php artisan serve`
 4. Connect your MCP client to `http://localhost:8000/mcp/workflows`
 
-If you prefer Docker, run `docker compose up --build` and then connect to `http://localhost:8000/mcp/workflows` once the containers are healthy.
+If you prefer Docker, run `docker compose up --build`, then run `docker compose exec app php artisan migrate --force` once the containers are healthy. After migrations complete, connect to `http://localhost:8000/mcp/workflows`.
 
 ##### Available Tools
 
