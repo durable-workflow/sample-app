@@ -254,3 +254,6 @@ An AI client would typically:
 4. Poll `get_workflow_result` with the `workflow_id` until status is `completed`
 5. Read the `output` field for the workflow result
 6. If status is `failed` or `waiting` longer than expected, call `get_workflow_history` with the `run_id`
+## Public Boundary Checks
+
+This is a public repository. Do not add private tracker names, workspace-only absolute paths, or loop/lane metadata to files or new commit metadata. Run `scripts/check-public-boundary.sh` before publishing changes; CI runs the same scan on pushes and pull requests.
