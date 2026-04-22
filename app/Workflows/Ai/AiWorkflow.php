@@ -70,6 +70,8 @@ class AiWorkflow extends Workflow
 
     public function handle(?string $injectFailure = null): array
     {
+        // The durable agent pattern combines signals for user input, activities
+        // for LLM/booking work, compensation for rollback, and a stream for replies.
         $messages = [];
 
         try {

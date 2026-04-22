@@ -12,6 +12,8 @@ class CheckConsoleErrorsWorkflow extends Workflow
 {
     public function handle(string $url): array
     {
+        // Browser and FFmpeg work belongs in activities. The workflow only
+        // commits the durable order: inspect the page, then convert the video.
         $result = activity(CheckConsoleErrorsActivity::class, $url);
 
         $mp4 = activity(ConvertVideoActivity::class, $result['video']);

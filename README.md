@@ -113,6 +113,26 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 
+#### Replay-Safety Teaching Notes
+
+Durable Workflow v2 replays workflow code to rebuild local state from committed history. Keep workflow methods deterministic: call activities for side effects, use `sideEffect()` for values such as timestamps or random IDs, and wait for outside input through signals, updates, timers, or message streams.
+
+Do this when a workflow needs the current time:
+
+```php
+use function Workflow\V2\sideEffect;
+
+$startedAt = sideEffect(fn () => now());
+```
+
+Don't do this inside workflow code:
+
+```php
+$startedAt = now();
+```
+
+The direct `now()` call looks harmless, but replay can run the method again later and produce a different value than the one that originally drove branching, timeouts, or output. The `ElapsedTimeWorkflow` sample keeps clock reads behind `sideEffect()`, and the `SimpleWorkflow`, `PrismWorkflow`, and `AiWorkflow` samples keep external work inside activities for the same reason.
+
 In addition to the basic example workflow, you can try these other workflows included in this sample app:
 
 * `php artisan app:elapsed` – Demonstrates how to correctly track start and end times to measure execution duration.
