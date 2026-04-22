@@ -19,8 +19,8 @@ run_sample() {
 
 docker compose ps
 
-printf '\n==> database migrations\n'
-docker compose exec -T app php artisan migrate --force
+printf '\n==> fresh database migrations\n'
+docker compose exec -T app php artisan migrate:fresh --force
 
 run_sample "simple workflow" "app:workflow" "workflow_activity_other"
 run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
