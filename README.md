@@ -115,27 +115,29 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 
 #### Message Streams
 
-Use message streams when a workflow needs to publish or consume repeated messages without writing Durable Workflow storage rows directly. In the current v2 alpha package, the supported API is `Workflow\V2\Support\MessageService`; it owns `workflow_messages` rows and stream cursor advancement for the workflow run.
+Use message streams when a workflow needs to publish or consume repeated messages without writing Durable Workflow storage rows directly. The v2 authoring API is exposed through `Workflow::inbox()`, `Workflow::outbox()`, and `Workflow::messages()`; those facades own `workflow_messages` rows and stream cursor advancement for the workflow run.
 
-`App\Workflows\Ai\AiWorkflow` is the reference sample. It stores large assistant payloads in the app-owned `ai_workflow_messages` table, then publishes only a durable reference on the `ai.assistant` stream. Because this workflow sends replies to its own stream, the sample reserves separate outbound and inbound positions with `MessageStreamCursor::reserveNextSequence` so the package's per-stream uniqueness guard remains valid:
+`App\Workflows\Ai\AiWorkflow` is the reference sample. It stores large assistant payloads in the app-owned `ai_workflow_messages` table, then publishes only a durable reference on the `ai.assistant` stream:
 
 ```php
-$outboundSequence = MessageStreamCursor::reserveNextSequence($targetInstance);
-$this->createStreamMessage(MessageDirection::Outbound, $outboundSequence, $reference, $metadata);
-
-$inboundSequence = MessageStreamCursor::reserveNextSequence($targetInstance->refresh());
-$this->createStreamMessage(MessageDirection::Inbound, $inboundSequence, $reference, $metadata);
+$this->outbox(self::ASSISTANT_STREAM)
+    ->sendReference(
+        $this->workflowId(),
+        $reference,
+        correlationId: $reference,
+        idempotencyKey: $reference,
+        metadata: ['role' => 'assistant'],
+    );
 ```
 
 The `receive` update consumes the next assistant reply through the matching inbox stream:
 
 ```php
-$streamMessage = (new MessageService())
-    ->receiveMessages($this->run, self::ASSISTANT_STREAM, 1)
-    ->first();
+$streamMessage = $this->inbox(self::ASSISTANT_STREAM)
+    ->receiveOne();
 ```
 
-After reading the message, call `consumeMessage()` on the same service. That advances the durable stream cursor, so repeated receives deliver new replies instead of replaying old ones. Keep app tables as payload/reference stores; let Durable Workflow own `workflow_messages` and stream cursor advancement through the service.
+`receiveOne()` consumes the message and advances the durable stream cursor, so repeated receives deliver new replies instead of replaying old ones. Keep app tables as payload/reference stores; let Durable Workflow own `workflow_messages` and stream cursor advancement through the facade.
 
 #### Replay-Safety Teaching Notes
 

@@ -6,20 +6,12 @@ namespace App\Workflows\Ai;
 
 use App\Models\AiWorkflowMessage;
 use Exception;
-use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Messages\AssistantMessage;
 use Laravel\Ai\Messages\UserMessage;
 use RuntimeException;
 use Throwable;
 use Workflow\UpdateMethod;
 use Workflow\V2\Attributes\Signal;
-use Workflow\V2\Enums\MessageChannel;
-use Workflow\V2\Enums\MessageConsumeState;
-use Workflow\V2\Enums\MessageDirection;
-use Workflow\V2\Models\WorkflowInstance;
-use Workflow\V2\Models\WorkflowMessage;
-use Workflow\V2\Support\MessageService;
-use Workflow\V2\Support\MessageStreamCursor;
 use Workflow\V2\Workflow;
 
 use function Workflow\V2\activity;
@@ -41,16 +33,12 @@ class AiWorkflow extends Workflow
     #[UpdateMethod]
     public function receive(): ?string
     {
-        $messageService = new MessageService;
-        $streamMessage = $messageService
-            ->receiveMessages($this->run, self::ASSISTANT_STREAM, 1)
-            ->first();
+        $streamMessage = $this->inbox(self::ASSISTANT_STREAM)
+            ->receiveOne();
 
         if ($streamMessage === null) {
             return null;
         }
-
-        $messageService->consumeMessage($this->run, $streamMessage, (int) $streamMessage->sequence);
 
         $reference = $streamMessage->payload_reference;
 
@@ -185,56 +173,13 @@ class AiWorkflow extends Workflow
             ],
         );
 
-        $this->publishSelfStreamReference($reference, ['role' => 'assistant']);
-    }
-
-    /**
-     * MessageService currently writes outbound and inbound rows with the same
-     * sequence. Self-stream messages need distinct sequence positions because
-     * workflow_messages enforces uniqueness per instance and stream.
-     *
-     * @param  array<string, mixed>  $metadata
-     */
-    private function publishSelfStreamReference(string $reference, array $metadata): void
-    {
-        DB::transaction(function () use ($reference, $metadata): void {
-            $targetInstance = WorkflowInstance::query()
-                ->whereKey($this->workflowId())
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $outboundSequence = MessageStreamCursor::reserveNextSequence($targetInstance);
-            $this->createStreamMessage(MessageDirection::Outbound, $outboundSequence, $reference, $metadata);
-
-            $inboundSequence = MessageStreamCursor::reserveNextSequence($targetInstance->refresh());
-            $this->createStreamMessage(MessageDirection::Inbound, $inboundSequence, $reference, $metadata);
-        });
-    }
-
-    /**
-     * @param  array<string, mixed>  $metadata
-     */
-    private function createStreamMessage(
-        MessageDirection $direction,
-        int $sequence,
-        string $reference,
-        array $metadata,
-    ): void {
-        WorkflowMessage::query()->create([
-            'workflow_instance_id' => $this->workflowId(),
-            'workflow_run_id' => $this->runId(),
-            'direction' => $direction,
-            'channel' => MessageChannel::WorkflowMessage,
-            'stream_key' => self::ASSISTANT_STREAM,
-            'sequence' => $sequence,
-            'source_workflow_instance_id' => $this->workflowId(),
-            'source_workflow_run_id' => $this->runId(),
-            'target_workflow_instance_id' => $this->workflowId(),
-            'payload_reference' => $reference,
-            'correlation_id' => $reference,
-            'idempotency_key' => $reference,
-            'metadata' => $metadata,
-            'consume_state' => MessageConsumeState::Pending,
-        ]);
+        $this->outbox(self::ASSISTANT_STREAM)
+            ->sendReference(
+                $this->workflowId(),
+                $reference,
+                correlationId: $reference,
+                idempotencyKey: $reference,
+                metadata: ['role' => 'assistant'],
+            );
     }
 }
