@@ -1,0 +1,119 @@
+name: Bug reproducer
+description: A reproducer for an upstream Durable Workflow bug, runnable against this sample app.
+title: "[bug] <short description of the failing pattern>"
+labels:
+  - bug
+  - reproducer
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to file a reproducer that runs inside this sample app.
+
+        A good reproducer is small, deterministic, and isolates the failing pattern: one
+        workflow class, one command to start it, and one expected outcome. If your bug is
+        in the engine itself and does not need Laravel scaffolding, file it on the
+        [`workflow` repo](https://github.com/durable-workflow/workflow/issues/new/choose)
+        instead. If it is in the standalone Durable Workflow server, file it on the
+        [`server` repo](https://github.com/durable-workflow/server/issues/new/choose).
+
+        Reproducers that follow this template land as new sample-app workflows, get
+        wired into CI, and stay reproducible after the bug is fixed.
+
+  - type: input
+    id: workflow_class
+    attributes:
+      label: Workflow class under test
+      description: Fully qualified class name. Existing samples live under `App\Workflows\`.
+      placeholder: App\Workflows\Bug\IssueNNNRepro\IssueNNNWorkflow
+    validations:
+      required: true
+
+  - type: input
+    id: start_command
+    attributes:
+      label: Command to start the reproducer
+      description: An `artisan` command that the reader can run after `composer install` to trigger the failing path.
+      placeholder: php artisan app:bug-issue-NNN
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What the durable contract is supposed to do. Reference docs, history events, or operator-visible state where possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behavior
+      description: What you actually see. Include workflow status, durable failure type, and the operator surface (Waterline, history export, CLI output) where you observed it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: history_excerpt
+    attributes:
+      label: History excerpt
+      description: |
+        A short, redacted slice of `php artisan workflow:v2:history-export` for the failing run.
+        Trim payload bodies; the event sequence and event kinds are usually enough.
+      render: text
+
+  - type: input
+    id: durable_workflow_version
+    attributes:
+      label: Durable Workflow package version
+      description: Run `composer show durable-workflow/workflow` and paste the resolved version.
+      placeholder: 2.0.0-alpha.5
+    validations:
+      required: true
+
+  - type: input
+    id: sample_app_commit
+    attributes:
+      label: Sample app commit
+      description: Output of `git rev-parse --short HEAD` in your sample-app checkout.
+      placeholder: abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: php_version
+    attributes:
+      label: PHP version
+      description: Output of `php -r 'echo PHP_VERSION;'`.
+      placeholder: "8.3.10"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Queue and cache backend
+      description: Which `QUEUE_CONNECTION` and cache store you used when the bug reproduced.
+      options:
+        - Redis (default sample-app docker compose)
+        - Database (sync queue + database cache)
+        - Other (describe in additional context)
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Logs, exporter output, related issues, or anything else a maintainer needs to land the reproducer.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Reproducer contribution
+      options:
+        - label: I am willing to open a pull request that adds this reproducer as a workflow under `app/Workflows/Bug/`.
+          required: false
+        - label: I checked that the bug reproduces against the latest `main` of this repo.
+          required: true

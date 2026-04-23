@@ -291,6 +291,15 @@ An AI client would typically:
 4. Poll `get_workflow_result` with the `workflow_id` until status is `completed`
 5. Read the `output` field for the workflow result
 6. If status is `failed` or `waiting` longer than expected, call `diagnose_workflow`, then inspect `get_workflow_history` with the `run_id`
+## Reporting Bugs and Requesting Samples
+
+Use the structured templates under [Issues](https://github.com/durable-workflow/sample-app/issues/new/choose) so reproducers and sample requests land with the metadata maintainers need:
+
+- **Bug reproducer.** A reproducer runs in this app: it names the workflow class, the artisan command, the Durable Workflow package version, and the observed durable failure. Reproducers that follow the template land as new workflows under `app/Workflows/Bug/<issue>/` and stay covered by CI after the bug is fixed.
+- **Sample request.** A sample request names the Durable Workflow pattern that is not yet covered, the public docs page that defines it, and the minimum package version it needs. Requests close when a workflow under `app/Workflows/` exercises the pattern end to end and is wired into the artisan command list and `config/workflow_mcp.php`.
+
+Bugs in the workflow engine itself or the standalone Durable Workflow server belong on the [`workflow`](https://github.com/durable-workflow/workflow/issues/new/choose) and [`server`](https://github.com/durable-workflow/server/issues/new/choose) repos respectively; the issue chooser links those out.
+
 ## Public Boundary Checks
 
 This is a public repository. Do not add private tracker names, workspace-only absolute paths, or loop/lane metadata to files or new commit metadata. Run `scripts/check-public-boundary.sh` before publishing changes; CI runs the same scan on pushes and pull requests.

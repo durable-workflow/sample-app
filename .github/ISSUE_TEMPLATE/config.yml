@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Durable Workflow documentation
+    url: https://durable-workflow.com/docs/2.0/
+    about: Reference for the v2 engine, polyglot worker contracts, and operator tooling.
+  - name: Sample App README
+    url: https://github.com/durable-workflow/sample-app#readme
+    about: How to run the bundled samples and the table of patterns each one demonstrates.
+  - name: Workflow engine bug
+    url: https://github.com/durable-workflow/workflow/issues/new/choose
+    about: Open here when the bug reproduces with a minimal program against the workflow package itself, not this Laravel sample.
+  - name: Standalone server bug
+    url: https://github.com/durable-workflow/server/issues/new/choose
+    about: Open here when the bug reproduces against the standalone Durable Workflow server image, not this Laravel sample.

@@ -1,0 +1,84 @@
+name: Sample request
+description: Ask for a Durable Workflow pattern that this sample app does not yet demonstrate.
+title: "[sample] <short description of the requested pattern>"
+labels:
+  - sample-request
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to request a sample workflow that demonstrates a Durable Workflow
+        pattern not yet covered by this app. The current sample index lives in the
+        [README sample table](https://github.com/durable-workflow/sample-app#sample-index).
+
+        Sample requests close when a workflow lands under `app/Workflows/` that exercises
+        the pattern end to end and is wired into both the artisan command list and the MCP
+        config in `config/workflow_mcp.php`.
+
+  - type: input
+    id: pattern
+    attributes:
+      label: Pattern name
+      description: A short name for the pattern. Used as the working title for the sample workflow.
+      placeholder: child workflow with parent-close-policy abandon
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why this pattern matters
+      description: |
+        What real durable-workflow problem does this pattern solve? Link the public docs
+        page or feature reference that defines it where possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: Suggested workflow shape
+      description: |
+        Outline the workflow class, activities, signals, updates, and the operator-visible
+        outcome you want the sample to demonstrate. Pseudocode is fine.
+    validations:
+      required: true
+
+  - type: input
+    id: durable_workflow_version
+    attributes:
+      label: Minimum Durable Workflow version
+      description: Earliest workflow package version this pattern needs to work on.
+      placeholder: 2.0.0-alpha.5
+    validations:
+      required: true
+
+  - type: dropdown
+    id: external_dependencies
+    attributes:
+      label: External dependencies
+      description: Does the sample need anything beyond the default Laravel + Redis stack?
+      options:
+        - None — runs on the default sample-app stack
+        - Browser automation (Playwright / Node)
+        - LLM provider key (OPENAI_API_KEY or similar)
+        - Additional service (describe in notes)
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes for the implementer
+      description: |
+        Anything that would block the sample from landing today (missing engine feature,
+        upstream contract, docs gap). If a missing feature blocks the sample, link the
+        upstream issue and call it out here so the request can be queued behind that work.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Sample contribution
+      options:
+        - label: I am willing to open a pull request that adds this sample workflow to `app/Workflows/`.
+          required: false
