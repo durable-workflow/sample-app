@@ -99,6 +99,40 @@ That's it! You can now create and test workflows.
 
 ----
 
+### Run Locally With Docker
+
+Prefer a local workstation over Codespaces? The repository ships a
+`docker-compose.yml` that builds and runs the app, worker, MySQL, and Redis on
+any host with Docker Engine and Docker Compose v2 installed.
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/durable-workflow/sample-app.git
+cd sample-app
+
+# 2. (Optional) expose the app on a non-default port
+export APP_PORT=18080
+
+# 3. Build and start the stack. --wait blocks until health checks pass.
+docker compose up -d --build --wait app worker
+
+# 4. Run migrations against the shared sample database.
+docker compose exec -T app php artisan migrate:fresh --force
+
+# 5. Run the simplest deterministic sample end-to-end.
+docker compose exec -T app php artisan app:workflow
+```
+
+Once the stack is up, Waterline is at `http://localhost:${APP_PORT:-8000}/waterline/dashboard`
+and the MCP server is at `http://localhost:${APP_PORT:-8000}/mcp/workflows`.
+
+Tear the stack down with `docker compose down -v --remove-orphans` when
+finished. The same flow is exercised on every push through the
+`smoke` GitHub Actions workflow, so the local path stays honest as the stack
+evolves.
+
+----
+
 #### Sample Index
 
 Use this index when you want a specific Durable Workflow pattern instead of another happy-path snippet.
