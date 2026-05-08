@@ -300,6 +300,21 @@ Use the structured templates under [Issues](https://github.com/durable-workflow/
 
 Bugs in the workflow engine itself or the standalone Durable Workflow server belong on the [`workflow`](https://github.com/durable-workflow/workflow/issues/new/choose) and [`server`](https://github.com/durable-workflow/server/issues/new/choose) repos respectively; the issue chooser links those out.
 
+## Contributing a Sample
+
+Have a Durable Workflow pattern you want to share? Read
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full contract — workflow
+class layout, artisan command name, MCP entry, test, README index row,
+and the docs-site gallery and pattern-page cross-link that ship in the
+same change. The
+[Contribute a Sample](https://durable-workflow.github.io/docs/2.0/contribute-a-sample)
+page on the docs site is the canonical version of the same guide.
+
+Maintainers tagging an upstream release should read
+[`docs/release-notes-feature-contract.md`](docs/release-notes-feature-contract.md)
+first; it names the bar a sample must meet to be cited in upstream
+release notes and the checklist that runs before a release tag lands.
+
 ## Public Boundary Checks
 
 This is a public repository. Do not add private tracker names, workspace-only absolute paths, or loop/lane metadata to files or new commit metadata. Run `scripts/check-public-boundary.sh` before publishing changes; CI runs the same scan on pushes and pull requests.
