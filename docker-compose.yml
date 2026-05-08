@@ -10,7 +10,11 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # Probe the TCP listener (not the Unix socket) so the service is only
+      # reported healthy once it can answer the same connection the app makes.
+      # The socket comes up before TCP, which previously let dependents start
+      # while the app's DB connection still failed with [2002] Connection refused.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=TCP", "--silent"]
       interval: 5s
       retries: 30
       start_period: 15s

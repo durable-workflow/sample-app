@@ -13,6 +13,9 @@ jobs:
 
     strategy:
       fail-fast: false
+      # Keep shared-runner pressure low while still exercising both supported
+      # PHP versions.
+      max-parallel: 1
       matrix:
         php: ['8.4', '8.5']
 
@@ -24,8 +27,6 @@ jobs:
           MYSQL_DATABASE: sample
           MYSQL_USER: laravel
           MYSQL_PASSWORD: password
-        ports:
-          - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -u root --password=secret"
           --health-interval=5s
@@ -34,8 +35,6 @@ jobs:
 
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
         options: >-
           --health-cmd="redis-cli ping"
           --health-interval=3s
@@ -76,17 +75,17 @@ jobs:
       - name: Run test suite
         env:
           DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
+          DB_HOST: mysql
           DB_PORT: 3306
           DB_DATABASE: sample
           DB_USERNAME: laravel
           DB_PASSWORD: password
-          SHARED_DB_HOST: 127.0.0.1
+          SHARED_DB_HOST: mysql
           SHARED_DB_PORT: 3306
           SHARED_DB_DATABASE: sample
           SHARED_DB_USERNAME: laravel
           SHARED_DB_PASSWORD: password
           REDIS_CLIENT: phpredis
-          REDIS_HOST: 127.0.0.1
+          REDIS_HOST: redis
           REDIS_PORT: 6379
         run: php artisan test

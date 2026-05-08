@@ -17,7 +17,46 @@ run_sample() {
   fi
 }
 
+wait_for_db() {
+  # Verify the app container can actually open a PDO connection to MySQL
+  # before any migration runs. The compose healthcheck probes MySQL itself,
+  # but a positive PDO::__construct() from inside `app` is the only thing
+  # that proves credentials, network, and TCP listener are all ready end to end.
+  local attempt
+  for attempt in $(seq 1 60); do
+    if docker compose exec -T app php -r '
+      $dsn = sprintf(
+        "mysql:host=%s;port=%s;dbname=%s",
+        getenv("DB_HOST") ?: "mysql",
+        getenv("DB_PORT") ?: "3306",
+        getenv("DB_DATABASE") ?: "sample"
+      );
+      try {
+        new PDO($dsn, getenv("DB_USERNAME") ?: "laravel", getenv("DB_PASSWORD") ?: "password", [
+          PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+          PDO::ATTR_TIMEOUT => 2,
+        ]);
+        exit(0);
+      } catch (Throwable $e) {
+        fwrite(STDERR, $e->getMessage() . "\n");
+        exit(1);
+      }
+    ' >/dev/null 2>&1; then
+      printf 'compose-smoke: database reachable from app after %d attempt(s)\n' "$attempt"
+      return 0
+    fi
+    sleep 2
+  done
+
+  printf 'compose-smoke: database never became reachable from app within 120s\n' >&2
+  docker compose ps >&2 || true
+  return 1
+}
+
 docker compose ps
+
+printf '\n==> waiting for database to accept app connections\n'
+wait_for_db
 
 printf '\n==> fresh database migrations\n'
 docker compose exec -T app php artisan migrate:fresh --force
