@@ -32,9 +32,6 @@ class Init extends Command
         $this->info('Ensuring .env file exists and APP_KEY is set...');
         $this->ensureEnv();
 
-        $this->info('Setting ASSET_URL...');
-        $this->setAssetUrl();
-
         $this->info('Seeding .env with recommended defaults...');
         $this->seedEnvDefaults();
 
@@ -195,26 +192,6 @@ class Init extends Command
             } catch (\Throwable $e) {
                 // ignore
             }
-        }
-    }
-
-    /**
-     * Set ASSET_URL in env based on codespace name.
-     */
-    protected function setAssetUrl()
-    {
-        $codespaceName = env('CODESPACE_NAME');
-        $portDomain = env('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN');
-
-        if (!$codespaceName || !$portDomain) {
-            $this->info('GitHub Codespaces variables not found; skipping ASSET_URL setup.');
-            return;
-        }
-
-        $assetUrl = "https://{$codespaceName}-18080.{$portDomain}";
-
-        if ($this->setEnvVariable('ASSET_URL', $assetUrl)) {
-            $this->info('ASSET_URL set successfully in .env file.');
         }
     }
 

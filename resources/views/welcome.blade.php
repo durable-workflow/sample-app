@@ -11,7 +11,26 @@
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
         <!-- Styles / Scripts -->
-        @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
+        @php
+            // Prefer a built Vite manifest (production-style assets, same-origin).
+            // Fall back to hot mode only when the dev server is reachable from the
+            // browser's origin. In Codespaces the forwarded Vite port is on a
+            // different host that requires GitHub auth, so the browser on the
+            // preview origin cannot fetch hot-mode asset URLs and the page would
+            // render unstyled. Setting VITE_FORCE_HOT=1 is an explicit opt-in.
+            //
+            // Laravel's @vite directive picks hot mode whenever public/hot
+            // exists, regardless of which mode we'd prefer here. So when the
+            // hot file is present but unreachable, skip @vite entirely and
+            // use the inline-style fallback rather than emitting broken hot
+            // URLs alongside the manifest.
+            $hasViteManifest = file_exists(public_path('build/manifest.json'));
+            $hotFile = file_exists(public_path('hot'));
+            $hotIsReachable = $hotFile
+                && (empty(env('CODESPACE_NAME')) || env('VITE_FORCE_HOT'));
+            $useVite = $hotIsReachable || ($hasViteManifest && ! $hotFile);
+        @endphp
+        @if ($useVite)
             @vite(['resources/css/app.css', 'resources/js/app.js'])
         @else
             <style>
@@ -20,6 +39,16 @@
         @endif
     </head>
     <body class="bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] flex p-6 lg:p-8 items-center lg:justify-center min-h-screen flex-col">
+        @php
+            $waterlineDrift = \App\Support\WaterlineAssets::driftMessage();
+        @endphp
+        @if ($waterlineDrift)
+            <div role="status" data-testid="waterline-asset-drift" style="width:100%;max-width:960px;margin-bottom:1rem;padding:0.75rem 1rem;border:1px solid #f59e0b;background:#fffbeb;color:#78350f;border-radius:6px;font-size:14px;line-height:1.4;">
+                <strong>Waterline asset drift detected.</strong>
+                {{ $waterlineDrift }}
+                Run <code style="font-family:monospace;background:#fef3c7;padding:0 4px;border-radius:3px;">php artisan waterline:publish</code> to refresh published assets.
+            </div>
+        @endif
         <header class="w-full lg:max-w-4xl max-w-[335px] text-sm mb-6 not-has-[nav]:hidden">
             @if (Route::has('login'))
                 <nav class="flex items-center justify-end gap-4">
