@@ -146,6 +146,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Start from an external webhook and wait for a signal | `App\Workflows\Webhooks\WebhookWorkflow` | `php artisan app:webhook` | `webhook` |
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
+| Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
 
 #### Message Streams
 
@@ -172,6 +173,52 @@ $streamMessage = $this->inbox(self::ASSISTANT_STREAM)
 ```
 
 `receiveOne()` consumes the message and advances the durable stream cursor, so repeated receives deliver new replies instead of replaying old ones. Keep app tables as payload/reference stores; let Durable Workflow own `workflow_messages` and stream cursor advancement through the facade.
+
+#### Sandbox Orchestration
+
+Long-running coding agents need an ephemeral sandbox per session: a place to run shell commands, edit files, install dependencies, and recover when the sandbox vanishes mid-run. `App\Workflows\Sandbox\SandboxAgentWorkflow` is the durable reference for that lifecycle. It demonstrates five guarantees that every agent author would otherwise rebuild from scratch, and it does so against a swappable provider.
+
+| Guarantee | Where it lives in the sample |
+|-----------|------------------------------|
+| Provision on demand | `ProvisionSandboxActivity` runs at workflow start. |
+| Drive execution from agent intent | `DispatchToolCallActivity` carries each `{type, args}` tool call to the sandbox. |
+| Persist state across long runs | `SnapshotSandboxActivity` writes a snapshot id every N tool calls; the id is durable across worker migrations. |
+| Recover from sandbox loss | The workflow loop catches `SandboxGoneException` from a tool-call activity, calls `RestoreSandboxActivity` against the latest snapshot, and resumes. |
+| Clean up at the right time | `DestroySandboxActivity` runs from a `try/finally` block, so success, cancel, and failure paths all tear the sandbox down. |
+
+The workflow code never references a concrete provider class:
+
+```php
+$handle = activity(ProvisionSandboxActivity::class, $provider, $options);
+
+try {
+    foreach ($toolCalls as $call) {
+        $results[] = activity(DispatchToolCallActivity::class, $handle, $call);
+    }
+} finally {
+    activity(DestroySandboxActivity::class, $handle);
+}
+```
+
+`config/sandbox.php` decides which `App\Sandbox\SandboxProvider` implementation `SandboxManager` returns. The repository ships two:
+
+- `App\Sandbox\Providers\LocalSandboxProvider` — runs each tool call as a subprocess against a per-sandbox workspace directory under `storage_path('sandbox/workspaces')`. Snapshot is a tar of the workspace, restore extracts it. Useful for the demo, for CI, and for exercising the full lifecycle end-to-end without external credentials.
+- `App\Sandbox\Providers\E2bSandboxProvider` — wraps the E2B Cloud sandbox HTTP API behind the same contract. 404 responses translate to `SandboxGoneException`, which the workflow recovers from automatically.
+
+To add a third provider (Modal, Daytona, GKE Agent Sandbox, Bedrock AgentCore Runtime, or your own), implement `App\Sandbox\SandboxProvider` and register it through `SandboxManager::extend('your-provider', fn ($app, $cfg) => …)`. No workflow code changes.
+
+The sample retry posture is intentional: provider activities set `$tries` higher than the framework default so transient failures (rate limits, network blips) do not drop tool calls. Permanent failures — quota exhausted, missing credentials, malformed template — are converted to `NonRetryableException` inside `ProvisionSandboxActivity` so the workflow surfaces a deterministic failure instead of looping. The `DestroySandboxActivity` swallows provider errors itself, because finalization is best-effort and `SandboxProvider::destroy()` is required to be idempotent.
+
+Run the sample with:
+
+```bash
+php artisan app:sandbox                              # local subprocess provider
+php artisan app:sandbox --snapshot-every=2           # snapshot every 2 tool calls
+php artisan app:sandbox --suspend-between            # idle-suspend + resume between calls
+SANDBOX_DRIVER=e2b E2B_API_KEY=… php artisan app:sandbox
+```
+
+See [docs/sandbox-orchestration.md](docs/sandbox-orchestration.md) for the full pattern walkthrough, the file layout, and the procedure for adding a third provider.
 
 #### Replay-Safety Teaching Notes
 
@@ -206,6 +253,8 @@ In addition to the basic example workflow, you can try these other workflows inc
 * `php artisan app:prism` - Uses Prism to build a durable AI agent loop. It asks an LLM to generate user profiles and hobbies, validates the result, and retries until the data meets business rules.
 
 * `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled.
+
+* `php artisan app:sandbox` - Durable sandbox orchestration sample. Provisions an ephemeral sandbox, dispatches a sequence of agent-decided tool calls through activities, snapshots the workspace at a configurable interval, recovers from sandbox loss by restoring the latest snapshot, and tears the sandbox down deterministically on every termination path. The default `local` provider runs subprocesses on the worker host; set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to run against the E2B Cloud sandbox API. See the [Sandbox Orchestration](#sandbox-orchestration) section below for the full pattern walkthrough.
 
 Try them out to see workflows in action across different use cases!
 
@@ -255,6 +304,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `webhook` → `App\Workflows\Webhooks\WebhookWorkflow` (waits for the `ready` signal)
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
+- `sandbox` → `App\Workflows\Sandbox\SandboxAgentWorkflow` (provisions, dispatches tool calls, snapshots, recovers, and cleans up an ephemeral agent sandbox via `App\Sandbox\SandboxProvider`; defaults to the local subprocess provider, set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
 
 To add more workflows, update the config file:
 

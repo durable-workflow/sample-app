@@ -30,6 +30,7 @@ class SampleTeachingMaterialTest extends TestCase
             'app/Workflows/Webhooks/WebhookWorkflow.php' => 'v2 signals are pull-style',
             'app/Workflows/Prism/PrismWorkflow.php' => 'workflow loop is replay-safe',
             'app/Workflows/Ai/AiWorkflow.php' => 'durable agent pattern',
+            'app/Workflows/Sandbox/SandboxAgentWorkflow.php' => 'durable sandbox orchestration pattern',
         ];
 
         foreach ($expectations as $path => $needle) {
@@ -38,5 +39,16 @@ class SampleTeachingMaterialTest extends TestCase
             $this->assertIsString($contents);
             $this->assertStringContainsString($needle, $contents, "{$path} is missing its teaching preamble.");
         }
+    }
+
+    public function test_readme_documents_sandbox_orchestration_pattern(): void
+    {
+        $readme = file_get_contents(__DIR__.'/../../README.md');
+
+        $this->assertIsString($readme);
+        $this->assertStringContainsString('#### Sandbox Orchestration', $readme);
+        $this->assertStringContainsString('App\\Workflows\\Sandbox\\SandboxAgentWorkflow', $readme);
+        $this->assertStringContainsString('App\\Sandbox\\SandboxProvider', $readme);
+        $this->assertStringContainsString('php artisan app:sandbox', $readme);
     }
 }

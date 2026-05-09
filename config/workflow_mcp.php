@@ -6,6 +6,7 @@ use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
+use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
 
@@ -95,6 +96,20 @@ return [
             ],
             'updates' => [
                 ['name' => 'receive', 'description' => 'Consumes the next assistant reply from the durable ai.assistant message stream.'],
+            ],
+        ],
+        'sandbox' => [
+            'class' => SandboxAgentWorkflow::class,
+            'description' => 'Durable sandbox orchestration: provision, dispatch tool calls, snapshot, recover, and clean up against a swappable sandbox provider.',
+            'pattern' => 'agent sandbox lifecycle (provision, dispatch, suspend/resume, snapshot/restore, cleanup)',
+            'command' => 'php artisan app:sandbox',
+            'requires' => ['SANDBOX_DRIVER (default local; set to e2b plus E2B_API_KEY for the E2B Cloud provider)'],
+            'arguments' => [
+                ['name' => 'toolCalls', 'type' => 'array', 'description' => 'Ordered list of {type, args} tool calls to dispatch through the sandbox.'],
+                ['name' => 'provider', 'type' => 'string|null', 'description' => 'Provider override; defaults to config(sandbox.default).'],
+                ['name' => 'snapshotEveryNCalls', 'type' => 'int', 'default' => 0],
+                ['name' => 'suspendBetweenCalls', 'type' => 'bool', 'default' => false],
+                ['name' => 'options', 'type' => 'array', 'default' => []],
             ],
         ],
     ],
