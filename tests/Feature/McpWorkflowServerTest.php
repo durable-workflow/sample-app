@@ -15,6 +15,7 @@ use App\Workflows\Ai\AiWorkflow;
 use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
+use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
 use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
@@ -50,7 +51,7 @@ class McpWorkflowServerTest extends TestCase
                     ->where('workflow_id_kind', 'workflow_instance_id')
                     ->where('run_id_kind', 'workflow_run_id')
                     ->has('status_values')
-                    ->has('available_workflows', 8)
+                    ->has('available_workflows', 9)
                     ->where('available_workflows.0.key', 'simple')
                     ->where('available_workflows.0.class', SimpleWorkflow::class)
                     ->where('available_workflows.0.pattern', 'deterministic activity chain')
@@ -77,6 +78,10 @@ class McpWorkflowServerTest extends TestCase
                     ->where('available_workflows.7.class', SandboxAgentWorkflow::class)
                     ->where('available_workflows.7.pattern', 'agent sandbox lifecycle (provision, dispatch, suspend/resume, snapshot/restore, cleanup)')
                     ->where('available_workflows.7.command', 'php artisan app:sandbox')
+                    ->where('available_workflows.8.key', 'polyglot_php_to_python')
+                    ->where('available_workflows.8.class', PhpToPythonWorkflow::class)
+                    ->where('available_workflows.8.pattern', 'cross-language activity dispatch')
+                    ->where('available_workflows.8.command', 'docker compose -f polyglot/docker-compose.yml run --rm smoke')
                     ->etc();
             });
     }

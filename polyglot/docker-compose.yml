@@ -1,0 +1,156 @@
+name: sample-app-polyglot
+
+# Polyglot demonstration stack. Brings up a standalone Durable Workflow
+# server with one MySQL and one Redis instance, plus the workers each
+# polyglot scenario needs:
+#
+#   - python-workflow-worker / python_workflow scenario
+#       Python-authored workflow + Python activities, all polled by a
+#       single Python worker on `polyglot-python`.
+#
+#   - php-workflow-worker + python-activity-worker / php_to_python scenario
+#       A real Laravel + Composer-installed durable-workflow PHP SDK
+#       worker registers the PHP-authored
+#       `polyglot.php-to-python.PhpToPythonWorkflow` on
+#       `polyglot-php-to-python`. A separate Python container registers
+#       the `polyglot.php-to-python.*` activities on the same queue, so
+#       the workflow's scheduled activities cross the language boundary
+#       on the wire.
+#
+# The repository-root `docker-compose.yml` is intentionally left as the
+# single-language Laravel sample. Bring this stack up only when
+# exercising polyglot.
+
+x-server-env: &server-env
+  APP_NAME: "Durable Workflow Server"
+  APP_ENV: testing
+  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMg=="
+  APP_DEBUG: "false"
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: durable_workflow
+  DB_USERNAME: workflow
+  DB_PASSWORD: workflow
+  REDIS_HOST: redis
+  QUEUE_CONNECTION: redis
+  CACHE_STORE: redis
+  WORKFLOW_SERVER_AUTH_DRIVER: token
+  WORKFLOW_SERVER_AUTH_TOKEN: "test-token"
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: durable_workflow
+      MYSQL_USER: workflow
+      MYSQL_PASSWORD: workflow
+      MYSQL_ROOT_PASSWORD: root
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  # Server image pin: 0.2.88 contains the primary-path routing fix needed
+  # for the PHP-authored workflow to schedule activities on a separate
+  # Python worker without workflow tasks landing on an activity-only
+  # worker. Override with DURABLE_SERVER_IMAGE only if the replacement
+  # also contains that routing fix.
+  bootstrap:
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+    command: ["server-bootstrap"]
+    environment: *server-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  server:
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment: *server-env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  python-workflow-worker:
+    build:
+      context: ./python_workflow
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_PY_TASK_QUEUE: polyglot-python
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["python", "workflow.py"]
+
+  python-activity-worker:
+    build:
+      context: ./python_worker
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+    depends_on:
+      server:
+        condition: service_healthy
+
+  php-workflow-worker:
+    build:
+      context: ..
+      dockerfile: polyglot/php_worker/Dockerfile
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-php-to-python"]
+
+  smoke:
+    build:
+      context: ./python_worker
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+      POLYGLOT_PY_TASK_QUEUE: polyglot-python
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+    depends_on:
+      server:
+        condition: service_healthy
+      python-activity-worker:
+        condition: service_started
+      php-workflow-worker:
+        condition: service_started
+      python-workflow-worker:
+        condition: service_started
+    command: ["bash", "/app/scripts/smoke.sh"]

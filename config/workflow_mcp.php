@@ -5,6 +5,7 @@ use App\Workflows\Ai\AiWorkflow;
 use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
+use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
 use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
@@ -110,6 +111,16 @@ return [
                 ['name' => 'snapshotEveryNCalls', 'type' => 'int', 'default' => 0],
                 ['name' => 'suspendBetweenCalls', 'type' => 'bool', 'default' => false],
                 ['name' => 'options', 'type' => 'array', 'default' => []],
+            ],
+        ],
+        'polyglot_php_to_python' => [
+            'class' => PhpToPythonWorkflow::class,
+            'description' => 'PHP-authored workflow that schedules activities handled by a Python worker on a shared queue against the standalone server.',
+            'pattern' => 'cross-language activity dispatch',
+            'command' => 'docker compose -f polyglot/docker-compose.yml run --rm smoke',
+            'requires' => ['polyglot/ docker compose stack'],
+            'arguments' => [
+                ['name' => 'value', 'type' => 'string', 'default' => 'polyglot'],
             ],
         ],
     ],

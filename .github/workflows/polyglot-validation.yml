@@ -1,0 +1,64 @@
+name: polyglot-validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  smoke:
+    name: polyglot smoke (PHP↔Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show pinned server image
+        working-directory: polyglot
+        run: |
+          # Surface the durableworkflow/server tag the smoke is about to run
+          # against, so a human reviewing the CI log can immediately see which
+          # server build the polyglot scenarios were exercised on. The pin
+          # itself is held in docker-compose.yml; this step just prints it.
+          echo "Polyglot server image pin:"
+          docker compose config server | awk '/^[[:space:]]+image:/ {print; exit}'
+
+      - name: Bring up polyglot stack
+        working-directory: polyglot
+        run: |
+          docker compose up -d --build --wait \
+            server python-activity-worker php-workflow-worker python-workflow-worker
+
+      - name: Wait for PHP worker to register on the polyglot queue
+        working-directory: polyglot
+        run: |
+          # docker compose --wait considers a service healthy as soon as the
+          # container starts when no healthcheck is defined; the PHP worker
+          # then needs another moment to call registerWorker on the server.
+          # Poll the log for the registration line so this step does not race.
+          for attempt in $(seq 1 60); do
+            if docker compose logs php-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
+              echo "PHP worker registered (after ${attempt}s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::PHP worker did not log polyglot registration within 60s"
+          docker compose logs --tail=200 php-workflow-worker
+          exit 1
+
+      - name: Run polyglot smoke
+        working-directory: polyglot
+        run: docker compose run --rm --build smoke
+
+      - name: Dump compose logs on failure
+        if: failure()
+        working-directory: polyglot
+        run: docker compose logs --no-color --timestamps
+
+      - name: Tear down stack
+        if: always()
+        working-directory: polyglot
+        run: docker compose down -v --remove-orphans

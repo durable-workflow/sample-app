@@ -147,6 +147,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
+| Demonstrate cross-language polyglot dispatch (PHP↔Python) | `App\Workflows\Polyglot\PhpToPythonWorkflow` | `docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
 
 #### Message Streams
 
@@ -219,6 +220,35 @@ SANDBOX_DRIVER=e2b E2B_API_KEY=… php artisan app:sandbox
 ```
 
 See [docs/sandbox-orchestration.md](docs/sandbox-orchestration.md) for the full pattern walkthrough, the file layout, and the procedure for adding a third provider.
+
+#### Polyglot
+
+The repository ships a runnable polyglot demonstration in
+[`polyglot/`](polyglot/). It brings up the standalone Durable Workflow
+server with a real PHP worker (Laravel + Composer-installed
+`durable-workflow/workflow`) and a Python worker side by side. Two
+scenarios run end to end:
+
+- a Python-authored workflow on its own Python image, and
+- a PHP-authored workflow (`App\Workflows\Polyglot\PhpToPythonWorkflow`)
+  that schedules `polyglot.php-to-python.*` activities handled by the
+  Python worker on a shared task queue.
+
+The PHP-authored scenario is the wire-level cross-language test: the
+PHP runtime registers as a worker on the polyglot task queue, the
+Python runtime registers the activities, and each scheduled activity
+crosses the language boundary on the wire — not just inside one
+process. The smoke runs in CI on every pull request via
+`.github/workflows/polyglot-validation.yml`, so a regression in either
+direction is caught before release rather than in the field.
+
+The codec round-trip rules — which payload values cross the language
+boundary cleanly and which need explicit adapters — are documented in
+the workflow package at
+[`docs/architecture/polyglot-codec-roundtrip.md`](https://github.com/durable-workflow/workflow/blob/v2/docs/architecture/polyglot-codec-roundtrip.md).
+Operators of polyglot fleets should treat the "requires an explicit
+adapter" set as a workflow-author contract: the SDKs fail closed at the
+boundary rather than guess at a serialisation.
 
 #### Replay-Safety Teaching Notes
 
@@ -305,6 +335,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 - `sandbox` → `App\Workflows\Sandbox\SandboxAgentWorkflow` (provisions, dispatches tool calls, snapshots, recovers, and cleans up an ephemeral agent sandbox via `App\Sandbox\SandboxProvider`; defaults to the local subprocess provider, set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
+- `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the `polyglot/` docker compose stack with the PHP and Python workers running)
 
 To add more workflows, update the config file:
 
