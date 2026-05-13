@@ -166,7 +166,7 @@ Activities:
 
 Signals, updates, webhooks:
 
-- Signals shifted from push to pull. Declare the contract at the class level with `#[Workflow\V2\Attributes\Signal('name', [...])]` and block on `await('name')` inside `handle()` to receive each delivery; `await('name', $timeout)` returns `null` on timeout for chat-style loops.
+- Signals shifted from push to pull. Import the class-level contract attribute with `use Workflow\V2\Attributes\Signal;`, declare it as `#[Signal('name', [...])]`, and block on `await('name')` inside `handle()` to receive each delivery; `await('name', $timeout)` returns `null` on timeout for chat-style loops.
 - `#[UpdateMethod]` and `#[QueryMethod]` carry over verbatim.
 - From the outside, use explicit names: `$workflow->signal('name', $payload)` and `$workflow->update('name', ...)`.
 - Webhook routing now takes an explicit alias map: `Workflow\V2\Webhooks::routes(['webhook-workflow' => WebhookWorkflow::class]);`.

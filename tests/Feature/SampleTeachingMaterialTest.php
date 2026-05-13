@@ -31,6 +31,9 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('Rename the entry method from `execute(...)` to `handle(...)`', $readme);
         $this->assertStringContainsString('Extend `Workflow\V2\Activity` and define `handle(...)`', $readme);
         $this->assertStringNotContainsString('Workflow\V2\Attributes\Activity', $readme);
+        $this->assertStringContainsString('use Workflow\V2\Attributes\Signal;', $readme);
+        $this->assertStringContainsString("#[Signal('name', [...])]", $readme);
+        $this->assertStringNotContainsString("#[Workflow\V2\Attributes\Signal", $readme);
         $this->assertStringContainsString("await('name')", $readme);
     }
 
