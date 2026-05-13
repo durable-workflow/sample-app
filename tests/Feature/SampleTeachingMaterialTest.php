@@ -20,6 +20,20 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('Prefer scalar values inside `sideEffect()` callbacks', $readme);
     }
 
+    public function test_readme_contains_short_v1_to_v2_migration_section(): void
+    {
+        $readme = file_get_contents(__DIR__.'/../../README.md');
+
+        $this->assertIsString($readme);
+        $this->assertStringContainsString('#### Migrating from Durable Workflow 1.x', $readme);
+        $this->assertStringContainsString('Extend `Workflow\V2\Workflow` instead of `Workflow\Workflow`.', $readme);
+        $this->assertStringContainsString('Replace `yield activity(...)` with a straight-line `activity(...)` call', $readme);
+        $this->assertStringContainsString('Rename the entry method from `execute(...)` to `handle(...)`', $readme);
+        $this->assertStringContainsString('Extend `Workflow\V2\Activity` and define `handle(...)`', $readme);
+        $this->assertStringNotContainsString('Workflow\V2\Attributes\Activity', $readme);
+        $this->assertStringContainsString("await('name')", $readme);
+    }
+
     public function test_workflow_entry_points_include_teaching_preambles(): void
     {
         $expectations = [

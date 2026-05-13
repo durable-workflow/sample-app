@@ -13,9 +13,10 @@ import logging
 import os
 from typing import Any
 
-from durable_workflow import Client, Worker, activity
+from durable_workflow import Client, TransportRetryPolicy, Worker, activity
 
 TASK_QUEUE = os.environ.get("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python")
+POLL_TIMEOUT_SECONDS = float(os.environ.get("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "90"))
 
 
 @activity.defn(name="polyglot.php-to-python.reverse")
@@ -48,12 +49,19 @@ async def main() -> int:
     token = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
     namespace = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
 
-    async with Client(server_url, token=token, namespace=namespace) as client:
+    async with Client(
+        server_url,
+        token=token,
+        namespace=namespace,
+        timeout=POLL_TIMEOUT_SECONDS + 15,
+        retry_policy=TransportRetryPolicy(max_attempts=1),
+    ) as client:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE,
             workflows=[],
             activities=[reverse_string, tally],
+            poll_timeout=POLL_TIMEOUT_SECONDS,
             shutdown_timeout=10.0,
         )
         log.info("polyglot python activity worker ready on queue %s", TASK_QUEUE)

@@ -149,6 +149,38 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
 | Demonstrate cross-language polyglot dispatch (PHP↔Python) | `App\Workflows\Polyglot\PhpToPythonWorkflow` | `docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
 
+#### Migrating from Durable Workflow 1.x
+
+Porting a workflow from the v1 generator API to the v2 Fiber API is mechanical. The v1 sources live on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12); use it as a side-by-side reference while you migrate.
+
+Workflow shape:
+
+- Extend `Workflow\V2\Workflow` instead of `Workflow\Workflow`.
+- Import helpers from the `Workflow\V2\` namespace: `use function Workflow\V2\{activity, sideEffect, await, timer};`.
+- Replace `yield activity(...)` with a straight-line `activity(...)` call — the Fiber runtime suspends transparently.
+- Rename the entry method from `execute(...)` to `handle(...)` and add return types.
+
+Activities:
+
+- Extend `Workflow\V2\Activity` and define `handle(...)` with typed parameters and return type. Activities are invoked by class name from workflow code, for example `activity(SimpleActivity::class)`.
+
+Signals, updates, webhooks:
+
+- Signals shifted from push to pull. Declare the contract at the class level with `#[Workflow\V2\Attributes\Signal('name', [...])]` and block on `await('name')` inside `handle()` to receive each delivery; `await('name', $timeout)` returns `null` on timeout for chat-style loops.
+- `#[UpdateMethod]` and `#[QueryMethod]` carry over verbatim.
+- From the outside, use explicit names: `$workflow->signal('name', $payload)` and `$workflow->update('name', ...)`.
+- Webhook routing now takes an explicit alias map: `Workflow\V2\Webhooks::routes(['webhook-workflow' => WebhookWorkflow::class]);`.
+
+Compensation closures:
+
+- `addCompensation(callable)` and `compensate()` on the v2 `Workflow` base class are unchanged. Drop `yield from` inside the closures: `addCompensation(fn () => activity(CancelHotelActivity::class, $hotel));`.
+
+Stub usage:
+
+- Use `Workflow\V2\WorkflowStub`. The `make()`, `load()`, `start()`, `running()`, `output()`, `signal()`, and `update()` methods carry over; poll with `$stub->refresh()->running()` and a small `usleep(100_000)` between checks instead of a tight loop.
+
+The `App\Workflows\Simple\SimpleWorkflow`, `App\Workflows\Webhooks\WebhookWorkflow`, and `App\Workflows\Ai\AiWorkflow` samples in this repo are the canonical references for the basic shape, webhook entry, and signal/update agent patterns respectively.
+
 #### Message Streams
 
 Use message streams when a workflow needs to publish or consume repeated messages without writing Durable Workflow storage rows directly. The v2 authoring API is exposed through `Workflow::inbox()`, `Workflow::outbox()`, and `Workflow::messages()`; those facades own `workflow_messages` rows and stream cursor advancement for the workflow run.

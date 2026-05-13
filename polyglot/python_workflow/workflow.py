@@ -21,9 +21,10 @@ import os
 import socket
 from typing import Any
 
-from durable_workflow import Client, Worker, activity, workflow
+from durable_workflow import Client, TransportRetryPolicy, Worker, activity, workflow
 
 TASK_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
+POLL_TIMEOUT_SECONDS = float(os.environ.get("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "90"))
 
 
 @activity.defn(name="polyglot.python.greet")
@@ -89,13 +90,20 @@ async def main() -> int:
         f"py-workflow-worker-{socket.gethostname()}",
     )
 
-    async with Client(server_url, token=token, namespace=namespace) as client:
+    async with Client(
+        server_url,
+        token=token,
+        namespace=namespace,
+        timeout=POLL_TIMEOUT_SECONDS + 15,
+        retry_policy=TransportRetryPolicy(max_attempts=1),
+    ) as client:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE,
             workflows=[PythonGreeterWorkflow],
             activities=[greet, summarise],
             worker_id=worker_id,
+            poll_timeout=POLL_TIMEOUT_SECONDS,
             shutdown_timeout=10.0,
         )
         log.info(

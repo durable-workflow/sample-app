@@ -83,7 +83,7 @@ async def run() -> int:
             memo={"sample": "polyglot.php_to_python", "smoke": True},
         )
 
-        result = await handle.result(timeout=120.0, poll_interval=0.5)
+        result = await handle.result(timeout=240.0, poll_interval=0.5)
 
     if not isinstance(result, dict):
         print(f"smoke: expected dict result, got {type(result).__name__}", file=sys.stderr)

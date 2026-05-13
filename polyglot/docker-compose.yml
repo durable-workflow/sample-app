@@ -62,13 +62,10 @@ services:
       timeout: 2s
       retries: 10
 
-  # Server image pin: 0.2.88 contains the primary-path routing fix needed
-  # for the PHP-authored workflow to schedule activities on a separate
-  # Python worker without workflow tasks landing on an activity-only
-  # worker. Override with DURABLE_SERVER_IMAGE only if the replacement
-  # also contains that routing fix.
+  # Server image pin: 0.2.96 contains the polyglot routing and projection
+  # recovery fixes needed by the cross-language smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.96}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -78,7 +75,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.96}"
     ports:
       - "${SERVER_PORT:-8080}:8080"
     environment: *server-env
@@ -141,7 +138,7 @@ services:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.88}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.96}"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
     depends_on:
