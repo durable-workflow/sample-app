@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "durable-workflow==0.4.22"
+RUN pip install --no-cache-dir "durable-workflow==0.4.35"
 
 COPY activities.py ./activities.py
 # Bake the polyglot smoke scripts into the image so the smoke service does
