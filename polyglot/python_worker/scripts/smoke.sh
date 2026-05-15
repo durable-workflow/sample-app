@@ -9,7 +9,7 @@ scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${DURABLE_WORKFLOW_SERVER_URL:?DURABLE_WORKFLOW_SERVER_URL must be set}"
 : "${DURABLE_WORKFLOW_AUTH_TOKEN:=test-token}"
 : "${DURABLE_WORKFLOW_NAMESPACE:=default}"
-: "${DURABLE_SERVER_IMAGE:=durableworkflow/server:0.2.96}"
+: "${DURABLE_SERVER_IMAGE:=durableworkflow/server:0.2.110}"
 export DURABLE_WORKFLOW_SERVER_URL DURABLE_WORKFLOW_AUTH_TOKEN DURABLE_WORKFLOW_NAMESPACE
 
 printf '\n==> polyglot smoke: server image %s\n' "$DURABLE_SERVER_IMAGE"
