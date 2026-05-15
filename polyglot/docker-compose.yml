@@ -62,10 +62,10 @@ services:
       timeout: 2s
       retries: 10
 
-  # Server image pin: 0.2.108 contains the polyglot routing and PHP-to-Python
-  # workflow completion fixes needed by the cross-language smoke.
+  # Server image pin: 0.2.110 includes the workflow/activity poll replay fixes
+  # exercised by the published cross-language smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.108}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -75,7 +75,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.108}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
     ports:
       - "${SERVER_PORT:-8080}:8080"
     environment: *server-env
@@ -138,7 +138,7 @@ services:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.108}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
     depends_on:
