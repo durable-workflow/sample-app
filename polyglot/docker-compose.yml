@@ -62,10 +62,9 @@ services:
       timeout: 2s
       retries: 10
 
-  # Server image pin: 0.2.110 includes the workflow/activity poll replay fixes
-  # exercised by the published cross-language smoke.
+  # Server image pin for the published polyglot conformance smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.111}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -75,7 +74,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.111}"
     ports:
       - "${SERVER_PORT:-8080}:8080"
     environment: *server-env
@@ -138,7 +137,7 @@ services:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.110}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.111}"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
     depends_on:
