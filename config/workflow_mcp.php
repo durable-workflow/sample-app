@@ -115,7 +115,7 @@ return [
         ],
         'polyglot_php_to_python' => [
             'class' => PhpToPythonWorkflow::class,
-            'description' => 'PHP-authored workflow that schedules activities handled by a Python worker on a shared queue against the standalone server.',
+            'description' => 'PHP-authored workflow that schedules Python activities; the polyglot compose smoke also exercises Python-authored workflows.',
             'pattern' => 'cross-language activity dispatch',
             'command' => 'docker compose -f polyglot/docker-compose.yml run --rm smoke',
             'requires' => ['polyglot/ docker compose stack'],

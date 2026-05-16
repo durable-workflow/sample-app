@@ -14,8 +14,8 @@ use Workflow\V2\Support\WorkerProtocolVersion;
  * Worker-plane HTTP client for a standalone Durable Workflow server.
  *
  * Wraps the small slice of the worker-plane API the polyglot PHP worker
- * needs: register, long-poll workflow tasks, complete workflow tasks,
- * and fail workflow tasks.
+ * needs: register, long-poll workflow/activity tasks, complete tasks,
+ * and fail tasks.
  *
  * Headers and timeouts mirror the published worker-protocol contract
  * (`X-Durable-Workflow-Protocol-Version`, namespace header, bearer
@@ -67,33 +67,17 @@ final class ServerClient
      */
     public function pollWorkflowTask(string $workerId, string $taskQueue, int $timeoutSeconds = 30): ?array
     {
-        $pollTimeoutSeconds = WorkerProtocolVersion::clampLongPollTimeout($timeoutSeconds);
-        $requestTimeoutSeconds = max(
-            $pollTimeoutSeconds,
-            WorkerProtocolVersion::DEFAULT_LONG_POLL_TIMEOUT,
-        ) + 5;
+        return $this->pollTask('/api/worker/workflow-tasks/poll', $workerId, $taskQueue, $timeoutSeconds);
+    }
 
-        try {
-            $response = $this->workerPost('/api/worker/workflow-tasks/poll', [
-                'worker_id' => $workerId,
-                'task_queue' => $taskQueue,
-                'timeout_seconds' => $pollTimeoutSeconds,
-            ], requestTimeoutSeconds: $requestTimeoutSeconds);
-        } catch (ConnectionException $exception) {
-            if ($this->isHttpTimeout($exception)) {
-                return null;
-            }
-
-            throw $exception;
-        }
-
-        if ($response === null) {
-            return null;
-        }
-
-        $task = $response['task'] ?? null;
-
-        return is_array($task) ? $task : null;
+    /**
+     * Long-poll for the next activity task, or return null on poll timeout.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function pollActivityTask(string $workerId, string $taskQueue, int $timeoutSeconds = 30): ?array
+    {
+        return $this->pollTask('/api/worker/activity-tasks/poll', $workerId, $taskQueue, $timeoutSeconds);
     }
 
     /**
@@ -130,6 +114,73 @@ final class ServerClient
             'workflow_task_attempt' => $workflowTaskAttempt,
             'failure' => $failure,
         ]);
+    }
+
+    public function completeActivityTask(
+        string $taskId,
+        string $leaseOwner,
+        string $activityAttemptId,
+        mixed $result,
+    ): void {
+        $this->workerPost("/api/worker/activity-tasks/{$taskId}/complete", [
+            'activity_attempt_id' => $activityAttemptId,
+            'lease_owner' => $leaseOwner,
+            'result' => Avro::envelope($result),
+        ]);
+    }
+
+    public function failActivityTask(
+        string $taskId,
+        string $leaseOwner,
+        string $activityAttemptId,
+        string $message,
+        ?string $failureType = null,
+    ): void {
+        $failure = ['message' => $message];
+
+        if ($failureType !== null) {
+            $failure['type'] = $failureType;
+        }
+
+        $this->workerPost("/api/worker/activity-tasks/{$taskId}/fail", [
+            'activity_attempt_id' => $activityAttemptId,
+            'lease_owner' => $leaseOwner,
+            'failure' => $failure,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function pollTask(string $path, string $workerId, string $taskQueue, int $timeoutSeconds): ?array
+    {
+        $pollTimeoutSeconds = WorkerProtocolVersion::clampLongPollTimeout($timeoutSeconds);
+        $requestTimeoutSeconds = max(
+            $pollTimeoutSeconds,
+            WorkerProtocolVersion::DEFAULT_LONG_POLL_TIMEOUT,
+        ) + 5;
+
+        try {
+            $response = $this->workerPost($path, [
+                'worker_id' => $workerId,
+                'task_queue' => $taskQueue,
+                'timeout_seconds' => $pollTimeoutSeconds,
+            ], requestTimeoutSeconds: $requestTimeoutSeconds);
+        } catch (ConnectionException $exception) {
+            if ($this->isHttpTimeout($exception)) {
+                return null;
+            }
+
+            throw $exception;
+        }
+
+        if ($response === null) {
+            return null;
+        }
+
+        $task = $response['task'] ?? null;
+
+        return is_array($task) ? $task : null;
     }
 
     /**

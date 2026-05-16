@@ -147,7 +147,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
-| Demonstrate cross-language polyglot dispatch (PHP↔Python) | `App\Workflows\Polyglot\PhpToPythonWorkflow` | `docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
+| Run the polyglot conformance smoke (Python same-language, PHP→Python, Python→PHP) | `App\Workflows\Polyglot\PhpToPythonWorkflow` plus Python-authored workflows in `polyglot/` | `docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
 
 #### Migrating from Durable Workflow 1.x
 
@@ -257,20 +257,21 @@ See [docs/sandbox-orchestration.md](docs/sandbox-orchestration.md) for the full 
 
 The repository ships a runnable polyglot demonstration in
 [`polyglot/`](polyglot/). It brings up the standalone Durable Workflow
-server with a real PHP worker (Laravel + Composer-installed
-`durable-workflow/workflow`) and a Python worker side by side. Two
+server with real PHP workers (Laravel + Composer-installed
+`durable-workflow/workflow`) and Python workers side by side. Three
 scenarios run end to end:
 
 - a Python-authored workflow on its own Python image, and
 - a PHP-authored workflow (`App\Workflows\Polyglot\PhpToPythonWorkflow`)
   that schedules `polyglot.php-to-python.*` activities handled by the
-  Python worker on a shared task queue.
+  Python worker on a shared task queue, and
+- a Python-authored workflow that schedules `polyglot.python-to-php.*`
+  activities handled by a distinct PHP activity worker.
 
-The PHP-authored scenario is the wire-level cross-language test: the
-PHP runtime registers as a worker on the polyglot task queue, the
-Python runtime registers the activities, and each scheduled activity
-crosses the language boundary on the wire — not just inside one
-process. The smoke runs in CI on every pull request via
+The two cross-language scenarios are the wire-level tests: the workflow
+runtime and activity runtime register separately, and each scheduled
+activity crosses the language boundary on the wire — not just inside
+one process. The smoke runs in CI on every pull request via
 `.github/workflows/polyglot-validation.yml`, so a regression in either
 direction is caught before release rather than in the field.
 
@@ -367,7 +368,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 - `sandbox` → `App\Workflows\Sandbox\SandboxAgentWorkflow` (provisions, dispatches tool calls, snapshots, recovers, and cleans up an ephemeral agent sandbox via `App\Sandbox\SandboxProvider`; defaults to the local subprocess provider, set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
-- `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the `polyglot/` docker compose stack with the PHP and Python workers running)
+- `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the `polyglot/` docker compose stack with the PHP and Python workers running; the stack smoke also exercises Python-authored workflows)
 
 To add more workflows, update the config file:
 

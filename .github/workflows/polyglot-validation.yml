@@ -8,7 +8,7 @@ on:
 
 jobs:
   smoke:
-    name: polyglot smoke (PHP↔Python)
+    name: polyglot smoke (Python/PHP)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -29,7 +29,7 @@ jobs:
         working-directory: polyglot
         run: |
           docker compose up -d --build --wait \
-            server python-activity-worker php-workflow-worker python-workflow-worker
+            server python-activity-worker php-workflow-worker php-activity-worker python-workflow-worker
 
       - name: Wait for PHP worker to register on the polyglot queue
         working-directory: polyglot
@@ -47,6 +47,22 @@ jobs:
           done
           echo "::error::PHP worker did not log polyglot registration within 60s"
           docker compose logs --tail=200 php-workflow-worker
+          exit 1
+
+      - name: Wait for PHP activity worker to register on the polyglot queue
+        working-directory: polyglot
+        run: |
+          # The Python-to-PHP scenario needs a separate PHP activity
+          # worker, not the PHP workflow worker above.
+          for attempt in $(seq 1 60); do
+            if docker compose logs php-activity-worker 2>/dev/null | grep -qF "polyglot php activity worker registered"; then
+              echo "PHP activity worker registered (after ${attempt}s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::PHP activity worker did not log polyglot registration within 60s"
+          docker compose logs --tail=200 php-activity-worker
           exit 1
 
       - name: Run polyglot smoke

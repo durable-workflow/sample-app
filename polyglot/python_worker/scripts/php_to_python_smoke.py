@@ -63,7 +63,7 @@ async def wait_for_php_worker(client: Client, task_queue: str, timeout_seconds: 
     )
 
 
-async def run() -> int:
+async def run_scenario() -> dict[str, Any]:
     server_url = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
     token = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
     namespace = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
@@ -86,40 +86,43 @@ async def run() -> int:
         result = await handle.result(timeout=240.0, poll_interval=0.5)
 
     if not isinstance(result, dict):
-        print(f"smoke: expected dict result, got {type(result).__name__}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: expected dict result, got {type(result).__name__}")
 
     if result.get("workflow_runtime") != "php":
-        print(f"smoke: workflow_runtime != php: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: workflow_runtime != php: {result}")
     if result.get("input") != workflow_input:
-        print(f"smoke: input not echoed: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: input not echoed: {result}")
 
     reverse = result.get("reverse")
     if not isinstance(reverse, dict) or reverse.get("runtime") != "python":
-        print(f"smoke: reverse activity did not run on python: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: reverse activity did not run on python: {result}")
     if reverse.get("reversed") != workflow_input[::-1]:
-        print(f"smoke: reverse mismatch: {reverse}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: reverse mismatch: {reverse}")
 
     tally = result.get("tally")
     if not isinstance(tally, dict) or tally.get("runtime") != "python":
-        print(f"smoke: tally activity did not run on python: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: tally activity did not run on python: {result}")
     expected_total = 2 * 1500 + 1 * 4200
     if tally.get("total_cents") != expected_total:
-        print(f"smoke: tally total_cents != {expected_total}: {tally}", file=sys.stderr)
+        raise RuntimeError(f"smoke: tally total_cents != {expected_total}: {tally}")
+
+    return {
+        "scenario": "php_to_python",
+        "workflow_id": workflow_id,
+        "workflow_type": WORKFLOW_TYPE,
+        "status": "passed",
+        "result": result,
+    }
+
+
+async def run() -> int:
+    try:
+        scenario = await run_scenario()
+    except Exception as exc:  # noqa: BLE001
+        print(str(exc), file=sys.stderr)
         return 1
 
-    print(
-        json.dumps(
-            {"scenario": "php_to_python", "workflow_id": workflow_id, "result": result},
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    print(json.dumps(scenario, indent=2, sort_keys=True))
     return 0
 
 

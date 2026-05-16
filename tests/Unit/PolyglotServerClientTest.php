@@ -9,6 +9,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 class PolyglotServerClientTest extends TestCase
 {
@@ -63,5 +64,96 @@ class PolyglotServerClientTest extends TestCase
         $this->expectException(ConnectionException::class);
 
         $client->pollWorkflowTask('php-worker', 'polyglot-php-to-python', 30);
+    }
+
+    public function test_poll_activity_task_uses_activity_endpoint_and_clamped_timeout(): void
+    {
+        $http = new HttpFactory();
+        $requestPath = null;
+        $requestBody = null;
+
+        $http->fake(function (Request $request) use ($http, &$requestPath, &$requestBody) {
+            $requestPath = $request->url();
+            $requestBody = $request->data();
+
+            return $http->response([
+                'task' => [
+                    'task_id' => 'activity-task-1',
+                    'activity_attempt_id' => 'attempt-1',
+                ],
+            ]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $task = $client->pollActivityTask('php-activity-worker', 'polyglot-python-to-php', 120);
+
+        $this->assertSame('http://server:8080/api/worker/activity-tasks/poll', $requestPath);
+        $this->assertSame('activity-task-1', $task['task_id'] ?? null);
+        $this->assertSame([
+            'worker_id' => 'php-activity-worker',
+            'task_queue' => 'polyglot-python-to-php',
+            'timeout_seconds' => 60,
+        ], $requestBody);
+    }
+
+    public function test_complete_activity_task_sends_avro_result_envelope(): void
+    {
+        $http = new HttpFactory();
+        $requestPath = null;
+        $requestBody = null;
+
+        $http->fake(function (Request $request) use ($http, &$requestPath, &$requestBody) {
+            $requestPath = $request->url();
+            $requestBody = $request->data();
+
+            return $http->response(['recorded' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $client->completeActivityTask(
+            'activity-task-1',
+            'php-activity-worker',
+            'attempt-1',
+            ['runtime' => 'php'],
+        );
+
+        $this->assertSame('http://server:8080/api/worker/activity-tasks/activity-task-1/complete', $requestPath);
+        $this->assertSame('attempt-1', $requestBody['activity_attempt_id'] ?? null);
+        $this->assertSame('php-activity-worker', $requestBody['lease_owner'] ?? null);
+        $this->assertSame('avro', $requestBody['result']['codec'] ?? null);
+        $this->assertIsString($requestBody['result']['blob'] ?? null);
+    }
+
+    public function test_fail_activity_task_sends_failure_payload(): void
+    {
+        $http = new HttpFactory();
+        $requestPath = null;
+        $requestBody = null;
+
+        $http->fake(function (Request $request) use ($http, &$requestPath, &$requestBody) {
+            $requestPath = $request->url();
+            $requestBody = $request->data();
+
+            return $http->response(['recorded' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $client->failActivityTask(
+            'activity-task-1',
+            'php-activity-worker',
+            'attempt-1',
+            'activity exploded',
+            RuntimeException::class,
+        );
+
+        $this->assertSame('http://server:8080/api/worker/activity-tasks/activity-task-1/fail', $requestPath);
+        $this->assertSame([
+            'activity_attempt_id' => 'attempt-1',
+            'lease_owner' => 'php-activity-worker',
+            'failure' => [
+                'message' => 'activity exploded',
+                'type' => RuntimeException::class,
+            ],
+        ], $requestBody);
     }
 }

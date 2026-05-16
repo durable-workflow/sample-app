@@ -54,7 +54,7 @@ async def wait_for_python_worker(client: Client, task_queue: str, timeout_second
     )
 
 
-async def run() -> int:
+async def run_scenario() -> dict[str, Any]:
     server_url = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
     token = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
     namespace = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
@@ -77,39 +77,42 @@ async def run() -> int:
         result = await handle.result(timeout=240.0, poll_interval=0.5)
 
     if not isinstance(result, dict):
-        print(f"smoke: expected dict result, got {type(result).__name__}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: expected dict result, got {type(result).__name__}")
 
     if result.get("workflow_runtime") != "python":
-        print(f"smoke: workflow_runtime != python: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: workflow_runtime != python: {result}")
     if result.get("request") != request:
-        print(f"smoke: request not echoed: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: request not echoed: {result}")
 
     greeting = result.get("greeting")
     if not isinstance(greeting, dict) or greeting.get("language") != "python":
-        print(f"smoke: greet activity did not run on python: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: greet activity did not run on python: {result}")
     if greeting.get("name") != request["name"]:
-        print(f"smoke: greeting.name mismatch: {greeting}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: greeting.name mismatch: {greeting}")
 
     summary = result.get("summary")
     if not isinstance(summary, dict) or summary.get("language") != "python":
-        print(f"smoke: summarise activity did not run on python: {result}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"smoke: summarise activity did not run on python: {result}")
     if summary.get("name_length") != len(request["name"]):
-        print(f"smoke: summary.name_length mismatch: {summary}", file=sys.stderr)
+        raise RuntimeError(f"smoke: summary.name_length mismatch: {summary}")
+
+    return {
+        "scenario": "python_same_language",
+        "workflow_id": workflow_id,
+        "workflow_type": WORKFLOW_TYPE,
+        "status": "passed",
+        "result": result,
+    }
+
+
+async def run() -> int:
+    try:
+        scenario = await run_scenario()
+    except Exception as exc:  # noqa: BLE001
+        print(str(exc), file=sys.stderr)
         return 1
 
-    print(
-        json.dumps(
-            {"scenario": "python_workflow", "workflow_id": workflow_id, "result": result},
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    print(json.dumps(scenario, indent=2, sort_keys=True))
     return 0
 
 

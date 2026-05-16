@@ -1,10 +1,9 @@
-# Polyglot PHP workflow worker.
+# Polyglot PHP worker.
 #
 # Reuses the sample-app Laravel image (Composer-installed
-# `durable-workflow/workflow` SDK plus the PHP-authored polyglot
-# workflow class at `app/Workflows/Polyglot/PhpToPythonWorkflow.php`)
-# and runs the polyglot polling worker entrypoint instead of the
-# default Laravel HTTP service.
+# `durable-workflow/workflow` SDK plus the polyglot PHP workflow and
+# activity handlers) and runs the polyglot polling worker entrypoint
+# instead of the default Laravel HTTP service.
 #
 # Build context for this Dockerfile is the sample-app repository root,
 # not the polyglot/ directory — see polyglot/docker-compose.yml.
