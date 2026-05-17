@@ -112,7 +112,7 @@ Python-authored workflow.
 cd polyglot
 docker compose up -d --build --wait \
   server python-activity-worker php-workflow-worker php-activity-worker python-workflow-worker
-docker compose run --rm smoke
+docker compose run --rm --build smoke
 docker compose down -v
 ```
 
@@ -146,9 +146,10 @@ registered on task queue" check on the symmetric side.
 ## CI
 
 The `.github/workflows/polyglot-validation.yml` GitHub Actions job
-runs the same `docker compose run --rm smoke` on every push and pull
-request. A regression in either direction is caught here, not in the
-field.
+runs the same `docker compose run --rm --build smoke` on every push and
+pull request, so the checked-out smoke driver scripts are rebuilt into
+the image before they execute. A regression in either direction is
+caught here, not in the field.
 
 ## Codec round-trip notes
 

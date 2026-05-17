@@ -40,7 +40,7 @@ def artifact_metadata() -> dict[str, Any]:
     return {
         "server": {
             "artifact": "durableworkflow/server",
-            "pin": os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.111"),
+            "pin": os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.112"),
             "exercised": True,
         },
         "sdk_python": {

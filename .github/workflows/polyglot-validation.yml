@@ -15,6 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set isolated Compose project
+        shell: bash
+        run: |
+          raw="sample-app-polyglot-${GITHUB_RUN_ID:-local}-${GITHUB_JOB:-smoke}-${GITHUB_RUN_ATTEMPT:-1}"
+          project="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
+          project="${project%-}"
+          echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
+          echo "Polyglot Compose project: $project"
+
       - name: Show pinned server image
         working-directory: polyglot
         run: |
