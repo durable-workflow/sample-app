@@ -2,7 +2,7 @@
 
 This directory is the runnable polyglot demonstration that ships with the
 sample app. It proves the Durable Workflow control plane is language-neutral
-by running three scenarios end to end against one standalone server, with
+by running four scenarios end to end against one standalone server, with
 real workers in different languages registered on coordinated task queues.
 
 The main sample app (`docker-compose.yml` at the repository root) is the
@@ -12,11 +12,12 @@ smoke — so the simple Laravel-only path stays simple.
 
 ## What it exercises
 
-Three scenarios run end to end:
+Four scenarios run end to end:
 
 | Scenario | Workflow language | Activity language | Source |
 | --- | --- | --- | --- |
 | Python authoring | Python (`sdk-python`) | Python | `python_workflow/workflow.py` |
+| PHP authoring | PHP (`durable-workflow/workflow`) | PHP | `app/Workflows/Polyglot/PhpSameLanguageWorkflow.php` + `app/Console/Commands/PolyglotWorker.php` |
 | Cross-language activity | PHP (`durable-workflow/workflow`) | Python | `app/Workflows/Polyglot/PhpToPythonWorkflow.php` + `python_worker/activities.py` |
 | Reverse cross-language activity | Python (`sdk-python`) | PHP (`durable-workflow/workflow`) | `python_workflow/workflow.py` + `app/Console/Commands/PolyglotWorker.php` |
 
@@ -45,6 +46,15 @@ reference:
   worker to register, starts a workflow, and asserts the result. The
   workflow itself executes inside the running container, so the
   docker-compose stack is the actual unit under test.
+
+The PHP-authored same-language scenario is the PHP reference:
+
+- `php-same-workflow-worker` registers `polyglot.php.greeter` on the
+  `polyglot-php` task queue.
+- `php-same-activity-worker` registers `polyglot.php.marker` and
+  `polyglot.php.describe` on the same task queue.
+- The smoke asserts that workflow and activity tasks are both handled by
+  PHP workers through the standalone worker-plane protocol.
 
 The Python-to-PHP scenario is the reverse wire-level cross-language
 test:
@@ -81,6 +91,7 @@ polyglot/
 │   └── scripts/
 │       ├── smoke.sh                    shell entrypoint for the full smoke
 │       ├── polyglot_smoke.py           drives all scenarios and emits metadata
+│       ├── php_same_language_smoke.py  PHP-authoring sanity driver
 │       ├── python_workflow_smoke.py    Python-authoring smoke driver
 │       ├── php_to_python_smoke.py      PHP→Python smoke driver
 │       └── python_to_php_smoke.py      Python→PHP smoke driver
@@ -111,7 +122,8 @@ Python-authored workflow.
 ```bash
 cd polyglot
 docker compose up -d --build --wait \
-  server python-activity-worker php-workflow-worker php-activity-worker python-workflow-worker
+  server python-activity-worker php-same-workflow-worker php-same-activity-worker \
+  php-workflow-worker php-activity-worker python-workflow-worker
 docker compose run --rm --build smoke
 docker compose down -v
 ```
@@ -122,11 +134,14 @@ The `smoke` service runs `/app/scripts/smoke.sh` (baked in from
 1. waits for the Python runtime to register on `polyglot-python`, then
    drives the Python-authored workflow on `python-workflow-worker` and
    asserts the workflow result;
-2. waits for the PHP runtime to register on `polyglot-php-to-python`,
+2. waits for the PHP workflow and activity workers to register on
+   `polyglot-php`, then drives the PHP-authored same-language workflow
+   and asserts the workflow result;
+3. waits for the PHP runtime to register on `polyglot-php-to-python`,
    then drives the PHP-authored workflow on `php-workflow-worker` and
    asserts that activities executed by the Python worker round-trip
    cleanly back into the PHP workflow output;
-3. waits for the PHP runtime to register on `polyglot-python-to-php`,
+4. waits for the PHP runtime to register on `polyglot-python-to-php`,
    then drives the Python-authored workflow that schedules PHP
    activities and asserts the PHP runtime marker in the output.
 

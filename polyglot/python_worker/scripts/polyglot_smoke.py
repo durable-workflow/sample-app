@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
+from php_same_language_smoke import run_scenario as run_php_same_language
 from php_to_python_smoke import run_scenario as run_php_to_python
 from python_to_php_smoke import run_scenario as run_python_to_php
 from python_workflow_smoke import run_scenario as run_python_same_language
@@ -22,6 +23,11 @@ SCENARIOS: list[tuple[str, str, ScenarioRunner]] = [
         "python_same_language",
         "python-authored workflow on a python worker",
         run_python_same_language,
+    ),
+    (
+        "php_same_language",
+        "php-authored workflow on php workers",
+        run_php_same_language,
     ),
     (
         "php_to_python",
@@ -70,6 +76,16 @@ def artifact_metadata() -> dict[str, Any]:
 
 def coverage_matrix() -> list[dict[str, Any]]:
     return [
+        {
+            "scenario": "php_same_language",
+            "workflow_language": "php",
+            "activity_language": "php",
+            "workflow_type": "polyglot.php.greeter",
+            "activity_types": ["polyglot.php.marker", "polyglot.php.describe"],
+            "task_queues": [os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")],
+            "workflow_start_result_driver": "sdk-python Client",
+            "observer_check": "not_exercised",
+        },
         {
             "scenario": "python_same_language",
             "workflow_language": "python",

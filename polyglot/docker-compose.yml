@@ -23,6 +23,11 @@
 #       that queue, so the reverse activity path also crosses the
 #       language boundary on the wire.
 #
+#   - php-same-workflow-worker + php-same-activity-worker / php_same_language
+#       PHP workflow and activity workers share `polyglot-php`, proving the
+#       PHP runtime still passes the same standalone worker-plane routing
+#       path used by the cross-language examples.
+#
 # The repository-root `docker-compose.yml` is intentionally left as the
 # single-language Laravel sample. Bring this stack up only when
 # exercising polyglot.
@@ -129,6 +134,34 @@ services:
       server:
         condition: service_healthy
 
+  php-same-workflow-worker:
+    build:
+      context: ..
+      dockerfile: polyglot/php_worker/Dockerfile
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_PHP_TASK_QUEUE: polyglot-php
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-php", "--poll-timeout=5"]
+
+  php-same-activity-worker:
+    build:
+      context: ..
+      dockerfile: polyglot/php_worker/Dockerfile
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_PHP_TASK_QUEUE: polyglot-php
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["php", "artisan", "app:polyglot-worker", "--mode=activity", "--task-queue=polyglot-php", "--poll-timeout=5"]
+
   php-workflow-worker:
     build:
       context: ..
@@ -168,12 +201,17 @@ services:
       DURABLE_WORKFLOW_PHP_SDK_PIN: "durable-workflow/workflow:2.0.0-alpha.145@cd3923a3078b489ac96f7b337b989e608e82dcf8"
       DURABLE_WORKFLOW_WATERLINE_PIN: "durable-workflow/waterline:2.0.0-alpha.47@ed6f886866ceb8247d0845564c091604b28673e8"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
+      POLYGLOT_PHP_TASK_QUEUE: polyglot-php
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
     depends_on:
       server:
         condition: service_healthy
       python-activity-worker:
+        condition: service_started
+      php-same-workflow-worker:
+        condition: service_started
+      php-same-activity-worker:
         condition: service_started
       php-workflow-worker:
         condition: service_started

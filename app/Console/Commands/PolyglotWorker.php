@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Polyglot\Avro;
 use App\Polyglot\ServerClient;
 use App\Polyglot\WorkflowFiberRunner;
+use App\Workflows\Polyglot\PhpSameLanguageWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -34,7 +35,8 @@ use Throwable;
  * `polyglot.php-to-python.reverse` and `polyglot.php-to-python.tally`
  * activities implemented by the Python activity worker. Activity mode
  * registers `polyglot.python-to-php.*` activities for Python-authored
- * workflows to consume.
+ * workflows to consume, plus `polyglot.php.*` activities for the PHP
+ * same-language sanity scenario.
  */
 class PolyglotWorker extends Command
 {
@@ -52,11 +54,14 @@ class PolyglotWorker extends Command
 
     /** @var array<string, class-string<\Workflow\V2\Workflow>> */
     private const WORKFLOW_REGISTRY = [
+        'polyglot.php.greeter' => PhpSameLanguageWorkflow::class,
         'polyglot.php-to-python.PhpToPythonWorkflow' => PhpToPythonWorkflow::class,
     ];
 
     /** @var list<string> */
     private const ACTIVITY_TYPES = [
+        'polyglot.php.marker',
+        'polyglot.php.describe',
         'polyglot.python-to-php.marker',
         'polyglot.python-to-php.describe',
     ];
@@ -316,8 +321,10 @@ class PolyglotWorker extends Command
 
         $arguments = $this->decodeArguments($task);
         $result = match ($activityType) {
-            'polyglot.python-to-php.marker' => $this->phpRuntimeMarker(...$arguments),
-            'polyglot.python-to-php.describe' => $this->describePhpRuntime(...$arguments),
+            'polyglot.php.marker' => $this->phpRuntimeMarker('polyglot.php.marker', ...$arguments),
+            'polyglot.php.describe' => $this->describePhpRuntime('polyglot.php.describe', ...$arguments),
+            'polyglot.python-to-php.marker' => $this->phpRuntimeMarker('polyglot.python-to-php.marker', ...$arguments),
+            'polyglot.python-to-php.describe' => $this->describePhpRuntime('polyglot.python-to-php.describe', ...$arguments),
             default => throw new RuntimeException(sprintf(
                 'no PHP-authored activity registered for type %s',
                 $activityType,
@@ -337,14 +344,14 @@ class PolyglotWorker extends Command
      * @param array<string, mixed> $request
      * @return array<string, mixed>
      */
-    private function phpRuntimeMarker(array $request): array
+    private function phpRuntimeMarker(string $activityType, array $request): array
     {
         $name = (string) ($request['name'] ?? '');
         $locale = (string) ($request['locale'] ?? 'en');
 
         return [
             'runtime' => 'php',
-            'activity' => 'polyglot.python-to-php.marker',
+            'activity' => $activityType,
             'marker' => 'php-activity-worker',
             'name' => $name,
             'locale' => $locale,
@@ -356,14 +363,14 @@ class PolyglotWorker extends Command
      * @param array<string, mixed> $marker
      * @return array<string, mixed>
      */
-    private function describePhpRuntime(array $marker): array
+    private function describePhpRuntime(string $activityType, array $marker): array
     {
         $name = (string) ($marker['name'] ?? '');
         $runtime = (string) ($marker['runtime'] ?? 'unknown');
 
         return [
             'runtime' => 'php',
-            'activity' => 'polyglot.python-to-php.describe',
+            'activity' => $activityType,
             'marker_runtime' => $runtime,
             'summary' => sprintf('%s activity marker returned for %s', $runtime, $name),
         ];

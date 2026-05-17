@@ -106,14 +106,18 @@ final class PolyglotComposeContractTest extends TestCase
             $services['python-activity-worker']['environment']['DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS'] ?? null,
         );
 
-        $this->assertContains(
-            '--poll-timeout=5',
-            $services['php-workflow-worker']['command'] ?? [],
-        );
-        $this->assertContains(
-            '--poll-timeout=5',
-            $services['php-activity-worker']['command'] ?? [],
-        );
+        foreach ([
+            'php-workflow-worker',
+            'php-activity-worker',
+            'php-same-workflow-worker',
+            'php-same-activity-worker',
+        ] as $serviceName) {
+            $this->assertContains(
+                '--poll-timeout=5',
+                $services[$serviceName]['command'] ?? [],
+                sprintf('Expected %s to bound worker poll timeouts for CI smoke.', $serviceName),
+            );
+        }
 
         $serverPollTimeout = (int) ($serverEnv['DW_WORKER_POLL_TIMEOUT'] ?? 0);
         $pythonPollTimeout = (int) (
@@ -126,6 +130,18 @@ final class PolyglotComposeContractTest extends TestCase
             $serverPollTimeout,
             'The server long-poll window must stay below the Python worker HTTP poll timeout.',
         );
+    }
+
+    public function test_polyglot_smoke_covers_both_same_language_corners(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $services = $compose['services'] ?? [];
+        $smoke = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
+
+        $this->assertArrayHasKey('php-same-workflow-worker', $services);
+        $this->assertArrayHasKey('php-same-activity-worker', $services);
+        $this->assertStringContainsString('php_same_language', $smoke);
+        $this->assertStringContainsString('python_same_language', $smoke);
     }
 
     public function test_polyglot_validation_rebuilds_baked_smoke_driver(): void
