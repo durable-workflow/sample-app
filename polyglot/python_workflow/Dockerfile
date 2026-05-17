@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir 'durable-workflow==0.4.35'
+RUN pip install --no-cache-dir 'durable-workflow==0.4.36'
 
 COPY workflow.py ./workflow.py
 

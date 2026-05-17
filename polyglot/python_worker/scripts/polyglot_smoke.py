@@ -23,7 +23,7 @@ TOKEN = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
 NAMESPACE = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
 DW = os.environ.get("DURABLE_WORKFLOW_CLI", "dw")
 WATERLINE_URL = os.environ.get("DURABLE_WORKFLOW_WATERLINE_URL", "http://waterline:8081/waterline")
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.113")
+SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.116")
 
 PY_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
 PHP_QUEUE = os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")

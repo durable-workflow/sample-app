@@ -17,7 +17,7 @@ RUN apt-get update \
     && rm /tmp/dw-install.sh \
     && dw --version
 
-RUN pip install --no-cache-dir "durable-workflow==0.4.35"
+RUN pip install --no-cache-dir "durable-workflow==0.4.36"
 
 COPY activities.py ./activities.py
 # Bake the polyglot smoke scripts into the image so the smoke service does
