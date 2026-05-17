@@ -9,6 +9,7 @@ use RuntimeException;
 use Throwable;
 use Workflow\V2\Models\WorkflowRun;
 use Workflow\V2\Support\ActivityCall;
+use Workflow\V2\Support\SignalCall;
 use Workflow\V2\Support\WorkflowFiberContext;
 use Workflow\V2\Workflow;
 
@@ -89,10 +90,30 @@ final class WorkflowFiberRunner
      */
     public function step(mixed $resumeWith = null): WorkflowStep
     {
+        return $this->drive(fn (): mixed => $this->started
+            ? $this->fiber->resume($resumeWith)
+            : $this->fiber->start());
+    }
+
+    /**
+     * Throw a completed activity failure back into workflow code.
+     */
+    public function throw(Throwable $exception): WorkflowStep
+    {
+        if (! $this->started) {
+            throw new RuntimeException('Cannot throw into a workflow Fiber before it starts.');
+        }
+
+        return $this->drive(fn (): mixed => $this->fiber->throw($exception));
+    }
+
+    /**
+     * @param callable(): mixed $advance
+     */
+    private function drive(callable $advance): WorkflowStep
+    {
         try {
-            $value = $this->started
-                ? $this->fiber->resume($resumeWith)
-                : $this->fiber->start();
+            $value = $advance();
         } catch (Throwable $exception) {
             throw new RuntimeException(
                 'Workflow execution raised: '.$exception->getMessage(),
@@ -108,6 +129,10 @@ final class WorkflowFiberRunner
 
         if ($value instanceof ActivityCall) {
             return WorkflowStep::scheduleActivity($value);
+        }
+
+        if ($value instanceof SignalCall) {
+            return WorkflowStep::waitForSignal($value->name, $value->timeoutSeconds);
         }
 
         throw new RuntimeException(sprintf(

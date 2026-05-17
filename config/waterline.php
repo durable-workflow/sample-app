@@ -40,4 +40,42 @@ return [
     */
 
     'middleware' => ['web'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Open Access for Standalone Conformance
+    |--------------------------------------------------------------------------
+    |
+    | Waterline is normally protected by the viewWaterline gate. The polyglot
+    | conformance compose stack runs without app users, so it can opt in to
+    | unauthenticated Waterline access inside its isolated container network.
+    |
+    */
+
+    'allow_unauthenticated' => env('WATERLINE_ALLOW_UNAUTHENTICATED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Workflow Engine Source
+    |--------------------------------------------------------------------------
+    |
+    | Waterline can render legacy runs or workflow v2 runs. The polyglot
+    | conformance stack pins this to v2 so it observes the standalone server
+    | schema used by the public artifacts.
+    |
+    */
+
+    'engine_source' => env('WATERLINE_ENGINE_SOURCE', 'auto'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Namespace
+    |--------------------------------------------------------------------------
+    |
+    | When set, Waterline scopes run, worker, and operator views to the named
+    | workflow namespace.
+    |
+    */
+
+    'namespace' => env('WATERLINE_NAMESPACE'),
 ];

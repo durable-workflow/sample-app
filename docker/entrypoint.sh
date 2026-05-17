@@ -30,6 +30,22 @@ CACHE_STORE=${CACHE_STORE:-redis}
 SESSION_DRIVER=${SESSION_DRIVER:-redis}
 ENVEOF
 
+append_env_var() {
+    key="$1"
+    eval "is_set=\${$key+x}"
+    eval "value=\${$key-}"
+
+    if [ "$is_set" = "x" ]; then
+        printf '%s=%s\n' "$key" "$value" >> /app/.env
+    fi
+}
+
+append_env_var WATERLINE_DOMAIN
+append_env_var WATERLINE_PATH
+append_env_var WATERLINE_ENGINE_SOURCE
+append_env_var WATERLINE_NAMESPACE
+append_env_var WATERLINE_ALLOW_UNAUTHENTICATED
+
 # Generate APP_KEY if not set
 if [ -z "$(grep 'APP_KEY=base64:' /app/.env 2>/dev/null)" ]; then
     php artisan key:generate --force 2>/dev/null || true

@@ -2,8 +2,11 @@
 
 This directory is the runnable polyglot demonstration that ships with the
 sample app. It proves the Durable Workflow control plane is language-neutral
-by running four scenarios end to end against one standalone server, with
-real workers in different languages registered on coordinated task queues.
+by running a conformance smoke around four runtime scenarios against one
+standalone server, with real workers in different languages registered on
+coordinated task queues. The smoke drives workflow start, signal, query, and
+result retrieval through the published `dw` CLI and checks the same run through
+Waterline.
 
 The main sample app (`docker-compose.yml` at the repository root) is the
 single-language, in-process Laravel demo. This directory is a **separate**
@@ -68,10 +71,23 @@ test:
 - The smoke asserts that the Python workflow result includes the PHP
   runtime marker returned by those activities.
 
-The smoke emits a run metadata JSON document after all scenarios pass.
-That document includes exact public artifact pins for the server image,
-Python SDK, and PHP SDK, marks `dw` CLI and Waterline as not exercised
-by this compose stack, and lists the scenario coverage matrix.
+The smoke also exercises the conformance surfaces that sit around those four
+runtime scenarios:
+
+- workflow start and result retrieval through the published `dw` CLI;
+- signal and query handling through the published `dw` CLI for PHP-authored
+  and Python-authored workflows;
+- bidirectional type round-trips for strings with non-ASCII text, ints, floats,
+  booleans, nulls, mixed lists, nested maps, timestamps, and binary values
+  represented by the published JSON-native codec as explicit base64 objects;
+- typed activity error round-trips from Python activity to PHP workflow and PHP
+  activity to Python workflow;
+- Waterline event typing, payload rendering, and worker attribution for
+  same-language and mixed-language runs.
+
+The smoke emits a run metadata JSON document after all required surfaces run.
+That document includes exact public artifact pins for the server image, CLI,
+Python SDK, PHP SDK, and Waterline, plus pass/fail status per surface.
 
 The codec contract that determines which payload values cross the
 language boundary cleanly is documented in the workflow package:
@@ -123,7 +139,7 @@ Python-authored workflow.
 cd polyglot
 docker compose up -d --build --wait \
   server python-activity-worker php-same-workflow-worker php-same-activity-worker \
-  php-workflow-worker php-activity-worker python-workflow-worker
+  php-workflow-worker php-activity-worker python-workflow-worker waterline
 docker compose run --rm --build smoke
 docker compose down -v
 ```
@@ -131,24 +147,24 @@ docker compose down -v
 The `smoke` service runs `/app/scripts/smoke.sh` (baked in from
 `python_worker/scripts/smoke.sh`), which:
 
-1. waits for the Python runtime to register on `polyglot-python`, then
-   drives the Python-authored workflow on `python-workflow-worker` and
-   asserts the workflow result;
-2. waits for the PHP workflow and activity workers to register on
-   `polyglot-php`, then drives the PHP-authored same-language workflow
-   and asserts the workflow result;
-3. waits for the PHP runtime to register on `polyglot-php-to-python`,
-   then drives the PHP-authored workflow on `php-workflow-worker` and
-   asserts that activities executed by the Python worker round-trip
-   cleanly back into the PHP workflow output;
-4. waits for the PHP runtime to register on `polyglot-python-to-php`,
-   then drives the Python-authored workflow that schedules PHP
-   activities and asserts the PHP runtime marker in the output.
+1. waits for the Python and PHP workers to register on their coordinated
+   task queues;
+2. uses `dw workflow:start --wait --json` to run the Python-authored,
+   PHP-authored, PHP-to-Python, and Python-to-PHP workflow scenarios;
+3. uses `dw workflow:start`, `dw workflow:query`, `dw workflow:signal`, and
+   `dw workflow:describe` to verify signal/query parity through the published
+   CLI for both Python-authored and PHP-authored workflows;
+4. runs the bidirectional type round-trip and typed-error matrices through the
+   same published CLI entrypoint;
+5. reads Waterline JSON endpoints for the mixed-language and same-language
+   runs and compares event typing, payload rendering, and worker attribution;
+6. emits one machine-readable conformance metadata document with artifact pins
+   and pass/fail status for every required surface.
 
-The final stdout block is the run metadata document. It records the
-public artifact pins used by the run and the coverage matrix, including
-the explicit `not_exercised` status for the `dw` CLI and Waterline
-observer surfaces.
+The final stdout block is the run metadata document. It records the public
+artifact pins used by the run and the surface matrix for the CLI, runtime,
+codec, typed-error, signal/query, and Waterline checks. Every required surface
+must pass before the smoke exits successfully.
 
 Removing `php-workflow-worker` from the `up` line is the regression
 test for "this stack is actually polyglot": the smoke fails fast with
@@ -178,9 +194,10 @@ the demo runs without per-language adapter shims.
 
 ## Waterline rendering
 
-When the standalone server is paired with Waterline (not configured in
-this directory because Waterline ships with the main sample app), the
-polyglot run renders in Waterline with the same fidelity as a
-single-language run. Waterline reads each row's `payload_codec` column
-rather than sniffing blob shape, so a run authored in Python decodes
-to the same JSON structure a PHP run does.
+The polyglot compose stack starts a Waterline service against the same
+standalone server database. The smoke reads Waterline's JSON endpoints for
+same-language and mixed-language runs and verifies that workflow arguments,
+outputs, event typing, and worker attribution render with the same fidelity
+across runtime combinations. Waterline reads each row's `payload_codec` column
+rather than sniffing blob shape, so a run authored in Python decodes to the
+same JSON structure a PHP run does.

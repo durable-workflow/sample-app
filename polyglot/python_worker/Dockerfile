@@ -1,9 +1,21 @@
 FROM python:3.12-slim
 
+ARG DURABLE_WORKFLOW_CLI_VERSION=0.1.38
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DURABLE_WORKFLOW_CLI_VERSION=${DURABLE_WORKFLOW_CLI_VERSION} \
+    DURABLE_WORKFLOW_CLI_PIN=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION}
 
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh \
+    && VERSION="${DURABLE_WORKFLOW_CLI_VERSION}" DURABLE_WORKFLOW_INSTALL_DIR=/usr/local/bin sh /tmp/dw-install.sh \
+    && rm /tmp/dw-install.sh \
+    && dw --version
 
 RUN pip install --no-cache-dir "durable-workflow==0.4.35"
 

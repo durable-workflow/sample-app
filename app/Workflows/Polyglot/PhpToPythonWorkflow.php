@@ -46,6 +46,7 @@ class PhpToPythonWorkflow extends Workflow
 
         return [
             'workflow_runtime' => 'php',
+            'activity_runtime' => is_array($reverse) ? ($reverse['runtime'] ?? null) : null,
             'input' => $value,
             'reverse' => $reverse,
             'tally' => $tally,

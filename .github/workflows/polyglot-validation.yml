@@ -39,6 +39,7 @@ jobs:
         run: |
           docker compose up -d --build --wait \
             server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-activity-worker python-workflow-worker
+          docker compose up -d --build waterline
 
       - name: Wait for PHP worker to register on the polyglot queue
         working-directory: polyglot

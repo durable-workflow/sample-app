@@ -35,7 +35,7 @@
 x-server-env: &server-env
   APP_NAME: "Durable Workflow Server"
   APP_ENV: testing
-  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMg=="
+  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
   APP_DEBUG: "false"
   DB_CONNECTION: mysql
   DB_HOST: mysql
@@ -79,7 +79,7 @@ services:
 
   # Server image pin for the published polyglot conformance smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.112}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.113}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -89,7 +89,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.112}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.113}"
     expose:
       - "8080"
     environment: *server-env
@@ -124,6 +124,8 @@ services:
   python-activity-worker:
     build:
       context: ./python_worker
+      args:
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.38}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -190,16 +192,62 @@ services:
         condition: service_healthy
     command: ["php", "artisan", "app:polyglot-worker", "--mode=activity", "--task-queue=polyglot-python-to-php", "--poll-timeout=5"]
 
+  waterline:
+    build:
+      context: ..
+      dockerfile: polyglot/php_worker/Dockerfile
+    environment:
+      APP_NAME: "Durable Workflow Waterline"
+      APP_ENV: testing
+      APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
+      APP_DEBUG: "false"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: durable_workflow
+      DB_USERNAME: workflow
+      DB_PASSWORD: workflow
+      SHARED_DB_HOST: mysql
+      SHARED_DB_PORT: 3306
+      SHARED_DB_DATABASE: durable_workflow
+      SHARED_DB_USERNAME: workflow
+      SHARED_DB_PASSWORD: workflow
+      REDIS_HOST: redis
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      WATERLINE_ENGINE_SOURCE: v2
+      WATERLINE_NAMESPACE: default
+      WATERLINE_PATH: waterline
+      WATERLINE_ALLOW_UNAUTHENTICATED: "true"
+    expose:
+      - "8081"
+    depends_on:
+      server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8081"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/waterline/api/v2/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   smoke:
     build:
       context: ./python_worker
+      args:
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.38}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.112}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.113}"
+      DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.38}"
+      DURABLE_WORKFLOW_CLI_PIN: "durable-workflow/cli:0.1.38"
       DURABLE_WORKFLOW_PHP_SDK_PIN: "durable-workflow/workflow:2.0.0-alpha.145@cd3923a3078b489ac96f7b337b989e608e82dcf8"
-      DURABLE_WORKFLOW_WATERLINE_PIN: "durable-workflow/waterline:2.0.0-alpha.47@ed6f886866ceb8247d0845564c091604b28673e8"
+      DURABLE_WORKFLOW_WATERLINE_PIN: "durable-workflow/waterline:2.0.0-alpha.48@4a3ac279f7f8037cf2f422e7b732ec0cdfba17c5"
+      DURABLE_WORKFLOW_WATERLINE_URL: "http://waterline:8081/waterline"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PHP_TASK_QUEUE: polyglot-php
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
@@ -218,5 +266,7 @@ services:
       php-activity-worker:
         condition: service_started
       python-workflow-worker:
+        condition: service_started
+      waterline:
         condition: service_started
     command: ["bash", "/app/scripts/smoke.sh"]

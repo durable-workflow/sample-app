@@ -81,6 +81,16 @@ final class ServerClient
     }
 
     /**
+     * Long-poll for the next query task, or return null on poll timeout.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function pollQueryTask(string $workerId, string $taskQueue, int $timeoutSeconds = 30): ?array
+    {
+        return $this->pollTask('/api/worker/query-tasks/poll', $workerId, $taskQueue, $timeoutSeconds);
+    }
+
+    /**
      * @param list<array<string, mixed>> $commands
      */
     public function completeWorkflowTask(
@@ -135,6 +145,8 @@ final class ServerClient
         string $activityAttemptId,
         string $message,
         ?string $failureType = null,
+        bool $nonRetryable = false,
+        mixed $details = null,
     ): void {
         $failure = ['message' => $message];
 
@@ -142,9 +154,55 @@ final class ServerClient
             $failure['type'] = $failureType;
         }
 
+        if ($nonRetryable) {
+            $failure['non_retryable'] = true;
+        }
+
+        if ($details !== null) {
+            $failure['details'] = Avro::envelope($details);
+        }
+
         $this->workerPost("/api/worker/activity-tasks/{$taskId}/fail", [
             'activity_attempt_id' => $activityAttemptId,
             'lease_owner' => $leaseOwner,
+            'failure' => $failure,
+        ]);
+    }
+
+    public function completeQueryTask(
+        string $queryTaskId,
+        string $leaseOwner,
+        int $queryTaskAttempt,
+        mixed $result,
+    ): void {
+        $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/complete", [
+            'lease_owner' => $leaseOwner,
+            'query_task_attempt' => $queryTaskAttempt,
+            'result' => $result,
+            'result_envelope' => Avro::envelope($result),
+        ]);
+    }
+
+    public function failQueryTask(
+        string $queryTaskId,
+        string $leaseOwner,
+        int $queryTaskAttempt,
+        string $message,
+        string $reason = 'query_rejected',
+        ?string $failureType = null,
+    ): void {
+        $failure = [
+            'message' => $message,
+            'reason' => $reason,
+        ];
+
+        if ($failureType !== null) {
+            $failure['type'] = $failureType;
+        }
+
+        $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/fail", [
+            'lease_owner' => $leaseOwner,
+            'query_task_attempt' => $queryTaskAttempt,
             'failure' => $failure,
         ]);
     }

@@ -18,16 +18,23 @@ final class WorkflowStep
         public readonly bool $completed,
         public readonly mixed $result,
         public readonly ?ActivityCall $activity,
+        public readonly ?string $signalName,
+        public readonly ?int $signalTimeoutSeconds,
     ) {
     }
 
     public static function completed(mixed $result): self
     {
-        return new self(true, $result, null);
+        return new self(true, $result, null, null, null);
     }
 
     public static function scheduleActivity(ActivityCall $call): self
     {
-        return new self(false, null, $call);
+        return new self(false, null, $call, null, null);
+    }
+
+    public static function waitForSignal(string $signalName, ?int $timeoutSeconds): self
+    {
+        return new self(false, null, null, $signalName, $timeoutSeconds);
     }
 }

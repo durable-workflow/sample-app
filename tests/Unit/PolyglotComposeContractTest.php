@@ -44,12 +44,12 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.112', $smokeShell);
-        $this->assertStringNotContainsString('durableworkflow/server:0.2.111', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.113', $smokeShell);
+        $this->assertStringNotContainsString('durableworkflow/server:0.2.112', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.112', $smokeDriver);
-        $this->assertStringNotContainsString('durableworkflow/server:0.2.111', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.113', $smokeDriver);
+        $this->assertStringNotContainsString('durableworkflow/server:0.2.112', $smokeDriver);
     }
 
     public function test_polyglot_validation_derives_compose_project_from_actions_run_context(): void
@@ -148,16 +148,214 @@ final class PolyglotComposeContractTest extends TestCase
     {
         $workflow = Yaml::parseFile($this->repoPath('.github/workflows/polyglot-validation.yml'));
         $steps = $workflow['jobs']['smoke']['steps'] ?? [];
+        $bringUpSteps = array_values(array_filter(
+            $steps,
+            static fn (array $step): bool => ($step['name'] ?? null) === 'Bring up polyglot stack',
+        ));
         $smokeSteps = array_values(array_filter(
             $steps,
             static fn (array $step): bool => ($step['name'] ?? null) === 'Run polyglot smoke',
         ));
+
+        $this->assertNotEmpty($bringUpSteps);
+        $bringUpRun = (string) ($bringUpSteps[0]['run'] ?? '');
+        $bringUpLines = array_values(array_filter(
+            array_map('trim', explode("\n", $bringUpRun)),
+            static fn (string $line): bool => $line !== '',
+        ));
+        $waitLineIndex = array_search('docker compose up -d --build --wait \\', $bringUpLines, true);
+
+        $this->assertStringContainsString('docker compose up -d --build --wait', $bringUpRun);
+        $this->assertStringContainsString('docker compose up -d --build waterline', $bringUpRun);
+        $this->assertNotFalse($waitLineIndex);
+        $this->assertArrayHasKey($waitLineIndex + 1, $bringUpLines);
+        $this->assertStringNotContainsString('waterline', $bringUpLines[$waitLineIndex + 1]);
 
         $this->assertNotEmpty($smokeSteps);
         $this->assertSame(
             'docker compose run --rm --build smoke',
             trim((string) ($smokeSteps[0]['run'] ?? '')),
         );
+    }
+
+    public function test_polyglot_smoke_installs_published_cli_and_configures_waterline(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $services = $compose['services'] ?? [];
+        $dockerfile = (string) file_get_contents($this->repoPath('polyglot/python_worker/Dockerfile'));
+        $phpDockerfile = (string) file_get_contents($this->repoPath('polyglot/php_worker/Dockerfile'));
+        $phpEntrypoint = (string) file_get_contents($this->repoPath('docker/entrypoint.sh'));
+        $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
+        $composerLock = json_decode(
+            (string) file_get_contents($this->repoPath('composer.lock')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION=0.1.38', $dockerfile);
+        $this->assertStringContainsString('https://durable-workflow.com/install.sh', $dockerfile);
+        $this->assertStringContainsString('VERSION="${DURABLE_WORKFLOW_CLI_VERSION}"', $dockerfile);
+        $this->assertStringContainsString('durable-workflow==0.4.35', $dockerfile);
+        $this->assertStringContainsString('RUN chmod +x docker/entrypoint.sh', $phpDockerfile);
+        $this->assertStringContainsString('ENTRYPOINT ["/app/docker/entrypoint.sh"]', $phpDockerfile);
+        $this->assertStringContainsString('append_env_var WATERLINE_PATH', $phpEntrypoint);
+        $this->assertStringContainsString('append_env_var WATERLINE_ENGINE_SOURCE', $phpEntrypoint);
+        $this->assertStringContainsString('append_env_var WATERLINE_NAMESPACE', $phpEntrypoint);
+        $this->assertStringContainsString('append_env_var WATERLINE_ALLOW_UNAUTHENTICATED', $phpEntrypoint);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_PIN:=durable-workflow/cli:0.1.38', $smokeShell);
+
+        $this->assertArrayHasKey('waterline', $services);
+        $this->assertSame('v2', $services['waterline']['environment']['WATERLINE_ENGINE_SOURCE'] ?? null);
+        $this->assertSame('default', $services['waterline']['environment']['WATERLINE_NAMESPACE'] ?? null);
+        $this->assertSame('true', $services['waterline']['environment']['WATERLINE_ALLOW_UNAUTHENTICATED'] ?? null);
+        $this->assertSame('mysql', $services['waterline']['environment']['DB_HOST'] ?? null);
+        $this->assertSame(3306, $services['waterline']['environment']['DB_PORT'] ?? null);
+        $this->assertSame('durable_workflow', $services['waterline']['environment']['DB_DATABASE'] ?? null);
+        $this->assertSame('workflow', $services['waterline']['environment']['DB_USERNAME'] ?? null);
+        $this->assertSame('workflow', $services['waterline']['environment']['DB_PASSWORD'] ?? null);
+        $this->assertSame('mysql', $services['waterline']['environment']['SHARED_DB_HOST'] ?? null);
+        $this->assertSame(3306, $services['waterline']['environment']['SHARED_DB_PORT'] ?? null);
+        $this->assertSame('durable_workflow', $services['waterline']['environment']['SHARED_DB_DATABASE'] ?? null);
+        $this->assertSame('workflow', $services['waterline']['environment']['SHARED_DB_USERNAME'] ?? null);
+        $this->assertSame('workflow', $services['waterline']['environment']['SHARED_DB_PASSWORD'] ?? null);
+        $this->assertSame(['8081'], $services['waterline']['expose'] ?? null);
+        $this->assertSame(
+            ['CMD', 'curl', '-f', 'http://localhost:8081/waterline/api/v2/health'],
+            $services['waterline']['healthcheck']['test'] ?? null,
+        );
+        $this->assertArrayHasKey('waterline', $services['smoke']['depends_on'] ?? []);
+        $this->assertSame('service_started', $services['smoke']['depends_on']['waterline']['condition'] ?? null);
+        $this->assertSame(
+            'http://waterline:8081/waterline',
+            $services['smoke']['environment']['DURABLE_WORKFLOW_WATERLINE_URL'] ?? null,
+        );
+        $this->assertSame(
+            'durable-workflow/cli:0.1.38',
+            $services['smoke']['environment']['DURABLE_WORKFLOW_CLI_PIN'] ?? null,
+        );
+        $this->assertSame(
+            'durable-workflow/waterline:2.0.0-alpha.48@4a3ac279f7f8037cf2f422e7b732ec0cdfba17c5',
+            $services['smoke']['environment']['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
+        );
+
+        $lockedWaterline = null;
+        foreach (($composerLock['packages'] ?? []) as $package) {
+            if (($package['name'] ?? null) === 'durable-workflow/waterline') {
+                $lockedWaterline = $package;
+                break;
+            }
+        }
+
+        $this->assertIsArray($lockedWaterline);
+        $this->assertSame('2.0.0-alpha.48', $lockedWaterline['version'] ?? null);
+        $this->assertSame(
+            '4a3ac279f7f8037cf2f422e7b732ec0cdfba17c5',
+            $lockedWaterline['source']['reference'] ?? null,
+        );
+    }
+
+    public function test_polyglot_laravel_services_use_valid_aes_256_app_keys(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $serverEnv = $this->serverEnvironment($compose);
+        $waterlineEnv = $compose['services']['waterline']['environment'] ?? [];
+
+        $this->assertLaravelAppKeySupportsAes256($serverEnv['APP_KEY'] ?? null, 'server APP_KEY');
+        $this->assertLaravelAppKeySupportsAes256($waterlineEnv['APP_KEY'] ?? null, 'waterline APP_KEY');
+    }
+
+    public function test_polyglot_smoke_metadata_covers_required_conformance_surfaces(): void
+    {
+        $smoke = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
+
+        foreach ([
+            'cli_start_result',
+            'signals_queries',
+            'type_matrix',
+            'typed_errors',
+            'waterline',
+            'polyglot.python.signal-query',
+            'polyglot.php.signal-query',
+            'polyglot.python-to-php.type-roundtrip',
+            'polyglot.php-to-python.type-roundtrip',
+            'polyglot.python-to-php.typed-error',
+            'polyglot.php-to-python.typed-error',
+        ] as $needle) {
+            $this->assertStringContainsString($needle, $smoke);
+        }
+
+        $this->assertStringContainsString('"workflow_start_result_driver": "dw CLI"', $smoke);
+        $this->assertStringContainsString('"signal_driver": "dw CLI"', $smoke);
+        $this->assertStringContainsString('"query_driver": "dw CLI"', $smoke);
+        $this->assertStringContainsString('"result_driver": "dw CLI"', $smoke);
+        $this->assertStringContainsString('def wait_for_signal_wait_open(', $smoke);
+        $this->assertStringContainsString('durable_wait = wait_for_signal_wait_open(wid, SIGNAL_NAME)', $smoke);
+        $this->assertStringContainsString('"durable_wait_before_signal"', $smoke);
+        $this->assertStringNotContainsString('server_php_worker_query_routing', $smoke);
+        $this->assertStringNotContainsString('"blocked_surfaces": blocked_surfaces', $smoke);
+        $this->assertStringContainsString('こんにちは', $smoke);
+        $this->assertStringContainsString('binary_base64', $smoke);
+
+        $pythonWorkflow = (string) file_get_contents($this->repoPath('polyglot/python_workflow/workflow.py'));
+        $this->assertStringContainsString('POLYGLOT_SIGNAL_CONDITION_KEY = f"polyglot.signal.{POLYGLOT_SIGNAL_NAME}"', $pythonWorkflow);
+        $this->assertStringContainsString('key=POLYGLOT_SIGNAL_CONDITION_KEY', $pythonWorkflow);
+    }
+
+    public function test_polyglot_smoke_uses_supported_dw_connection_and_input_configuration(): void
+    {
+        $smoke = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
+
+        $this->assertStringContainsString('env["DURABLE_WORKFLOW_SERVER_URL"] = SERVER_URL', $smoke);
+        $this->assertStringContainsString('env["DURABLE_WORKFLOW_NAMESPACE"] = NAMESPACE', $smoke);
+        $this->assertStringContainsString('env["DURABLE_WORKFLOW_AUTH_TOKEN"] = TOKEN', $smoke);
+        $this->assertStringContainsString('cmd = [DW, *args]', $smoke);
+        $this->assertStringNotContainsString('"--server",', $smoke);
+        $this->assertStringNotContainsString('"--namespace",', $smoke);
+        $this->assertStringNotContainsString('"--token",', $smoke);
+
+        $this->assertStringContainsString('f"--input={json_arg(input_args)}"', $smoke);
+        $this->assertStringNotContainsString("\"--input\",\n        json.dumps", $smoke);
+    }
+
+    public function test_polyglot_php_signal_query_is_a_required_surface(): void
+    {
+        $smoke = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
+
+        $this->assertStringContainsString('class DwCommandError(RuntimeError):', $smoke);
+        $this->assertStringContainsString(
+            '("php_signal_query", "polyglot.php.signal-query", PHP2PY_QUEUE, "php")',
+            $smoke,
+        );
+        $this->assertStringNotContainsString(
+            'def is_php_query_routing_blocker(error: DwCommandError) -> bool:',
+            $smoke,
+        );
+        $this->assertStringNotContainsString(
+            'php_query_blocked_payload',
+            $smoke,
+        );
+        $this->assertStringNotContainsString(
+            '"status": "blocked"',
+            $smoke,
+        );
+    }
+
+    public function test_waterline_config_exposes_v2_engine_source_and_namespace(): void
+    {
+        $config = (string) file_get_contents($this->repoPath('config/waterline.php'));
+
+        $this->assertStringContainsString("'engine_source' => env('WATERLINE_ENGINE_SOURCE', 'auto')", $config);
+        $this->assertStringContainsString("'namespace' => env('WATERLINE_NAMESPACE')", $config);
+        $this->assertStringContainsString("'allow_unauthenticated' => env('WATERLINE_ALLOW_UNAUTHENTICATED', false)", $config);
+    }
+
+    public function test_polyglot_waterline_provider_allows_conformance_opt_in_without_users(): void
+    {
+        $provider = (string) file_get_contents($this->repoPath('app/Providers/WaterlineServiceProvider.php'));
+
+        $this->assertStringContainsString("filter_var(config('waterline.allow_unauthenticated'), FILTER_VALIDATE_BOOL)", $provider);
+        $this->assertStringContainsString('Waterline::auth', $provider);
+        $this->assertStringContainsString('function ($user = null)', $provider);
     }
 
     private function repoPath(string $path): string
@@ -192,8 +390,23 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.112', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.112, got %s.', $image),
+            version_compare($matches['version'], '0.2.113', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.113, got %s.', $image),
+        );
+    }
+
+    private function assertLaravelAppKeySupportsAes256(mixed $key, string $label): void
+    {
+        $this->assertIsString($key, $label);
+        $this->assertStringStartsWith('base64:', $key, $label);
+
+        $decoded = base64_decode(substr($key, strlen('base64:')), true);
+
+        $this->assertIsString($decoded, $label);
+        $this->assertSame(
+            32,
+            strlen($decoded),
+            sprintf('%s must decode to 32 bytes for Laravel AES-256-CBC middleware.', $label),
         );
     }
 }

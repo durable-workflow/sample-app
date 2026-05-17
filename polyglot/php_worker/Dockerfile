@@ -29,5 +29,7 @@ RUN composer dump-autoload --optimize
 # real APP_KEY, so generate one for this image. The polyglot worker
 # never serves HTTP traffic, so this key is throwaway.
 RUN cp .env.example .env && php artisan key:generate --force
+RUN chmod +x docker/entrypoint.sh
 
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["php", "artisan", "app:polyglot-worker"]

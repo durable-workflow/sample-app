@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Polyglot\Avro;
+use App\Polyglot\PolyglotActivityFailure;
 use App\Polyglot\ServerClient;
 use App\Polyglot\WorkflowFiberRunner;
+use App\Workflows\Polyglot\PhpSignalQueryWorkflow;
 use App\Workflows\Polyglot\PhpSameLanguageWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
+use App\Workflows\Polyglot\PhpToPythonTypedErrorWorkflow;
+use App\Workflows\Polyglot\PhpToPythonTypeRoundtripWorkflow;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use RuntimeException;
@@ -56,6 +60,9 @@ class PolyglotWorker extends Command
     private const WORKFLOW_REGISTRY = [
         'polyglot.php.greeter' => PhpSameLanguageWorkflow::class,
         'polyglot.php-to-python.PhpToPythonWorkflow' => PhpToPythonWorkflow::class,
+        'polyglot.php-to-python.type-roundtrip' => PhpToPythonTypeRoundtripWorkflow::class,
+        'polyglot.php-to-python.typed-error' => PhpToPythonTypedErrorWorkflow::class,
+        'polyglot.php.signal-query' => PhpSignalQueryWorkflow::class,
     ];
 
     /** @var list<string> */
@@ -64,6 +71,8 @@ class PolyglotWorker extends Command
         'polyglot.php.describe',
         'polyglot.python-to-php.marker',
         'polyglot.python-to-php.describe',
+        'polyglot.python-to-php.echo',
+        'polyglot.python-to-php.typed-error',
     ];
 
     public function handle(HttpFactory $http): int
@@ -131,6 +140,37 @@ class PolyglotWorker extends Command
         $consecutiveIdle = 0;
 
         while (true) {
+            $queryTask = $client->pollQueryTask($workerId, $taskQueue, 1);
+
+            if ($queryTask !== null) {
+                $consecutiveIdle = 0;
+
+                try {
+                    $this->processQueryTask($client, $workerId, $queryTask);
+                } catch (Throwable $exception) {
+                    $this->error('polyglot php worker query processing failed: '.$exception->getMessage());
+
+                    $queryTaskId = (string) ($queryTask['query_task_id'] ?? '');
+                    $attempt = (int) ($queryTask['query_task_attempt'] ?? 1);
+
+                    if ($queryTaskId !== '') {
+                        try {
+                            $client->failQueryTask(
+                                $queryTaskId,
+                                $workerId,
+                                $attempt,
+                                $exception->getMessage(),
+                                failureType: $exception::class,
+                            );
+                        } catch (Throwable $reportError) {
+                            $this->error('failed to report query failure: '.$reportError->getMessage());
+                        }
+                    }
+                }
+
+                continue;
+            }
+
             $task = $client->pollWorkflowTask($workerId, $taskQueue, $pollTimeout);
 
             if ($task === null) {
@@ -257,7 +297,10 @@ class PolyglotWorker extends Command
         }
 
         $arguments = $this->decodeArguments($task);
-        $activityResults = $this->extractActivityResults($task);
+        $activityReplayValues = $this->extractActivityReplayValues($task);
+        $signalReplayValues = $this->extractSignalReplayValues($task);
+        $activityReplayIndex = 0;
+        $signalReplayIndexes = [];
 
         $runner = WorkflowFiberRunner::forClass(
             self::WORKFLOW_REGISTRY[$workflowType],
@@ -266,15 +309,44 @@ class PolyglotWorker extends Command
             $arguments,
         );
 
-        // Cold replay: drive the fiber from a fresh start, feeding back
-        // every activity result already in this task's history. The next
-        // suspension is the command we owe the server.
+        // Cold replay: drive the fiber from a fresh start, feeding back only
+        // history events that match the current suspension. Signals can arrive
+        // while an activity is pending, so they are replayed by signal name
+        // rather than as generic fiber resume values.
         $step = $runner->step(null);
-        foreach ($activityResults as $result) {
-            if ($step->completed) {
-                break;
+
+        while (! $step->completed) {
+            if ($step->activity !== null) {
+                if (! array_key_exists($activityReplayIndex, $activityReplayValues)) {
+                    break;
+                }
+
+                $result = $activityReplayValues[$activityReplayIndex];
+                $activityReplayIndex++;
+
+                $step = $result instanceof PolyglotActivityFailure
+                    ? $runner->throw($result)
+                    : $runner->step($result);
+
+                continue;
             }
-            $step = $runner->step($result);
+
+            if ($step->signalName !== null) {
+                $signalName = $step->signalName;
+                $signalReplayIndex = $signalReplayIndexes[$signalName] ?? 0;
+                $signals = $signalReplayValues[$signalName] ?? [];
+
+                if (! array_key_exists($signalReplayIndex, $signals)) {
+                    break;
+                }
+
+                $signalReplayIndexes[$signalName] = $signalReplayIndex + 1;
+                $step = $runner->step($signals[$signalReplayIndex]);
+
+                continue;
+            }
+
+            break;
         }
 
         if ($step->completed) {
@@ -288,22 +360,46 @@ class PolyglotWorker extends Command
         }
 
         $activity = $step->activity;
-        if ($activity === null) {
-            throw new RuntimeException('workflow step suspended without an activity call.');
+        if ($activity !== null) {
+            $client->completeWorkflowTask($taskId, $workerId, $attempt, [[
+                'type' => 'schedule_activity',
+                'activity_type' => $activity->activity,
+                'queue' => $taskQueue,
+                'arguments' => Avro::envelope(array_values($activity->arguments)),
+            ]]);
+
+            $this->line(sprintf(
+                'polyglot php worker scheduled activity %s for workflow %s',
+                $activity->activity,
+                $workflowId,
+            ));
+
+            return;
         }
 
-        $client->completeWorkflowTask($taskId, $workerId, $attempt, [[
-            'type' => 'schedule_activity',
-            'activity_type' => $activity->activity,
-            'queue' => $taskQueue,
-            'arguments' => Avro::envelope(array_values($activity->arguments)),
-        ]]);
+        if ($step->signalName !== null) {
+            $command = [
+                'type' => 'open_condition_wait',
+                'condition_key' => 'polyglot.signal.'.$step->signalName,
+                'condition_definition_fingerprint' => hash('sha256', 'polyglot.signal.'.$step->signalName),
+            ];
 
-        $this->line(sprintf(
-            'polyglot php worker scheduled activity %s for workflow %s',
-            $activity->activity,
-            $workflowId,
-        ));
+            if ($step->signalTimeoutSeconds !== null) {
+                $command['timeout_seconds'] = $step->signalTimeoutSeconds;
+            }
+
+            $client->completeWorkflowTask($taskId, $workerId, $attempt, [$command]);
+
+            $this->line(sprintf(
+                'polyglot php worker opened signal wait %s for workflow %s',
+                $step->signalName,
+                $workflowId,
+            ));
+
+            return;
+        }
+
+        throw new RuntimeException('workflow step suspended without an activity or signal wait.');
     }
 
     /**
@@ -320,11 +416,40 @@ class PolyglotWorker extends Command
         }
 
         $arguments = $this->decodeArguments($task);
+
+        if ($activityType === 'polyglot.python-to-php.typed-error') {
+            $client->failActivityTask(
+                $taskId,
+                $workerId,
+                $activityAttemptId,
+                'php activity planned typed failure',
+                'PolyglotPhpTypedError',
+                nonRetryable: true,
+                details: [
+                    'origin' => 'php',
+                    'code' => 'PHP_TYPED_ERROR',
+                    'structured' => [
+                        'language' => 'php',
+                        'request' => $arguments[0] ?? null,
+                    ],
+                ],
+            );
+
+            $this->line(sprintf(
+                'polyglot php activity worker failed activity %s for workflow %s',
+                $activityType,
+                (string) ($task['workflow_id'] ?? ''),
+            ));
+
+            return;
+        }
+
         $result = match ($activityType) {
             'polyglot.php.marker' => $this->phpRuntimeMarker('polyglot.php.marker', ...$arguments),
             'polyglot.php.describe' => $this->describePhpRuntime('polyglot.php.describe', ...$arguments),
             'polyglot.python-to-php.marker' => $this->phpRuntimeMarker('polyglot.python-to-php.marker', ...$arguments),
             'polyglot.python-to-php.describe' => $this->describePhpRuntime('polyglot.python-to-php.describe', ...$arguments),
+            'polyglot.python-to-php.echo' => $this->echoPhpValue(...$arguments),
             default => throw new RuntimeException(sprintf(
                 'no PHP-authored activity registered for type %s',
                 $activityType,
@@ -338,6 +463,42 @@ class PolyglotWorker extends Command
             $activityType,
             (string) ($task['workflow_id'] ?? ''),
         ));
+    }
+
+    /**
+     * @param array<string, mixed> $task
+     */
+    private function processQueryTask(ServerClient $client, string $workerId, array $task): void
+    {
+        $queryTaskId = (string) ($task['query_task_id'] ?? '');
+        $queryAttempt = (int) ($task['query_task_attempt'] ?? 1);
+        $workflowType = (string) ($task['workflow_type'] ?? '');
+        $workflowId = (string) ($task['workflow_id'] ?? '');
+        $queryName = (string) ($task['query_name'] ?? '');
+
+        if ($queryTaskId === '' || $workflowType === '' || $queryName === '') {
+            throw new RuntimeException('query task is missing required identity fields.');
+        }
+
+        if ($workflowType !== 'polyglot.php.signal-query' || $queryName !== 'state') {
+            throw new RuntimeException(sprintf(
+                'no PHP-authored query registered for %s.%s',
+                $workflowType,
+                $queryName,
+            ));
+        }
+
+        $signals = $this->extractSignalValues($task, 'polyglot-signal');
+
+        $client->completeQueryTask($queryTaskId, $workerId, $queryAttempt, [
+            'workflow_runtime' => 'php',
+            'workflow_id' => $workflowId,
+            'stage' => $signals === [] ? 'waiting' : 'signaled',
+            'signal_count' => count($signals),
+            'signals' => $signals,
+        ]);
+
+        $this->line(sprintf('polyglot php worker answered query %s for workflow %s', $queryName, $workflowId));
     }
 
     /**
@@ -377,6 +538,18 @@ class PolyglotWorker extends Command
     }
 
     /**
+     * @param array<string, mixed> $value
+     * @return array<string, mixed>
+     */
+    private function echoPhpValue(array $value): array
+    {
+        return [
+            'runtime' => 'php',
+            'value' => $value,
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $task
      * @return array<int, mixed>
      */
@@ -406,13 +579,13 @@ class PolyglotWorker extends Command
     }
 
     /**
-     * Walk the task's history events and return decoded activity results
-     * in event order. ActivityFailed terminates replay with an exception.
+     * Walk the task's history events and return decoded activity replay values
+     * in event order.
      *
      * @param array<string, mixed> $task
      * @return list<mixed>
      */
-    private function extractActivityResults(array $task): array
+    private function extractActivityReplayValues(array $task): array
     {
         $events = $task['history_events'] ?? [];
 
@@ -441,12 +614,81 @@ class PolyglotWorker extends Command
             }
 
             if ($type === 'ActivityFailed') {
-                $message = (string) ($payload['message'] ?? 'activity failed');
-
-                throw new RuntimeException('polyglot activity failed on the python worker: '.$message);
+                $results[] = PolyglotActivityFailure::fromHistoryPayload($payload);
             }
         }
 
         return $results;
+    }
+
+    /**
+     * Walk the task's history events and return decoded signal values keyed by
+     * signal name. Each signal queue preserves event order for that name.
+     *
+     * @param array<string, mixed> $task
+     * @return array<string, list<mixed>>
+     */
+    private function extractSignalReplayValues(array $task): array
+    {
+        $events = $task['history_events'] ?? [];
+
+        if (! is_array($events)) {
+            return [];
+        }
+
+        $signals = [];
+
+        foreach ($events as $event) {
+            if (! is_array($event) || ($event['event_type'] ?? null) !== 'SignalReceived') {
+                continue;
+            }
+
+            $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
+            $signalName = $payload['signal_name'] ?? null;
+
+            if (! is_string($signalName) || $signalName === '') {
+                continue;
+            }
+
+            $signals[$signalName] ??= [];
+            $signals[$signalName][] = $this->signalValue($payload);
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @param array<string, mixed> $task
+     * @return list<mixed>
+     */
+    private function extractSignalValues(array $task, string $signalName): array
+    {
+        $signalsByName = $this->extractSignalReplayValues($task);
+
+        return $signalsByName[$signalName] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function signalValue(array $payload): mixed
+    {
+        $envelope = $payload['arguments'] ?? $payload['value'] ?? null;
+
+        if (is_array($envelope) || is_string($envelope)) {
+            $decoded = Avro::decodeEnvelope($envelope);
+        } else {
+            $decoded = $envelope;
+        }
+
+        if ($decoded === [] || $decoded === null) {
+            return true;
+        }
+
+        if (is_array($decoded) && array_is_list($decoded)) {
+            return count($decoded) === 1 ? $decoded[0] : $decoded;
+        }
+
+        return $decoded;
     }
 }
