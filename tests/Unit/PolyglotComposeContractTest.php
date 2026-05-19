@@ -196,14 +196,14 @@ final class PolyglotComposeContractTest extends TestCase
         $lockedPackages = array_column($composerLock['packages'] ?? [], null, 'name');
 
         $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION=0.1.44', $dockerfile);
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.55', $dockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.56', $dockerfile);
         $this->assertStringContainsString('https://durable-workflow.com/install.sh', $dockerfile);
         $this->assertStringContainsString('VERSION="${DURABLE_WORKFLOW_CLI_VERSION}"', $dockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
             $dockerfile,
         );
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.55', $pythonWorkflowDockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.56', $pythonWorkflowDockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
             $pythonWorkflowDockerfile,
@@ -236,7 +236,7 @@ final class PolyglotComposeContractTest extends TestCase
             'DURABLE_WORKFLOW_CLI_PIN:=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION}',
             $smokeShell,
         );
-        $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.55', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.56', $smokeShell);
         $this->assertStringContainsString('${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}', $smokeShell);
         $this->assertStringContainsString(
             'DURABLE_WORKFLOW_PHP_SDK_PIN="durable-workflow/workflow:${DURABLE_WORKFLOW_PHP_SDK_VERSION}"',
@@ -305,7 +305,7 @@ final class PolyglotComposeContractTest extends TestCase
             $services['smoke']['environment']['DURABLE_WORKFLOW_CLI_PIN'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.55}',
+            '${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.56}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null,
         );
         $this->assertSame(

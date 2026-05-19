@@ -29,7 +29,7 @@ def semantic_version_from_text(value: str | None) -> str | None:
 DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
     "server": "0.2.138",
     "cli": "0.1.44",
-    "sdk-python": "0.4.55",
+    "sdk-python": "0.4.56",
     "workflow": "2.0.0-alpha.158",
     "waterline": "2.0.0-alpha.52",
 }
