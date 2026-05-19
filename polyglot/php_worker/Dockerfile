@@ -9,8 +9,8 @@
 # not the polyglot/ directory — see polyglot/docker-compose.yml.
 FROM php:8.4-cli AS base
 
-ARG DURABLE_WORKFLOW_PHP_SDK_PIN=durable-workflow/workflow:2.0.0-alpha.154
-ARG DURABLE_WORKFLOW_WATERLINE_PIN=durable-workflow/waterline:2.0.0-alpha.50
+ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
+ARG DURABLE_WORKFLOW_WATERLINE_PIN=
 ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=
 ARG DURABLE_WORKFLOW_WATERLINE_VERSION=
 
@@ -27,16 +27,24 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN set -eux; \
     workflow_version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"; \
-    if [ -z "$workflow_version" ]; then workflow_version="${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}"; fi; \
+    if [ -z "$workflow_version" ] && [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then \
+        workflow_version="${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}"; \
+    fi; \
     workflow_version="${workflow_version%@*}"; \
-    if [ -z "$workflow_version" ]; then workflow_version="2.0.0-alpha.154"; fi; \
     waterline_version="$DURABLE_WORKFLOW_WATERLINE_VERSION"; \
-    if [ -z "$waterline_version" ]; then waterline_version="${DURABLE_WORKFLOW_WATERLINE_PIN#durable-workflow/waterline:}"; fi; \
+    if [ -z "$waterline_version" ] && [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then \
+        waterline_version="${DURABLE_WORKFLOW_WATERLINE_PIN#durable-workflow/waterline:}"; \
+    fi; \
     waterline_version="${waterline_version%@*}"; \
-    if [ -z "$waterline_version" ]; then waterline_version="2.0.0-alpha.50"; fi; \
-    composer require --no-update \
-        "durable-workflow/workflow:${workflow_version}" \
-        "durable-workflow/waterline:${waterline_version}"; \
+    if [ -n "$workflow_version" ] && [ -n "$waterline_version" ]; then \
+        composer require --no-update \
+            "durable-workflow/workflow:${workflow_version}" \
+            "durable-workflow/waterline:${waterline_version}"; \
+    elif [ -n "$workflow_version" ]; then \
+        composer require --no-update "durable-workflow/workflow:${workflow_version}"; \
+    elif [ -n "$waterline_version" ]; then \
+        composer require --no-update "durable-workflow/waterline:${waterline_version}"; \
+    fi; \
     composer update durable-workflow/workflow durable-workflow/waterline \
         --with-dependencies \
         --no-dev \

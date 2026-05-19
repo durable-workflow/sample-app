@@ -26,6 +26,48 @@ def semantic_version_from_text(value: str | None) -> str | None:
     return match.group(0) if match else None
 
 
+DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
+    "server": "0.2.136",
+    "cli": "0.1.41",
+    "sdk-python": "0.4.52",
+    "workflow": "2.0.0-alpha.156",
+    "waterline": "2.0.0-alpha.51",
+}
+
+
+def latest_packagist_alpha_version(package: str, fallback: str) -> str:
+    try:
+        request = Request(
+            f"https://repo.packagist.org/p2/{quote(package, safe='/')}.json",
+            headers={"Accept": "application/json"},
+        )
+        with urlopen(request, timeout=15) as response:
+            payload = json.load(response)
+    except Exception:  # noqa: BLE001
+        return fallback
+
+    package_versions = (
+        ((payload.get("packages") or {}).get(package) or [])
+        if isinstance(payload, dict)
+        else []
+    )
+    candidates: list[tuple[int, str]] = []
+    for candidate in package_versions:
+        if not isinstance(candidate, dict):
+            continue
+        version = candidate.get("version")
+        if not isinstance(version, str):
+            continue
+        match = re.fullmatch(r"2\.0\.0-alpha\.(\d+)", version)
+        if match:
+            candidates.append((int(match.group(1)), version))
+
+    if not candidates:
+        return fallback
+
+    return max(candidates)[1]
+
+
 SERVER_URL = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
 TOKEN = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
 NAMESPACE = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
@@ -35,21 +77,33 @@ ARTIFACT_PROBE_URL = os.environ.get(
     "DURABLE_WORKFLOW_ARTIFACT_PROBE_URL",
     "http://waterline:8081/polyglot/conformance/artifacts",
 )
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.132")
+SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.136")
 
 REQUIRED_ARTIFACT_VERSIONS = {
-    "server": semantic_version_from_text(SERVER_PIN) or "0.2.132",
-    "cli": semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_CLI_VERSION")) or "0.1.40",
-    "sdk-python": semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PYTHON_SDK_VERSION")) or "0.4.50",
+    "server": semantic_version_from_text(SERVER_PIN) or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["server"],
+    "cli": (
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_CLI_VERSION"))
+        or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["cli"]
+    ),
+    "sdk-python": (
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"))
+        or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["sdk-python"]
+    ),
     "workflow": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_VERSION"))
         or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
-        or "2.0.0-alpha.154"
+        or latest_packagist_alpha_version(
+            "durable-workflow/workflow",
+            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["workflow"],
+        )
     ),
     "waterline": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_VERSION"))
         or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN"))
-        or "2.0.0-alpha.50"
+        or latest_packagist_alpha_version(
+            "durable-workflow/waterline",
+            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["waterline"],
+        )
     ),
 }
 
@@ -196,8 +250,14 @@ def artifact_metadata(
         },
         "cli": {
             "artifact": "dw",
-            "pin": f"dw=={os.environ.get('DURABLE_WORKFLOW_CLI_VERSION', '0.1.40')}",
-            "install": os.environ.get("DURABLE_WORKFLOW_CLI_PIN", "durable-workflow/cli:0.1.40"),
+            "pin": (
+                "dw=="
+                f"{os.environ.get('DURABLE_WORKFLOW_CLI_VERSION', DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli'])}"
+            ),
+            "install": os.environ.get(
+                "DURABLE_WORKFLOW_CLI_PIN",
+                f"durable-workflow/cli:{DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli']}",
+            ),
             "version": versions.get("cli"),
             "exercised": True,
         },
@@ -209,7 +269,10 @@ def artifact_metadata(
         },
         "sdk_php_workflow": {
             "artifact": "durable-workflow/workflow",
-            "pin": os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN", "durable-workflow/workflow:unknown"),
+            "pin": (
+                os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN")
+                or f"durable-workflow/workflow:{REQUIRED_ARTIFACT_VERSIONS['workflow']}"
+            ),
             "version": versions.get("workflow"),
             "version_source": "waterline_conformance_artifact_probe",
             "probe": probe,
@@ -217,7 +280,10 @@ def artifact_metadata(
         },
         "waterline": {
             "artifact": "durable-workflow/waterline",
-            "pin": os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN", "durable-workflow/waterline:unknown"),
+            "pin": (
+                os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN")
+                or f"durable-workflow/waterline:{REQUIRED_ARTIFACT_VERSIONS['waterline']}"
+            ),
             "url": WATERLINE_URL,
             "version": versions.get("waterline"),
             "version_source": "waterline_conformance_artifact_probe",
