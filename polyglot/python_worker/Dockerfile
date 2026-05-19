@@ -1,11 +1,13 @@
 FROM python:3.12-slim
 
-ARG DURABLE_WORKFLOW_CLI_VERSION=0.1.38
+ARG DURABLE_WORKFLOW_CLI_VERSION=0.1.40
+ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.50
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DURABLE_WORKFLOW_CLI_VERSION=${DURABLE_WORKFLOW_CLI_VERSION} \
-    DURABLE_WORKFLOW_CLI_PIN=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION}
+    DURABLE_WORKFLOW_CLI_PIN=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION} \
+    DURABLE_WORKFLOW_PYTHON_SDK_VERSION=${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}
 
 WORKDIR /app
 
@@ -17,7 +19,7 @@ RUN apt-get update \
     && rm /tmp/dw-install.sh \
     && dw --version
 
-RUN pip install --no-cache-dir "durable-workflow==0.4.36"
+RUN pip install --no-cache-dir "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
 
 COPY activities.py ./activities.py
 # Bake the polyglot smoke scripts into the image so the smoke service does

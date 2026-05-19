@@ -41,22 +41,36 @@ final class ServerClient
     /**
      * @param list<string> $supportedWorkflowTypes
      * @param list<string> $supportedActivityTypes
+     * @param list<string> $capabilities
+     * @return array<string, mixed>|null
      */
     public function registerWorker(
         string $workerId,
         string $taskQueue,
         array $supportedWorkflowTypes = [],
         array $supportedActivityTypes = [],
+        array $capabilities = [],
         string $runtime = 'php',
         string $sdkVersion = 'durable-workflow-php/polyglot-sample',
-    ): void {
-        $this->workerPost('/api/worker/register', [
+    ): ?array {
+        return $this->workerPost('/api/worker/register', [
             'worker_id' => $workerId,
             'task_queue' => $taskQueue,
             'runtime' => $runtime,
             'sdk_version' => $sdkVersion,
             'supported_workflow_types' => $supportedWorkflowTypes,
             'supported_activity_types' => $supportedActivityTypes,
+            'capabilities' => $capabilities,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function heartbeatWorker(string $workerId): ?array
+    {
+        return $this->workerPost('/api/worker/heartbeat', [
+            'worker_id' => $workerId,
         ]);
     }
 

@@ -161,10 +161,11 @@ class PythonSignalQueryWorkflow:
         self.request = request
         self.stage = "waiting"
         yield ctx.wait_condition(lambda: bool(self.signals), key=POLYGLOT_SIGNAL_CONDITION_KEY)
+        yield ctx.wait_condition(lambda: len(self.signals) >= 2, key=POLYGLOT_SIGNAL_CONDITION_KEY)
         return {
             "workflow_runtime": "python",
             "request": request,
-            "signal": self.signals[-1],
+            "signal": self.signals[0],
         }
 
 

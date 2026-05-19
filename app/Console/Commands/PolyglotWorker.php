@@ -13,10 +13,12 @@ use App\Workflows\Polyglot\PhpSameLanguageWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypedErrorWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypeRoundtripWorkflow;
+use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use RuntimeException;
 use Throwable;
+use Workflow\V2\Support\WorkerProtocolVersion;
 
 /**
  * Polling worker that registers PHP-authored workflows or PHP-authored
@@ -117,6 +119,15 @@ class PolyglotWorker extends Command
         return (string) env('POLYGLOT_PHP2PY_TASK_QUEUE', 'polyglot-php-to-python');
     }
 
+    private function phpSdkVersion(): string
+    {
+        $version = InstalledVersions::getPrettyVersion('durable-workflow/workflow')
+            ?? InstalledVersions::getVersion('durable-workflow/workflow')
+            ?? 'unknown';
+
+        return 'durable-workflow/workflow:'.$version;
+    }
+
     private function runWorkflowWorker(
         ServerClient $client,
         string $workerId,
@@ -128,6 +139,8 @@ class PolyglotWorker extends Command
             workerId: $workerId,
             taskQueue: $taskQueue,
             supportedWorkflowTypes: array_keys(self::WORKFLOW_REGISTRY),
+            capabilities: [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
+            sdkVersion: $this->phpSdkVersion(),
         );
 
         $this->info(sprintf(
@@ -140,6 +153,8 @@ class PolyglotWorker extends Command
         $consecutiveIdle = 0;
 
         while (true) {
+            $client->heartbeatWorker($workerId);
+
             $queryTask = $client->pollQueryTask($workerId, $taskQueue, 1);
 
             if ($queryTask !== null) {
@@ -222,6 +237,7 @@ class PolyglotWorker extends Command
             workerId: $workerId,
             taskQueue: $taskQueue,
             supportedActivityTypes: self::ACTIVITY_TYPES,
+            sdkVersion: $this->phpSdkVersion(),
         );
 
         $this->info(sprintf(
@@ -234,6 +250,8 @@ class PolyglotWorker extends Command
         $consecutiveIdle = 0;
 
         while (true) {
+            $client->heartbeatWorker($workerId);
+
             $task = $client->pollActivityTask($workerId, $taskQueue, $pollTimeout);
 
             if ($task === null) {
@@ -489,13 +507,15 @@ class PolyglotWorker extends Command
         }
 
         $signals = $this->extractSignalValues($task, 'polyglot-signal');
+        $arguments = $this->decodeArguments($task);
+        $request = is_array($arguments[0] ?? null) ? $arguments[0] : [];
 
         $client->completeQueryTask($queryTaskId, $workerId, $queryAttempt, [
             'workflow_runtime' => 'php',
-            'workflow_id' => $workflowId,
             'stage' => $signals === [] ? 'waiting' : 'signaled',
             'signal_count' => count($signals),
             'signals' => $signals,
+            'request' => $request,
         ]);
 
         $this->line(sprintf('polyglot php worker answered query %s for workflow %s', $queryName, $workflowId));
@@ -555,7 +575,7 @@ class PolyglotWorker extends Command
      */
     private function decodeArguments(array $task): array
     {
-        $envelope = $task['arguments'] ?? null;
+        $envelope = $task['arguments'] ?? $task['workflow_arguments'] ?? null;
         $taskCodec = (string) ($task['payload_codec'] ?? 'avro');
 
         if ($envelope === null) {
@@ -631,12 +651,16 @@ class PolyglotWorker extends Command
     private function extractSignalReplayValues(array $task): array
     {
         $events = $task['history_events'] ?? [];
+        if ((! is_array($events) || $events === []) && is_array($task['history_export'] ?? null)) {
+            $events = $task['history_export']['history_events'] ?? [];
+        }
 
         if (! is_array($events)) {
             return [];
         }
 
         $signals = [];
+        $exportSignals = $this->historyExportSignals($task);
 
         foreach ($events as $event) {
             if (! is_array($event) || ($event['event_type'] ?? null) !== 'SignalReceived') {
@@ -644,14 +668,20 @@ class PolyglotWorker extends Command
             }
 
             $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
-            $signalName = $payload['signal_name'] ?? null;
+            $payloadSignalName = $this->nonEmptyString($payload['signal_name'] ?? null);
+            $exportSignal = $this->matchingHistoryExportSignal(
+                $payload,
+                $exportSignals,
+                $payloadSignalName === null ? 0 : count($signals[$payloadSignalName] ?? []),
+            );
+            $signalName = $payloadSignalName ?? $this->nonEmptyString($exportSignal['name'] ?? null);
 
-            if (! is_string($signalName) || $signalName === '') {
+            if ($signalName === null) {
                 continue;
             }
 
             $signals[$signalName] ??= [];
-            $signals[$signalName][] = $this->signalValue($payload);
+            $signals[$signalName][] = $this->signalValue($payload, $exportSignal);
         }
 
         return $signals;
@@ -671,9 +701,13 @@ class PolyglotWorker extends Command
     /**
      * @param array<string, mixed> $payload
      */
-    private function signalValue(array $payload): mixed
+    private function signalValue(array $payload, ?array $historyExportSignal = null): mixed
     {
         $envelope = $payload['arguments'] ?? $payload['value'] ?? null;
+
+        if ($envelope === null && $historyExportSignal !== null) {
+            $envelope = $historyExportSignal['arguments'] ?? $historyExportSignal['value'] ?? null;
+        }
 
         if (is_array($envelope) || is_string($envelope)) {
             $decoded = Avro::decodeEnvelope($envelope);
@@ -690,5 +724,83 @@ class PolyglotWorker extends Command
         }
 
         return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $task
+     * @return array{
+     *     by_id: array<string, array<string, mixed>>,
+     *     by_name: array<string, list<array<string, mixed>>>
+     * }
+     */
+    private function historyExportSignals(array $task): array
+    {
+        $historyExport = is_array($task['history_export'] ?? null) ? $task['history_export'] : [];
+        $records = is_array($historyExport['signals'] ?? null) ? $historyExport['signals'] : [];
+        $byId = [];
+        $byName = [];
+
+        foreach ($records as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+
+            $id = $this->nonEmptyString($record['id'] ?? null)
+                ?? $this->nonEmptyString($record['signal_id'] ?? null);
+            if ($id !== null) {
+                $byId[$id] = $record;
+            }
+
+            $name = $this->nonEmptyString($record['name'] ?? null)
+                ?? $this->nonEmptyString($record['signal_name'] ?? null);
+            if ($name !== null) {
+                $byName[$name] ??= [];
+                $byName[$name][] = $record;
+            }
+        }
+
+        return [
+            'by_id' => $byId,
+            'by_name' => $byName,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array{
+     *     by_id: array<string, array<string, mixed>>,
+     *     by_name: array<string, list<array<string, mixed>>>
+     * } $exportSignals
+     * @return array<string, mixed>|null
+     */
+    private function matchingHistoryExportSignal(array $payload, array $exportSignals, int $nameIndex): ?array
+    {
+        $signalId = $this->nonEmptyString($payload['signal_id'] ?? null)
+            ?? $this->nonEmptyString($payload['id'] ?? null);
+        if ($signalId !== null && isset($exportSignals['by_id'][$signalId])) {
+            return $exportSignals['by_id'][$signalId];
+        }
+
+        $signalName = $this->nonEmptyString($payload['signal_name'] ?? null)
+            ?? $this->nonEmptyString($payload['name'] ?? null);
+        if ($signalName === null) {
+            return null;
+        }
+
+        $signalWaitId = $this->nonEmptyString($payload['signal_wait_id'] ?? null);
+        if ($signalWaitId !== null) {
+            foreach ($exportSignals['by_name'][$signalName] ?? [] as $record) {
+                if ($this->nonEmptyString($record['signal_wait_id'] ?? null) === $signalWaitId) {
+                    return $record;
+                }
+            }
+        }
+
+        return $exportSignals['by_name'][$signalName][$nameIndex] ?? null;
+    }
+
+    private function nonEmptyString(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }

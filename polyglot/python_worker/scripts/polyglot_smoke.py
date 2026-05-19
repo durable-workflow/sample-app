@@ -5,6 +5,7 @@ import asyncio
 import importlib.metadata
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -18,12 +19,39 @@ from urllib.request import Request, urlopen
 from durable_workflow import Client
 
 
+def semantic_version_from_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.search(r"\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\b", value)
+    return match.group(0) if match else None
+
+
 SERVER_URL = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
 TOKEN = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
 NAMESPACE = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
 DW = os.environ.get("DURABLE_WORKFLOW_CLI", "dw")
 WATERLINE_URL = os.environ.get("DURABLE_WORKFLOW_WATERLINE_URL", "http://waterline:8081/waterline")
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.116")
+ARTIFACT_PROBE_URL = os.environ.get(
+    "DURABLE_WORKFLOW_ARTIFACT_PROBE_URL",
+    "http://waterline:8081/polyglot/conformance/artifacts",
+)
+SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.132")
+
+REQUIRED_ARTIFACT_VERSIONS = {
+    "server": semantic_version_from_text(SERVER_PIN) or "0.2.132",
+    "cli": semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_CLI_VERSION")) or "0.1.40",
+    "sdk-python": semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PYTHON_SDK_VERSION")) or "0.4.50",
+    "workflow": (
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_VERSION"))
+        or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
+        or "2.0.0-alpha.154"
+    ),
+    "waterline": (
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_VERSION"))
+        or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN"))
+        or "2.0.0-alpha.50"
+    ),
+}
 
 PY_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
 PHP_QUEUE = os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")
@@ -66,33 +94,134 @@ class DwCommandError(RuntimeError):
             return None
 
 
-def artifact_metadata() -> dict[str, Any]:
+def detect_dw_version() -> str | None:
+    fallback = os.environ.get("DURABLE_WORKFLOW_CLI_VERSION")
+    try:
+        proc = subprocess.run(
+            [DW, "--version"],
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except Exception:  # noqa: BLE001
+        return fallback
+
+    return semantic_version_from_text(f"{proc.stdout}\n{proc.stderr}") or fallback
+
+
+def installed_python_sdk_version() -> str | None:
+    try:
+        return importlib.metadata.version("durable-workflow")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def php_artifact_probe_url() -> str:
+    return ARTIFACT_PROBE_URL
+
+
+def fetch_php_artifact_probe() -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        return fetch_json_url(php_artifact_probe_url(), label="PHP artifact probe"), None
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
+
+
+def php_artifact_versions(probe: dict[str, Any] | None) -> dict[str, str | None]:
+    versions: dict[str, str | None] = {
+        "workflow": None,
+        "waterline": None,
+    }
+    artifacts = probe.get("artifacts") if isinstance(probe, dict) else None
+    if not isinstance(artifacts, dict):
+        return versions
+
+    for key in versions:
+        artifact = artifacts.get(key)
+        if not isinstance(artifact, dict):
+            continue
+        raw_version = artifact.get("version")
+        versions[key] = semantic_version_from_text(raw_version if isinstance(raw_version, str) else None)
+
+    return versions
+
+
+def resolved_artifact_versions(php_probe: dict[str, Any] | None = None) -> dict[str, str | None]:
+    php_versions = php_artifact_versions(php_probe)
+
+    return {
+        "server": semantic_version_from_text(SERVER_PIN),
+        "cli": detect_dw_version(),
+        "sdk-python": installed_python_sdk_version(),
+        "workflow": php_versions.get("workflow"),
+        "waterline": php_versions.get("waterline"),
+    }
+
+
+def artifact_version_findings(
+    versions: dict[str, str | None],
+) -> tuple[dict[str, dict[str, str | None]], dict[str, str]]:
+    stale: dict[str, dict[str, str | None]] = {}
+    missing: dict[str, str] = {}
+    for artifact, expected in REQUIRED_ARTIFACT_VERSIONS.items():
+        actual = versions.get(artifact)
+        if actual is None:
+            missing[artifact] = expected
+        elif actual != expected:
+            stale[artifact] = {
+                "expected": expected,
+                "actual": actual,
+            }
+    return stale, missing
+
+
+def artifact_metadata(
+    versions: dict[str, str | None] | None = None,
+    php_probe: dict[str, Any] | None = None,
+    php_probe_error: str | None = None,
+) -> dict[str, Any]:
+    versions = versions or resolved_artifact_versions()
+    probe = {
+        "url": php_artifact_probe_url(),
+        "payload": php_probe,
+        "error": php_probe_error,
+    }
     return {
         "server": {
             "artifact": "durableworkflow/server",
             "pin": SERVER_PIN,
+            "version": versions.get("server"),
             "exercised": True,
         },
         "cli": {
             "artifact": "dw",
-            "pin": f"dw=={os.environ.get('DURABLE_WORKFLOW_CLI_VERSION', '0.1.38')}",
-            "install": os.environ.get("DURABLE_WORKFLOW_CLI_PIN", "durable-workflow/cli:0.1.38"),
+            "pin": f"dw=={os.environ.get('DURABLE_WORKFLOW_CLI_VERSION', '0.1.40')}",
+            "install": os.environ.get("DURABLE_WORKFLOW_CLI_PIN", "durable-workflow/cli:0.1.40"),
+            "version": versions.get("cli"),
             "exercised": True,
         },
         "sdk_python": {
             "artifact": "durable-workflow",
-            "pin": f"durable-workflow=={importlib.metadata.version('durable-workflow')}",
+            "pin": f"durable-workflow=={versions.get('sdk-python') or 'unknown'}",
+            "version": versions.get("sdk-python"),
             "exercised": True,
         },
         "sdk_php_workflow": {
             "artifact": "durable-workflow/workflow",
             "pin": os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN", "durable-workflow/workflow:unknown"),
+            "version": versions.get("workflow"),
+            "version_source": "waterline_conformance_artifact_probe",
+            "probe": probe,
             "exercised": True,
         },
         "waterline": {
             "artifact": "durable-workflow/waterline",
             "pin": os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN", "durable-workflow/waterline:unknown"),
             "url": WATERLINE_URL,
+            "version": versions.get("waterline"),
+            "version_source": "waterline_conformance_artifact_probe",
+            "probe": probe,
             "exercised": True,
         },
     }
@@ -121,6 +250,16 @@ async def wait_for_worker(
             for worker in getattr(roster, "workers", []) or []:
                 if getattr(worker, "runtime", None) != runtime:
                     continue
+                if runtime == "php":
+                    sdk_version = getattr(worker, "sdk_version", None)
+                    actual = semantic_version_from_text(sdk_version if isinstance(sdk_version, str) else None)
+                    expected = REQUIRED_ARTIFACT_VERSIONS["workflow"]
+                    if actual != expected:
+                        last_error = RuntimeError(
+                            "PHP worker advertised workflow SDK "
+                            f"{sdk_version!r}; expected durable-workflow/workflow:{expected}"
+                        )
+                        continue
                 workflows = getattr(worker, "supported_workflow_types", None) or []
                 activities = getattr(worker, "supported_activity_types", None) or []
                 if workflow_type is not None and workflow_type not in workflows:
@@ -230,6 +369,30 @@ def cli_signal(workflow_id_value: str, signal_name: str, input_args: list[Any]) 
         f"--input={json_arg(input_args)}",
         "--json",
     ])
+
+
+def retry_signal_until_accepted(
+    workflow_id_value: str,
+    signal_name: str,
+    input_args: list[Any],
+    *,
+    timeout_seconds: float = 90.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last: dict[str, Any] | str | None = None
+    while time.monotonic() < deadline:
+        try:
+            return cli_signal(workflow_id_value, signal_name, input_args)
+        except DwCommandError as exc:
+            parsed = exc.json_stdout()
+            last = parsed or str(exc)
+            reason = parsed.get("reason") if isinstance(parsed, dict) else None
+            if reason == "run_not_active" or (isinstance(parsed, dict) and parsed.get("is_terminal") is True):
+                raise
+            if reason in {"unknown_signal", "invalid_signal_arguments", "instance_not_found"}:
+                raise
+        time.sleep(1)
+    raise RuntimeError(f"signal {signal_name!r} on {workflow_id_value} was not accepted in time: {last}")
 
 
 def cli_describe(workflow_id_value: str) -> dict[str, Any]:
@@ -523,6 +686,22 @@ async def run_signal_query() -> dict[str, Any]:
         durable_wait = wait_for_signal_wait_open(wid, SIGNAL_NAME)
         signal_payload = {"source": "dw CLI", "target_runtime": runtime, "note": "signal/query parity"}
         sent = cli_signal(wid, SIGNAL_NAME, [signal_payload])
+        after_signal_query = retry_query_until(
+            wid,
+            "state",
+            lambda value: (
+                isinstance(value, dict)
+                and value.get("stage") == "signaled"
+                and value.get("signal_count") == 1
+                and value.get("signals") == [signal_payload]
+            ),
+        )
+        completion_payload = {
+            "source": "dw CLI",
+            "target_runtime": runtime,
+            "note": "complete after signal/query parity observation",
+        }
+        completion_signal = retry_signal_until_accepted(wid, SIGNAL_NAME, [completion_payload])
         after = wait_for_completed(wid)
         result = assert_dict(completed_output(after), f"{name}.result")
         if result.get("signal") != signal_payload:
@@ -535,11 +714,13 @@ async def run_signal_query() -> dict[str, Any]:
             "runtime": runtime,
             "status": "passed",
             "query_before_signal": before,
+            "query_after_signal": after_signal_query,
             "durable_wait_before_signal": {
                 "wait_kind": durable_wait.get("wait_kind"),
                 "wait_reason": durable_wait.get("wait_reason"),
             },
             "signal_response": sent,
+            "completion_signal_response": completion_signal,
             "result": result,
         })
 
@@ -570,11 +751,12 @@ def retry_query_until(workflow_id_value: str, query_name: str, predicate) -> dic
     raise RuntimeError(f"query {query_name!r} on {workflow_id_value} did not reach expected state: {last}")
 
 
-def fetch_waterline(path: str, *, timeout_seconds: float = 90.0) -> dict[str, Any]:
+def fetch_json_url(url: str, *, label: str | None = None, timeout_seconds: float = 90.0) -> dict[str, Any]:
     request = Request(
-        WATERLINE_URL.rstrip("/") + path,
+        url,
         headers={"Accept": "application/json"},
     )
+    label = label or url
     deadline = time.monotonic() + timeout_seconds
     last_error: str | None = None
 
@@ -583,7 +765,7 @@ def fetch_waterline(path: str, *, timeout_seconds: float = 90.0) -> dict[str, An
             with urlopen(request, timeout=30) as response:  # noqa: S310
                 payload = json.loads(response.read().decode("utf-8"))
             if not isinstance(payload, dict):
-                raise RuntimeError(f"Waterline {path} did not return a JSON object")
+                raise RuntimeError(f"{label} did not return a JSON object")
             return payload
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")[:2000]
@@ -592,7 +774,15 @@ def fetch_waterline(path: str, *, timeout_seconds: float = 90.0) -> dict[str, An
             last_error = str(exc)
         time.sleep(2)
 
-    raise RuntimeError(f"Waterline {path} did not return usable JSON within {timeout_seconds:.0f}s: {last_error}")
+    raise RuntimeError(f"{label} did not return usable JSON within {timeout_seconds:.0f}s: {last_error}")
+
+
+def fetch_waterline(path: str, *, timeout_seconds: float = 90.0) -> dict[str, Any]:
+    return fetch_json_url(
+        WATERLINE_URL.rstrip("/") + path,
+        label=f"Waterline {path}",
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def compare_waterline(cli_runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -696,6 +886,51 @@ def summarize_waterline_workers(health: dict[str, Any]) -> dict[str, Any]:
 
 
 async def run_all() -> int:
+    php_probe, php_probe_error = fetch_php_artifact_probe()
+    artifact_versions = resolved_artifact_versions(php_probe)
+    stale_artifacts, missing_artifacts = artifact_version_findings(artifact_versions)
+
+    if stale_artifacts or missing_artifacts:
+        surfaces = {
+            "artifact_versions": {
+                "surface": "artifact_versions",
+                "status": "artifact_blocked",
+                "reason": "The polyglot smoke did not resolve the required current published artifact set.",
+                "required": REQUIRED_ARTIFACT_VERSIONS,
+                "resolved": artifact_versions,
+                "stale": stale_artifacts,
+                "missing": missing_artifacts,
+            },
+        }
+        metadata = {
+            "schema": "durable-workflow.sample-app.polyglot-conformance.run",
+            "version": 2,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "artifactVersions": artifact_versions,
+            "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
+            "artifactProbe": {
+                "url": php_artifact_probe_url(),
+                "payload": php_probe,
+                "error": php_probe_error,
+            },
+            "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
+            "surfaces": surfaces,
+            "summary": {
+                "status": "artifact_blocked",
+                "surface_count": len(surfaces),
+                "failed_surfaces": [],
+                "skipped_surfaces": [],
+                "artifact_versions_current": False,
+                "stale_artifacts": stale_artifacts,
+                "missing_artifacts": missing_artifacts,
+                "artifact_probe_error": php_probe_error,
+            },
+        }
+        print("\n==> polyglot conformance: artifact-version preflight", flush=True)
+        print(json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=False), flush=True)
+        print("\npolyglot conformance: required artifact set is not current", flush=True)
+        return 1
+
     surfaces: dict[str, dict[str, Any]] = {}
     failed = False
     cli_runs: list[dict[str, Any]] = []
@@ -757,7 +992,14 @@ async def run_all() -> int:
         "schema": "durable-workflow.sample-app.polyglot-conformance.run",
         "version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "artifacts": artifact_metadata(),
+        "artifactVersions": artifact_versions,
+        "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
+        "artifactProbe": {
+            "url": php_artifact_probe_url(),
+            "payload": php_probe,
+            "error": php_probe_error,
+        },
+        "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
         "surfaces": surfaces,
         "summary": {
             "status": summary_status,
@@ -766,6 +1008,7 @@ async def run_all() -> int:
             "skipped_surfaces": [
                 name for name, surface in surfaces.items() if surface.get("status") == "skipped"
             ],
+            "artifact_versions_current": True,
         },
     }
 
