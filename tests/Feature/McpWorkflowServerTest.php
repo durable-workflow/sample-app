@@ -21,7 +21,11 @@ use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\Fluent\AssertableJson;
+use Laravel\Mcp\Server\Middleware\AddWwwAuthenticateHeader;
+use Laravel\Mcp\Server\Middleware\ReorderJsonAccept;
 use RuntimeException;
 use Tests\TestCase;
 use Workflow\V2\Models\WorkflowFailure;
@@ -39,6 +43,77 @@ class McpWorkflowServerTest extends TestCase
         $this->assertSame('get_workflow_result', app(GetWorkflowResultTool::class)->name());
         $this->assertSame('get_workflow_history', app(GetWorkflowHistoryTool::class)->name());
         $this->assertSame('diagnose_workflow', app(DiagnoseWorkflowTool::class)->name());
+    }
+
+    public function test_workflow_mcp_http_route_is_registered(): void
+    {
+        $route = Route::getRoutes()->match(Request::create('/mcp/workflows', 'POST'));
+
+        $this->assertNotNull($route, 'The documented /mcp/workflows endpoint must be registered for HTTP clients.');
+        $this->assertSame('mcp/workflows', $route->uri());
+
+        $middleware = $route->gatherMiddleware();
+
+        $this->assertContains(ReorderJsonAccept::class, $middleware);
+        $this->assertContains(AddWwwAuthenticateHeader::class, $middleware);
+        $this->assertNotContains(
+            'web',
+            $middleware,
+            'The MCP endpoint must not be registered under the web middleware group.',
+        );
+        $this->assertFalse(
+            collect($middleware)->contains(
+                static fn (mixed $middleware): bool => is_string($middleware) && str_contains($middleware, 'Csrf'),
+            ),
+            'The MCP endpoint must accept unauthenticated JSON-RPC POSTs without CSRF state.',
+        );
+    }
+
+    public function test_workflow_mcp_http_endpoint_accepts_unauthenticated_json_rpc_posts(): void
+    {
+        $initialize = $this->json('POST', '/mcp/workflows', [
+            'jsonrpc' => '2.0',
+            'id' => 'feature-test-initialize',
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2024-11-05',
+                'capabilities' => new \stdClass(),
+                'clientInfo' => [
+                    'name' => 'sample-app-feature-test',
+                    'version' => '1',
+                ],
+            ],
+        ], [
+            'Accept' => 'application/json, text/event-stream',
+        ]);
+
+        $initialize
+            ->assertOk()
+            ->assertHeader('MCP-Session-Id')
+            ->assertJsonPath('result.serverInfo.name', 'Durable Workflow');
+
+        $session = $initialize->headers->get('MCP-Session-Id');
+        $headers = [
+            'Accept' => 'application/json, text/event-stream',
+            'MCP-Session-Id' => $session,
+        ];
+
+        $this->json('POST', '/mcp/workflows', [
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/initialized',
+            'params' => new \stdClass(),
+        ], $headers)->assertAccepted();
+
+        $this->json('POST', '/mcp/workflows', [
+            'jsonrpc' => '2.0',
+            'id' => 'feature-test-tools',
+            'method' => 'tools/list',
+            'params' => new \stdClass(),
+        ], $headers)
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'list_workflows'])
+            ->assertJsonFragment(['name' => 'start_workflow'])
+            ->assertJsonFragment(['name' => 'get_workflow_result']);
     }
 
     public function test_list_workflows_returns_v2_agent_contract_metadata(): void

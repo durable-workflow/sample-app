@@ -126,10 +126,35 @@ docker compose exec -T app php artisan app:workflow
 Once the stack is up, Waterline is at `http://localhost:${APP_PORT:-8000}/waterline/dashboard`
 and the MCP server is at `http://localhost:${APP_PORT:-8000}/mcp/workflows`.
 
+To measure the full public sample-app surface, run the conformance harness after
+the stack is healthy:
+
+```bash
+scripts/compose-conformance.sh --strict
+```
+
+The harness emits a JSON document with the sample-app commit, artifact versions,
+timestamp, per-surface outcome, and any skipped surfaces. It runs the documented
+artisan samples, browser checks for the app and Waterline, the MCP workflow API,
+local sandbox lifecycle variants, sandbox recovery injection, and the Prism/AI
+samples when `OPENAI_API_KEY` is present. Without AI credentials, `--strict`
+keeps the run non-passing and names those surfaces as uncovered. Set
+`DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`, and
+`DURABLE_WORKFLOW_PYTHON_SDK_VERSION` before `docker compose up` when the run
+needs to record the wider published artifact set alongside the Composer pins.
+The wrapper passes the host checkout SHA into the app container as
+`SAMPLE_APP_COMMIT`; set that variable explicitly when running from a source
+archive or another environment without Git metadata.
+The wrapper uses `http://app:8000` inside the Compose network so browser
+activities running in the worker container can reach the app. Set
+`SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.
+The wrapper runs strict by default; set `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1`
+for local exploratory runs that should return zero while naming skipped surfaces.
+
 Tear the stack down with `docker compose down -v --remove-orphans` when
-finished. The same flow is exercised on every push through the
-`smoke` GitHub Actions workflow, so the local path stays honest as the stack
-evolves.
+finished. The deterministic Docker path is exercised on every push through the
+`smoke` GitHub Actions workflow, and the full harness is available for release
+and conformance checks that have the required credentials.
 
 ----
 
@@ -142,7 +167,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Learn the smallest v2 workflow/activity shape | `App\Workflows\Simple\SimpleWorkflow` | `php artisan app:workflow` | `simple` |
 | Measure durable elapsed time without replay drift | `App\Workflows\Elapsed\ElapsedTimeWorkflow` | `php artisan app:elapsed` | `elapsed` |
 | Coordinate work across Laravel app boundaries | `App\Workflows\Microservice\MicroserviceWorkflow` | `php artisan app:microservice` | `microservice` |
-| Run browser automation and collect generated artifacts | `App\Workflows\Playwright\CheckConsoleErrorsWorkflow` | `php artisan app:playwright` | `playwright` |
+| Run browser automation and collect generated artifacts | `App\Workflows\Playwright\CheckConsoleErrorsWorkflow` | `php artisan app:playwright https://example.com` | `playwright` |
 | Start from an external webhook and wait for a signal | `App\Workflows\Webhooks\WebhookWorkflow` | `php artisan app:webhook` | `webhook` |
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
@@ -248,6 +273,7 @@ Run the sample with:
 php artisan app:sandbox                              # local subprocess provider
 php artisan app:sandbox --snapshot-every=2           # snapshot every 2 tool calls
 php artisan app:sandbox --suspend-between            # idle-suspend + resume between calls
+php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2  # force local restore
 SANDBOX_DRIVER=e2b E2B_API_KEY=… php artisan app:sandbox
 ```
 
@@ -309,15 +335,15 @@ In addition to the basic example workflow, you can try these other workflows inc
 
 * `php artisan app:microservice` – A fully working example of a workflow that spans multiple Laravel applications using a shared database and queue.
 
-* `php artisan app:playwright` – Runs a Playwright automation, captures a WebM video, encodes it to MP4 using FFmpeg, and then cleans up the WebM file.
+* `php artisan app:playwright` – Runs a Playwright automation against `https://example.com`, captures a WebM video, encodes it to MP4 using FFmpeg, and then cleans up the WebM file. Pass a URL to check another page, for example `php artisan app:playwright http://localhost:8000/waterline/dashboard`.
 
 * `php artisan app:webhook` – Showcases how to use the built-in webhook system for triggering workflows externally.
 
 * `php artisan app:prism` - Uses Prism to build a durable AI agent loop. It asks an LLM to generate user profiles and hobbies, validates the result, and retries until the data meets business rules.
 
-* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled.
+* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation.
 
-* `php artisan app:sandbox` - Durable sandbox orchestration sample. Provisions an ephemeral sandbox, dispatches a sequence of agent-decided tool calls through activities, snapshots the workspace at a configurable interval, recovers from sandbox loss by restoring the latest snapshot, and tears the sandbox down deterministically on every termination path. The default `local` provider runs subprocesses on the worker host; set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to run against the E2B Cloud sandbox API. See the [Sandbox Orchestration](#sandbox-orchestration) section below for the full pattern walkthrough.
+* `php artisan app:sandbox` - Durable sandbox orchestration sample. Provisions an ephemeral sandbox, dispatches a sequence of agent-decided tool calls through activities, snapshots the workspace at a configurable interval, recovers from sandbox loss by restoring the latest snapshot, and tears the sandbox down deterministically on every termination path. The default `local` provider runs subprocesses on the worker host; set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to run against the E2B Cloud sandbox API. Pass `--suspend-between` for suspend/resume, `--snapshot-every=2` for snapshots, or `--snapshot-every=2 --inject-loss-after=2` to force the documented local recovery path. See the [Sandbox Orchestration](#sandbox-orchestration) section below for the full pattern walkthrough.
 
 Try them out to see workflows in action across different use cases!
 

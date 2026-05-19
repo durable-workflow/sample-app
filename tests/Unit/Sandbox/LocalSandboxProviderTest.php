@@ -94,6 +94,35 @@ class LocalSandboxProviderTest extends TestCase
         $this->assertTrue(true);
     }
 
+    public function test_evict_tool_forces_next_call_through_recovery_path(): void
+    {
+        $handle = $this->provider->provision();
+        $this->provider->execute(
+            $handle,
+            new SandboxToolCall('write_file', ['path' => 'state.txt', 'contents' => 'durable']),
+        );
+
+        $snapshotId = $this->provider->snapshot($handle);
+        $evicted = $this->provider->execute(
+            $handle,
+            new SandboxToolCall('evict', ['reason' => 'test recovery']),
+        );
+
+        $this->assertSame(0, $evicted->exitCode);
+        $this->assertStringContainsString('evicted', $evicted->stdout);
+
+        try {
+            $this->provider->execute($handle, new SandboxToolCall('read_file', ['path' => 'state.txt']));
+            $this->fail('Expected the evicted sandbox to be reported as gone.');
+        } catch (SandboxGoneException) {
+            $this->assertTrue(true);
+        }
+
+        $restored = $this->provider->restore($snapshotId);
+        $read = $this->provider->execute($restored, new SandboxToolCall('read_file', ['path' => 'state.txt']));
+        $this->assertSame('durable', $read->stdout);
+    }
+
     public function test_write_file_rejects_path_traversal(): void
     {
         $handle = $this->provider->provision();

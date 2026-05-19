@@ -56,7 +56,7 @@ return [
             'class' => CheckConsoleErrorsWorkflow::class,
             'description' => 'Browser automation workflow that records a page run and converts video output.',
             'pattern' => 'external automation and generated artifacts',
-            'command' => 'php artisan app:playwright',
+            'command' => 'php artisan app:playwright https://example.com',
             'requires' => ['node', 'playwright', 'ffmpeg'],
             'arguments' => [
                 ['name' => 'url', 'type' => 'string', 'default' => 'https://example.com'],
@@ -91,6 +91,7 @@ return [
             'requires' => ['OPENAI_API_KEY'],
             'arguments' => [
                 ['name' => 'injectFailure', 'type' => 'string|null', 'allowed' => ['hotel', 'flight', 'car']],
+                ['name' => 'inactivityTimeoutSeconds', 'type' => 'int|null', 'description' => 'Optional timeout override for scripted runs.'],
             ],
             'signals' => [
                 ['name' => 'send', 'arguments' => [['name' => 'message', 'type' => 'string']]],

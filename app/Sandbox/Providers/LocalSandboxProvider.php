@@ -68,6 +68,7 @@ final class LocalSandboxProvider implements SandboxProvider
             'shell' => $this->runShell($workspace, $call),
             'write_file' => $this->writeFile($workspace, $call),
             'read_file' => $this->readFile($workspace, $call),
+            'evict' => $this->evict($handle, $call),
             default => new SandboxToolResult(
                 exitCode: 1,
                 stderr: "Unsupported tool type: {$call->type}",
@@ -208,6 +209,19 @@ final class LocalSandboxProvider implements SandboxProvider
         }
 
         return new SandboxToolResult(exitCode: 0, stdout: $contents);
+    }
+
+    private function evict(SandboxHandle $handle, SandboxToolCall $call): SandboxToolResult
+    {
+        $workspace = $this->requireWorkspace($handle);
+        $reason = (string) ($call->args['reason'] ?? 'local sandbox evicted');
+
+        $this->deleteRecursive($workspace);
+
+        return new SandboxToolResult(
+            exitCode: 0,
+            stdout: "evicted {$handle->id}: {$reason}",
+        );
     }
 
     private function requireWorkspace(SandboxHandle $handle): string

@@ -67,5 +67,39 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('App\\Workflows\\Sandbox\\SandboxAgentWorkflow', $readme);
         $this->assertStringContainsString('App\\Sandbox\\SandboxProvider', $readme);
         $this->assertStringContainsString('php artisan app:sandbox', $readme);
+        $this->assertStringContainsString('--inject-loss-after=2', $readme);
+    }
+
+    public function test_full_conformance_harness_is_public_and_names_required_surfaces(): void
+    {
+        $readme = file_get_contents(__DIR__.'/../../README.md');
+        $script = file_get_contents(__DIR__.'/../../scripts/compose-conformance.sh');
+        $command = file_get_contents(__DIR__.'/../../app/Console/Commands/Conformance.php');
+
+        $this->assertIsString($readme);
+        $this->assertIsString($script);
+        $this->assertIsString($command);
+
+        $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
+        $this->assertStringContainsString('app:conformance', $script);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
+        $this->assertStringContainsString('git rev-parse HEAD', $script);
+        $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
+        $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);
+        $this->assertStringContainsString("envString('SAMPLE_APP_COMMIT')", $command);
+
+        foreach ([
+            'browser_welcome',
+            'browser_waterline',
+            'mcp_workflow_api',
+            'prism_ai',
+            'ai_failure_hotel',
+            'sandbox_recovery_injection',
+            'waterline_operator_dashboard',
+            'artifactVersions',
+            'skipped_surfaces',
+        ] as $needle) {
+            $this->assertStringContainsString($needle, $command);
+        }
     }
 }

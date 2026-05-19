@@ -54,6 +54,7 @@ The default `local` driver runs each tool call as a subprocess against a per-san
 php artisan app:sandbox                              # local subprocess provider, no snapshots
 php artisan app:sandbox --snapshot-every=2           # snapshot every 2 tool calls
 php artisan app:sandbox --suspend-between            # suspend + resume between calls
+php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2  # force local restore
 ```
 
 To run the same workflow against E2B Cloud:

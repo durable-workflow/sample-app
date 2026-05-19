@@ -56,18 +56,21 @@ class AiWorkflow extends Workflow
         return $message->content;
     }
 
-    public function handle(?string $injectFailure = null): array
+    public function handle(?string $injectFailure = null, ?int $inactivityTimeoutSeconds = null): array
     {
         // The durable agent pattern combines signals for user input, activities
         // for LLM/booking work, compensation for rollback, and a stream for replies.
         $messages = [];
+        $inactivityTimeout = $inactivityTimeoutSeconds !== null && $inactivityTimeoutSeconds > 0
+            ? $inactivityTimeoutSeconds.' seconds'
+            : self::INACTIVITY_TIMEOUT;
 
         try {
             while (count($messages) < self::MAX_MESSAGES) {
                 // v2 pull-style signal: blocks until a `send` signal arrives or
                 // the inactivity timeout elapses. Returns the signal's `message`
                 // arg, or null on timeout.
-                $userMessage = await('send', self::INACTIVITY_TIMEOUT);
+                $userMessage = await('send', $inactivityTimeout);
 
                 if ($userMessage === null) {
                     throw new Exception(
