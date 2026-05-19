@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.142', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.143', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.142', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.143', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -508,8 +508,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.142', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.142, got %s.', $image),
+            version_compare($matches['version'], '0.2.143', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.143, got %s.', $image),
         );
     }
 
