@@ -24,6 +24,15 @@ jobs:
           echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
           echo "Polyglot Compose project: $project"
 
+      - name: Resolve current artifact tuple
+        shell: bash
+        run: |
+          while IFS= read -r assignment; do
+            echo "$assignment" >> "$GITHUB_ENV"
+            export "$assignment"
+            printf '%s\n' "$assignment"
+          done < <(scripts/resolve-current-artifacts.sh)
+
       - name: Show pinned server image
         working-directory: polyglot
         run: |

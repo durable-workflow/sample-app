@@ -136,6 +136,7 @@ Python-authored workflow.
 ## Running locally
 
 ```bash
+while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh)
 cd polyglot
 docker compose up -d --build --wait \
   server python-activity-worker php-same-workflow-worker php-same-activity-worker \

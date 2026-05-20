@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.145', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.146', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.145', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.146', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -195,20 +195,20 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $lockedPackages = array_column($composerLock['packages'] ?? [], null, 'name');
 
-        $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION=0.1.46', $dockerfile);
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.62', $dockerfile);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION=0.1.47', $dockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.63', $dockerfile);
         $this->assertStringContainsString('https://durable-workflow.com/install.sh', $dockerfile);
         $this->assertStringContainsString('VERSION="${DURABLE_WORKFLOW_CLI_VERSION}"', $dockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
             $dockerfile,
         );
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.62', $pythonWorkflowDockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.63', $pythonWorkflowDockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
             $pythonWorkflowDockerfile,
         );
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PHP_SDK_PIN=durable-workflow/workflow:2.0.0-alpha.165', $phpDockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_PHP_SDK_PIN=durable-workflow/workflow:2.0.0-alpha.166', $phpDockerfile);
         $this->assertStringContainsString('ARG DURABLE_WORKFLOW_WATERLINE_PIN=durable-workflow/waterline:2.0.0-alpha.56', $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=\n", $phpDockerfile);
@@ -232,8 +232,8 @@ final class PolyglotComposeContractTest extends TestCase
             'DURABLE_WORKFLOW_CLI_PIN:=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION}',
             $smokeShell,
         );
-        $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.62', $smokeShell);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_PIN:=durable-workflow/workflow:2.0.0-alpha.165', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.63', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_PIN:=durable-workflow/workflow:2.0.0-alpha.166', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_PIN:=durable-workflow/waterline:2.0.0-alpha.56', $smokeShell);
         $this->assertStringContainsString('${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}', $smokeShell);
         $this->assertStringContainsString(
@@ -252,11 +252,11 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.50', $smokeShell);
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.165',
+            '2.0.0-alpha.166',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            'dd989e6e2dd1b036f48847fcee83827ec4d26e65',
+            '3d9f3fcd79d17d27f91d74d34c0ce9659d99cfc2',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
@@ -303,11 +303,11 @@ final class PolyglotComposeContractTest extends TestCase
             $services['smoke']['environment']['DURABLE_WORKFLOW_CLI_PIN'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.62}',
+            '${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.63}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.165}',
+            '${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame(
@@ -331,7 +331,7 @@ final class PolyglotComposeContractTest extends TestCase
             'waterline',
         ] as $serviceName) {
             $this->assertSame(
-                '${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.165}',
+                '${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}',
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
             );
             $this->assertSame(
@@ -357,6 +357,34 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertLaravelAppKeySupportsAes256($serverEnv['APP_KEY'] ?? null, 'server APP_KEY');
         $this->assertLaravelAppKeySupportsAes256($waterlineEnv['APP_KEY'] ?? null, 'waterline APP_KEY');
+    }
+
+    public function test_polyglot_artifact_resolver_preserves_explicit_overrides(): void
+    {
+        $assignments = $this->resolveArtifactAssignments([
+            'DURABLE_SERVER_IMAGE' => 'ghcr.io/example/server:9.9.9',
+            'DURABLE_WORKFLOW_CLI_PIN' => 'example/cli:9.9.8',
+            'DURABLE_WORKFLOW_PHP_SDK_PIN' => 'durable-workflow/workflow:2.0.0-alpha.777',
+        ]);
+
+        $this->assertSame('ghcr.io/example/server:9.9.9', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('9.9.9', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('example/cli:9.9.8', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
+        $this->assertSame('9.9.8', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame(
+            'durable-workflow/workflow:2.0.0-alpha.777',
+            $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
+        );
+        $this->assertSame('2.0.0-alpha.777', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+    }
+
+    public function test_polyglot_validation_exports_resolved_artifacts_before_compose(): void
+    {
+        $workflow = (string) file_get_contents($this->repoPath('.github/workflows/polyglot-validation.yml'));
+
+        $this->assertStringContainsString('Resolve current artifact tuple', $workflow);
+        $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $workflow);
+        $this->assertStringContainsString('echo "$assignment" >> "$GITHUB_ENV"', $workflow);
     }
 
     public function test_polyglot_smoke_metadata_covers_required_conformance_surfaces(): void
@@ -488,6 +516,34 @@ final class PolyglotComposeContractTest extends TestCase
     }
 
     /**
+     * @param array<string, string> $env
+     * @return array<string, string>
+     */
+    private function resolveArtifactAssignments(array $env = []): array
+    {
+        $command = 'env -i PATH='.escapeshellarg((string) getenv('PATH'));
+        foreach ($env as $name => $value) {
+            $command .= ' '.escapeshellarg($name.'='.$value);
+        }
+        $command .= ' bash '.escapeshellarg($this->repoPath('scripts/resolve-current-artifacts.sh'));
+
+        $output = [];
+        $exitCode = 0;
+        exec($command, $output, $exitCode);
+
+        $this->assertSame(0, $exitCode, implode("\n", $output));
+
+        $assignments = [];
+        foreach ($output as $line) {
+            $parts = explode('=', $line, 2);
+            $this->assertCount(2, $parts, sprintf('Expected NAME=value assignment, got %s', $line));
+            $assignments[$parts[0]] = $parts[1];
+        }
+
+        return $assignments;
+    }
+
+    /**
      * @param array<string, mixed> $compose
      * @return array<string, mixed>
      */
@@ -514,8 +570,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.145', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.145, got %s.', $image),
+            version_compare($matches['version'], '0.2.146', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.146, got %s.', $image),
         );
     }
 
