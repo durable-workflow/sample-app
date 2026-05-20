@@ -53,30 +53,6 @@ wait_for_db() {
   return 1
 }
 
-has_conformance_key() {
-  local configured="${SAMPLE_APP_CONFORMANCE_ENV_FILE:-}"
-  local file
-  local candidates=()
-
-  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-    return 0
-  fi
-
-  if [[ -n "$configured" ]]; then
-    candidates+=("$configured")
-  fi
-
-  candidates+=(".env" "../.env" "../../.env")
-
-  for file in "${candidates[@]}"; do
-    if [[ -f "$file" ]] && grep -Eq '^[[:space:]]*OPENAI_API_KEY=.+' "$file"; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 docker compose ps
 
 printf '\n==> waiting for database to accept app connections\n'
@@ -90,7 +66,7 @@ run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
 run_sample "microservice workflow" "app:microservice" "workflow_activity_other"
 run_sample "webhook workflow" "app:webhook" "Hello world"
 
-if [[ "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]] && { [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-0}" == "1" ]] || has_conformance_key; }; then
+if [[ "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
   printf '\n==> full sample-app conformance surface\n'
   scripts/compose-conformance.sh
 else

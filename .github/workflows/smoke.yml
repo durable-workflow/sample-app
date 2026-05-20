@@ -15,6 +15,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}
       APP_PORT: 18080
+      SAMPLE_APP_SMOKE_ONLY: 1
 
     steps:
       - uses: actions/checkout@v4

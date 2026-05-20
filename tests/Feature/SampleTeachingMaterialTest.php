@@ -75,24 +75,29 @@ class SampleTeachingMaterialTest extends TestCase
         $readme = file_get_contents(__DIR__.'/../../README.md');
         $script = file_get_contents(__DIR__.'/../../scripts/compose-conformance.sh');
         $smokeScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke.sh');
+        $smokeWorkflow = file_get_contents(__DIR__.'/../../.github/workflows/smoke.yml');
         $command = file_get_contents(__DIR__.'/../../app/Console/Commands/Conformance.php');
 
         $this->assertIsString($readme);
         $this->assertIsString($script);
         $this->assertIsString($smokeScript);
+        $this->assertIsString($smokeWorkflow);
         $this->assertIsString($command);
 
         $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
+        $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('refresh_services_for_conformance_env', $script);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);
-        $this->assertStringContainsString('has_conformance_key', $smokeScript);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE', $smokeScript);
+        $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY', $smokeScript);
+        $this->assertStringNotContainsString('has_conformance_key', $smokeScript);
+        $this->assertStringNotContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE', $smokeScript);
         $this->assertStringContainsString('scripts/compose-conformance.sh', $smokeScript);
+        $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY: 1', $smokeWorkflow);
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);

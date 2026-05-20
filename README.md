@@ -156,6 +156,10 @@ activities running in the worker container can reach the app. Set
 `SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.
 The wrapper runs strict by default; set `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1`
 for local exploratory runs that should return zero while naming skipped surfaces.
+`scripts/compose-smoke.sh` runs the deterministic samples first and then
+delegates to this full harness by default; set `SAMPLE_APP_SMOKE_ONLY=1` only
+for a deterministic preflight that intentionally leaves the broader public
+sample-app surface uncovered.
 
 Tear the stack down with `docker compose down -v --remove-orphans` when
 finished. The deterministic Docker path is exercised on every push through the
