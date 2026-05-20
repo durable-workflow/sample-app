@@ -85,15 +85,32 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
+        $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
+        $this->assertStringContainsString('--allow-skips', $script);
+        $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);
+        $this->assertStringContainsString('{--allow-skips', $command);
         $this->assertStringContainsString("envString('SAMPLE_APP_COMMIT')", $command);
+        $this->assertStringContainsString('active_payload_codec', $command);
+        $this->assertStringContainsString('required_surfaces', $command);
+        $this->assertStringContainsString('missing_surfaces', $command);
+        $this->assertStringContainsString('uncovered_surfaces', $command);
+        $this->assertStringContainsString('get_workflow_history', $command);
+        $this->assertStringContainsString('workflow_completed', $command);
 
         foreach ([
             'browser_welcome',
             'browser_waterline',
             'mcp_workflow_api',
+            'api_webhook',
             'prism_ai',
+            'ai_agent_scripted',
             'ai_failure_hotel',
+            'ai_failure_flight',
+            'ai_failure_car',
+            'sandbox_default',
+            'sandbox_snapshot',
+            'sandbox_suspend_resume',
             'sandbox_recovery_injection',
             'waterline_operator_dashboard',
             'artifactVersions',

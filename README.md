@@ -140,10 +140,10 @@ local sandbox lifecycle variants, sandbox recovery injection, and the Prism/AI
 samples when `OPENAI_API_KEY` is present. Without AI credentials, `--strict`
 keeps the run non-passing and names those surfaces as uncovered. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`, and
-`DURABLE_WORKFLOW_PYTHON_SDK_VERSION` before `docker compose up` when the run
-needs to record the wider published artifact set alongside the Composer pins.
-`scripts/resolve-current-artifacts.sh` emits the current public conformance
-tuple as shell assignments and preserves explicit overrides.
+`DURABLE_WORKFLOW_PYTHON_SDK_VERSION` to override the wider published artifact
+set recorded alongside the Composer pins. By default, the wrapper calls
+`scripts/resolve-current-artifacts.sh`, which emits the current public
+conformance tuple as shell assignments and preserves explicit overrides.
 The wrapper passes the host checkout SHA into the app container as
 `SAMPLE_APP_COMMIT`; set that variable explicitly when running from a source
 archive or another environment without Git metadata.

@@ -12,8 +12,30 @@ use Throwable;
 
 class Conformance extends Command
 {
+    private const REQUIRED_SURFACES = [
+        'deterministic_simple',
+        'deterministic_elapsed',
+        'deterministic_microservice',
+        'api_webhook',
+        'laravel_health',
+        'mcp_workflow_api',
+        'browser_welcome',
+        'browser_waterline',
+        'waterline_operator_dashboard',
+        'sandbox_default',
+        'sandbox_snapshot',
+        'sandbox_suspend_resume',
+        'sandbox_recovery_injection',
+        'prism_ai',
+        'ai_agent_scripted',
+        'ai_failure_hotel',
+        'ai_failure_flight',
+        'ai_failure_car',
+    ];
+
     protected $signature = 'app:conformance
         {--strict : Return non-zero when credential-dependent surfaces are skipped}
+        {--allow-skips : Return zero when credential-dependent surfaces are skipped}
         {--skip-ai : Skip OpenAI-backed samples even when OPENAI_API_KEY is set}
         {--app-url= : Base URL for HTTP, MCP, Waterline, and browser samples}
         {--output= : Also write the JSON run metadata to this path}';
@@ -29,7 +51,7 @@ class Conformance extends Command
     {
         $startedAt = gmdate('c');
         $baseUrl = $this->baseUrl();
-        $strict = (bool) $this->option('strict');
+        $strict = (bool) $this->option('strict') || ! (bool) $this->option('allow-skips');
 
         $this->line('==> sample-app conformance: documented deterministic samples');
         $this->runProcessSurface('deterministic_simple', ['php', 'artisan', 'app:workflow'], '/workflow_activity_other/');
@@ -207,6 +229,7 @@ class Conformance extends Command
     {
         $started = microtime(true);
         $url = "{$baseUrl}/mcp/workflows";
+        $workflowId = 'sample-app-conformance-mcp-'.bin2hex(random_bytes(4));
 
         try {
             $initialize = Http::timeout(20)
@@ -248,22 +271,106 @@ class Conformance extends Command
                 'params' => new \stdClass(),
             ]);
 
-            $body = $initialize->body()."\n".$initialized->body()."\n".$tools->body();
+            $start = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-start-simple',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'start_workflow',
+                    'arguments' => [
+                        'workflow' => 'simple',
+                        'instance_id' => $workflowId,
+                        'business_key' => 'sample-app-conformance',
+                    ],
+                ],
+            ]);
+
+            $result = null;
+            $completed = false;
+            $resultAttempts = 0;
+
+            for ($attempt = 1; $attempt <= 20; $attempt++) {
+                $resultAttempts = $attempt;
+
+                if ($attempt > 1) {
+                    sleep(1);
+                }
+
+                $result = $request->post($url, [
+                    'jsonrpc' => '2.0',
+                    'id' => 'sample-app-conformance-result',
+                    'method' => 'tools/call',
+                    'params' => [
+                        'name' => 'get_workflow_result',
+                        'arguments' => [
+                            'workflow_id' => $workflowId,
+                            'include_recent_history' => true,
+                            'history_limit' => 10,
+                        ],
+                    ],
+                ]);
+
+                $resultBody = $result->body();
+                if (
+                    $result->successful()
+                    && str_contains($resultBody, $workflowId)
+                    && str_contains($resultBody, 'completed')
+                    && str_contains($resultBody, 'workflow_activity_other')
+                ) {
+                    $completed = true;
+                    break;
+                }
+            }
+
+            $history = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-history',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'get_workflow_history',
+                    'arguments' => [
+                        'workflow_id' => $workflowId,
+                        'limit' => 25,
+                    ],
+                ],
+            ]);
+
+            $body = implode("\n", [
+                $initialize->body(),
+                $initialized->body(),
+                $tools->body(),
+                $start->body(),
+                $result?->body() ?? '',
+                $history->body(),
+            ]);
             $passed = $initialize->successful()
                 && $initialized->successful()
                 && $tools->successful()
+                && $start->successful()
+                && ($result?->successful() ?? false)
+                && $history->successful()
                 && str_contains($body, 'list_workflows')
                 && str_contains($body, 'start_workflow')
-                && str_contains($body, 'get_workflow_result');
+                && str_contains($body, 'get_workflow_result')
+                && str_contains($body, 'get_workflow_history')
+                && str_contains($start->body(), $workflowId)
+                && $completed
+                && str_contains($history->body(), 'WorkflowCompleted');
 
             $this->surfaces['mcp_workflow_api'] = [
                 'surface' => 'mcp_workflow_api',
                 'status' => $passed ? 'passed' : 'failed',
                 'driver' => 'mcp-json-rpc',
                 'url' => $url,
+                'workflow_id' => $workflowId,
                 'initialize_status' => $initialize->status(),
                 'initialized_status' => $initialized->status(),
                 'tools_status' => $tools->status(),
+                'start_status' => $start->status(),
+                'result_status' => $result?->status(),
+                'history_status' => $history->status(),
+                'result_attempts' => $resultAttempts,
+                'workflow_completed' => $completed,
                 'duration_ms' => $this->durationMs($started),
                 'body_tail' => $this->tail($body),
             ];
@@ -309,7 +416,9 @@ class Conformance extends Command
             array_keys($this->surfaces),
             fn (string $name): bool => ($this->surfaces[$name]['status'] ?? null) === 'skipped',
         ));
-        $status = $failed !== [] || ($strict && $skipped !== []) ? 'failed' : 'passed';
+        $missing = array_values(array_diff(self::REQUIRED_SURFACES, array_keys($this->surfaces)));
+        $uncovered = array_values(array_unique([...$skipped, ...$missing]));
+        $status = $failed !== [] || $missing !== [] || ($strict && $skipped !== []) ? 'failed' : 'passed';
 
         return [
             'schema' => 'durable-workflow.sample-app.conformance.run',
@@ -319,13 +428,17 @@ class Conformance extends Command
             'completed_at' => gmdate('c'),
             'app_url' => $baseUrl,
             'artifactVersions' => $this->artifactVersions(),
+            'active_payload_codec' => $this->activePayloadCodec(),
             'surfaces' => $this->surfaces,
             'summary' => [
                 'status' => $status,
                 'strict' => $strict,
                 'surface_count' => count($this->surfaces),
+                'required_surfaces' => self::REQUIRED_SURFACES,
                 'failed_surfaces' => $failed,
                 'skipped_surfaces' => $skipped,
+                'missing_surfaces' => $missing,
+                'uncovered_surfaces' => $uncovered,
             ],
         ];
     }
@@ -374,6 +487,13 @@ class Conformance extends Command
         $value = env($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function activePayloadCodec(): string
+    {
+        $codec = config('workflows.serializer', 'avro');
+
+        return is_string($codec) && $codec !== '' ? $codec : 'avro';
     }
 
     private function gitSha(): ?string

@@ -34,6 +34,15 @@ wait_for_db() {
   return 1
 }
 
+resolve_artifacts() {
+  local assignment
+
+  while IFS= read -r assignment; do
+    export "$assignment"
+    printf 'compose-conformance: %s\n' "$assignment"
+  done < <(scripts/resolve-current-artifacts.sh)
+}
+
 docker compose ps
 
 sample_app_commit="${SAMPLE_APP_COMMIT:-}"
@@ -43,6 +52,9 @@ if [[ -z "${sample_app_commit}" ]]; then
     exit 1
   fi
 fi
+
+printf '\n==> resolving current published artifact tuple\n'
+resolve_artifacts
 
 printf '\n==> waiting for database to accept app connections\n'
 wait_for_db
@@ -54,8 +66,15 @@ printf '\n==> full sample-app conformance\n'
 args=("$@")
 if [[ "${SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS:-0}" != "1" ]]; then
   args=(--strict "${args[@]}")
+else
+  args=(--allow-skips "${args[@]}")
 fi
 
 app_url="${SAMPLE_APP_CONFORMANCE_URL:-http://app:8000}"
 
-docker compose exec -T -e SAMPLE_APP_COMMIT="${sample_app_commit}" app php artisan app:conformance --app-url="${app_url}" "${args[@]}"
+docker compose exec -T \
+  -e SAMPLE_APP_COMMIT="${sample_app_commit}" \
+  -e DURABLE_SERVER_IMAGE \
+  -e DURABLE_WORKFLOW_CLI_VERSION \
+  -e DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
+  app php artisan app:conformance --app-url="${app_url}" "${args[@]}"
