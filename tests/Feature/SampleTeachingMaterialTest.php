@@ -122,6 +122,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('runApiDocumentationSurface', $command);
         $this->assertStringContainsString('get_workflow_history', $command);
         $this->assertStringContainsString('workflow_completed', $command);
+        $this->assertStringContainsString('SANDBOX_PROCESS_TIMEOUT_SECONDS = 300', $command);
+        $this->assertStringContainsString('--wait-seconds=180', $command);
 
         foreach ([
             'browser_welcome',
@@ -143,5 +145,11 @@ class SampleTeachingMaterialTest extends TestCase
         ] as $needle) {
             $this->assertStringContainsString($needle, $command);
         }
+
+        $sandboxCommand = file_get_contents(__DIR__.'/../../app/Console/Commands/Sandbox.php');
+
+        $this->assertIsString($sandboxCommand);
+        $this->assertStringContainsString('{--wait-seconds=180', $sandboxCommand);
+        $this->assertStringContainsString('Workflow still running after %d seconds', $sandboxCommand);
     }
 }

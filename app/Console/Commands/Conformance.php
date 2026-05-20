@@ -13,6 +13,8 @@ use Throwable;
 
 class Conformance extends Command
 {
+    private const SANDBOX_PROCESS_TIMEOUT_SECONDS = 300;
+
     private const DOCUMENTED_MCP_TOOLS = [
         'list_workflows',
         'start_workflow',
@@ -90,10 +92,37 @@ class Conformance extends Command
         $this->runHttpSurface('waterline_operator_dashboard', "{$baseUrl}/waterline/dashboard", '/Waterline|Workflow|Dashboard/i');
 
         $this->line('==> sample-app conformance: sandbox lifecycle variants');
-        $this->runProcessSurface('sandbox_default', ['php', 'artisan', 'app:sandbox', '--snapshot-every=0'], '/Workflow complete\..*recoveries=0/s');
-        $this->runProcessSurface('sandbox_snapshot', ['php', 'artisan', 'app:sandbox', '--snapshot-every=2'], '/Workflow complete\..*snap_/s');
-        $this->runProcessSurface('sandbox_suspend_resume', ['php', 'artisan', 'app:sandbox', '--suspend-between'], '/Workflow complete\./');
-        $this->runProcessSurface('sandbox_recovery_injection', ['php', 'artisan', 'app:sandbox', '--snapshot-every=2', '--inject-loss-after=2'], '/Workflow complete\..*recoveries=1/s');
+        $this->runProcessSurface(
+            'sandbox_default',
+            ['php', 'artisan', 'app:sandbox', '--snapshot-every=0', '--wait-seconds=180'],
+            '/Workflow complete\..*recoveries=0/s',
+            self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
+        );
+        $this->runProcessSurface(
+            'sandbox_snapshot',
+            ['php', 'artisan', 'app:sandbox', '--snapshot-every=2', '--wait-seconds=180'],
+            '/Workflow complete\..*snap_/s',
+            self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
+        );
+        $this->runProcessSurface(
+            'sandbox_suspend_resume',
+            ['php', 'artisan', 'app:sandbox', '--suspend-between', '--wait-seconds=180'],
+            '/Workflow complete\./',
+            self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
+        );
+        $this->runProcessSurface(
+            'sandbox_recovery_injection',
+            [
+                'php',
+                'artisan',
+                'app:sandbox',
+                '--snapshot-every=2',
+                '--inject-loss-after=2',
+                '--wait-seconds=180',
+            ],
+            '/Workflow complete\..*recoveries=1/s',
+            self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
+        );
 
         $this->runAiSurfaces();
 

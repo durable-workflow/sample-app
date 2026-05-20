@@ -14,7 +14,8 @@ class Sandbox extends Command
         {--provider= : Sandbox provider override (defaults to config(\'sandbox.default\'))}
         {--snapshot-every=2 : Snapshot the workspace after every N tool calls (0 disables snapshots)}
         {--suspend-between : Idle-suspend the sandbox between tool calls and resume before the next one}
-        {--inject-loss-after= : For the local provider, evict the sandbox after N successful tool calls to exercise restore}';
+        {--inject-loss-after= : For the local provider, evict the sandbox after N successful tool calls to exercise restore}
+        {--wait-seconds=180 : Seconds to wait for the workflow to reach a terminal state}';
 
     protected $description = 'Run the durable sandbox orchestration sample against the configured provider';
 
@@ -24,6 +25,7 @@ class Sandbox extends Command
         $provider = $this->stringOption('provider');
         $snapshotEvery = (int) $this->option('snapshot-every');
         $suspend = (bool) $this->option('suspend-between');
+        $waitSeconds = $this->positiveIntOption('wait-seconds') ?? 180;
 
         $this->line(sprintf(
             'Starting sandbox agent workflow against [%s] provider with %d tool call%s...',
@@ -35,7 +37,7 @@ class Sandbox extends Command
         $workflow = WorkflowStub::make(SandboxAgentWorkflow::class);
         $workflow->start($toolCalls, $provider, $snapshotEvery, $suspend);
 
-        $deadline = time() + 60;
+        $deadline = time() + $waitSeconds;
 
         while (time() < $deadline) {
             $workflow->refresh();
@@ -54,7 +56,10 @@ class Sandbox extends Command
         }
 
         if (! $workflow->completed()) {
-            $this->warn('Workflow still running after 60s; check Waterline for progress.');
+            $this->warn(sprintf(
+                'Workflow still running after %d seconds; check Waterline for progress.',
+                $waitSeconds,
+            ));
 
             return self::FAILURE;
         }
