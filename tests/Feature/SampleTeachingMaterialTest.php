@@ -93,6 +93,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
+        $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
         $this->assertStringContainsString('refresh_services_for_conformance_env', $script);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY', $smokeScript);

@@ -78,13 +78,19 @@ load_env_value() {
 load_conformance_env() {
   local configured="${SAMPLE_APP_CONFORMANCE_ENV_FILE:-}"
   local file
+  local dir
   local candidates=()
 
   if [[ -n "$configured" ]]; then
     candidates+=("$configured")
   fi
 
-  candidates+=(".env" "../.env" "../../.env")
+  dir="$PWD"
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
+    candidates+=("$dir/.env")
+    dir="$(dirname "$dir")"
+  done
+  candidates+=("/.env")
 
   for file in "${candidates[@]}"; do
     load_env_value OPENAI_API_KEY "$file"
