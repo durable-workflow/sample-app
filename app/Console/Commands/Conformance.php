@@ -7,11 +7,32 @@ namespace App\Console\Commands;
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
 class Conformance extends Command
 {
+    private const DOCUMENTED_MCP_TOOLS = [
+        'list_workflows',
+        'start_workflow',
+        'get_workflow_result',
+        'get_workflow_history',
+        'diagnose_workflow',
+    ];
+
+    private const DOCUMENTED_WORKFLOW_KEYS = [
+        'simple',
+        'elapsed',
+        'microservice',
+        'playwright',
+        'webhook',
+        'prism',
+        'ai',
+        'sandbox',
+        'polyglot_php_to_python',
+    ];
+
     private const REQUIRED_SURFACES = [
         'deterministic_simple',
         'deterministic_elapsed',
@@ -19,6 +40,7 @@ class Conformance extends Command
         'api_webhook',
         'laravel_health',
         'mcp_workflow_api',
+        'api_documentation',
         'browser_welcome',
         'browser_waterline',
         'waterline_operator_dashboard',
@@ -62,6 +84,7 @@ class Conformance extends Command
         $this->line('==> sample-app conformance: browser, MCP, and Waterline surfaces');
         $this->runHttpSurface('laravel_health', "{$baseUrl}/up");
         $this->runMcpSurface($baseUrl);
+        $this->runApiDocumentationSurface($baseUrl);
         $this->runProcessSurface('browser_welcome', ['php', 'artisan', 'app:playwright', $baseUrl], '/\.mp4\b/');
         $this->runProcessSurface('browser_waterline', ['php', 'artisan', 'app:playwright', "{$baseUrl}/waterline/dashboard"], '/\.mp4\b/');
         $this->runHttpSurface('waterline_operator_dashboard', "{$baseUrl}/waterline/dashboard", '/Waterline|Workflow|Dashboard/i');
@@ -222,6 +245,130 @@ class Conformance extends Command
             '%s %s',
             ($this->surfaces[$name]['status'] ?? null) === 'passed' ? '[pass]' : '[fail]',
             $name,
+        ));
+    }
+
+    private function runApiDocumentationSurface(string $baseUrl): void
+    {
+        $started = microtime(true);
+        $url = "{$baseUrl}/mcp/workflows";
+
+        try {
+            $readme = file_get_contents(base_path('README.md'));
+            if (! is_string($readme)) {
+                throw new RuntimeException('README.md could not be read.');
+            }
+
+            $initialize = Http::timeout(20)
+                ->withHeaders(['Accept' => 'application/json, text/event-stream'])
+                ->asJson()
+                ->post($url, [
+                    'jsonrpc' => '2.0',
+                    'id' => 'sample-app-conformance-docs-initialize',
+                    'method' => 'initialize',
+                    'params' => [
+                        'protocolVersion' => '2024-11-05',
+                        'capabilities' => new \stdClass(),
+                        'clientInfo' => [
+                            'name' => 'sample-app-conformance-docs',
+                            'version' => '1',
+                        ],
+                    ],
+                ]);
+
+            $session = $initialize->header('Mcp-Session-Id');
+            $request = Http::timeout(20)
+                ->withHeaders(['Accept' => 'application/json, text/event-stream'])
+                ->asJson();
+
+            if (is_string($session) && $session !== '') {
+                $request = $request->withHeaders(['Mcp-Session-Id' => $session]);
+            }
+
+            $initialized = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'method' => 'notifications/initialized',
+                'params' => new \stdClass(),
+            ]);
+
+            $tools = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-docs-tools',
+                'method' => 'tools/list',
+                'params' => new \stdClass(),
+            ]);
+
+            $workflows = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-docs-workflows',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'list_workflows',
+                    'arguments' => [
+                        'show_recent' => false,
+                    ],
+                ],
+            ]);
+
+            $liveBody = implode("\n", [
+                $initialize->body(),
+                $initialized->body(),
+                $tools->body(),
+                $workflows->body(),
+            ]);
+
+            $documentationTokens = [
+                '/mcp/workflows',
+                'Available Tools',
+                'Configuration',
+                ...self::DOCUMENTED_MCP_TOOLS,
+                ...self::DOCUMENTED_WORKFLOW_KEYS,
+            ];
+            $liveTokens = [
+                ...self::DOCUMENTED_MCP_TOOLS,
+                ...self::DOCUMENTED_WORKFLOW_KEYS,
+            ];
+
+            $missingDocumentation = $this->missingTokens($readme, $documentationTokens);
+            $missingLive = $this->missingTokens($liveBody, $liveTokens);
+            $passed = $initialize->successful()
+                && $initialized->successful()
+                && $tools->successful()
+                && $workflows->successful()
+                && $missingDocumentation === []
+                && $missingLive === [];
+
+            $this->surfaces['api_documentation'] = [
+                'surface' => 'api_documentation',
+                'status' => $passed ? 'passed' : 'failed',
+                'driver' => 'readme-plus-mcp-json-rpc',
+                'url' => $url,
+                'initialize_status' => $initialize->status(),
+                'initialized_status' => $initialized->status(),
+                'tools_status' => $tools->status(),
+                'workflows_status' => $workflows->status(),
+                'documented_tools' => self::DOCUMENTED_MCP_TOOLS,
+                'documented_workflows' => self::DOCUMENTED_WORKFLOW_KEYS,
+                'missing_documentation_tokens' => $missingDocumentation,
+                'missing_live_tokens' => $missingLive,
+                'duration_ms' => $this->durationMs($started),
+                'body_tail' => $this->tail($liveBody),
+            ];
+        } catch (Throwable $e) {
+            $this->surfaces['api_documentation'] = [
+                'surface' => 'api_documentation',
+                'status' => 'failed',
+                'driver' => 'readme-plus-mcp-json-rpc',
+                'url' => $url,
+                'duration_ms' => $this->durationMs($started),
+                'error' => $e->getMessage(),
+            ];
+        }
+
+        $this->line(sprintf(
+            '%s %s',
+            ($this->surfaces['api_documentation']['status'] ?? null) === 'passed' ? '[pass]' : '[fail]',
+            'api_documentation',
         ));
     }
 
@@ -533,6 +680,18 @@ class Conformance extends Command
     private function durationMs(float $started): int
     {
         return (int) round((microtime(true) - $started) * 1000);
+    }
+
+    /**
+     * @param list<string> $tokens
+     * @return list<string>
+     */
+    private function missingTokens(string $haystack, array $tokens): array
+    {
+        return array_values(array_filter(
+            $tokens,
+            static fn (string $token): bool => ! str_contains($haystack, $token),
+        ));
     }
 
     private function tail(string $value, int $limit = 4000): string

@@ -43,6 +43,65 @@ resolve_artifacts() {
   done < <(scripts/resolve-current-artifacts.sh)
 }
 
+load_env_value() {
+  local name="$1"
+  local file="$2"
+  local line
+  local value
+
+  if [[ -n "${!name:-}" || ! -f "$file" ]]; then
+    return 0
+  fi
+
+  line="$(grep -E "^[[:space:]]*${name}=" "$file" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+
+  value="${line#*=}"
+  value="${value%$'\r'}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+
+  if [[ -n "$value" ]]; then
+    export "$name=$value"
+    printf 'compose-conformance: loaded %s from env file\n' "$name"
+  fi
+}
+
+load_conformance_env() {
+  local configured="${SAMPLE_APP_CONFORMANCE_ENV_FILE:-}"
+  local file
+  local candidates=()
+
+  if [[ -n "$configured" ]]; then
+    candidates+=("$configured")
+  fi
+
+  candidates+=(".env" "../.env" "../../.env")
+
+  for file in "${candidates[@]}"; do
+    load_env_value OPENAI_API_KEY "$file"
+  done
+}
+
+refresh_services_for_conformance_env() {
+  if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+    return 0
+  fi
+
+  printf '\n==> refreshing app and worker containers with conformance credentials\n'
+  docker compose up -d --no-deps --force-recreate --wait app worker
+}
+
+load_conformance_env
+
 docker compose ps
 
 sample_app_commit="${SAMPLE_APP_COMMIT:-}"
@@ -55,6 +114,8 @@ fi
 
 printf '\n==> resolving current published artifact tuple\n'
 resolve_artifacts
+
+refresh_services_for_conformance_env
 
 printf '\n==> waiting for database to accept app connections\n'
 wait_for_db
@@ -77,4 +138,5 @@ docker compose exec -T \
   -e DURABLE_SERVER_IMAGE \
   -e DURABLE_WORKFLOW_CLI_VERSION \
   -e DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
+  -e OPENAI_API_KEY \
   app php artisan app:conformance --app-url="${app_url}" "${args[@]}"
