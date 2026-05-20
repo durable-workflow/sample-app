@@ -74,12 +74,14 @@ class SampleTeachingMaterialTest extends TestCase
     {
         $readme = file_get_contents(__DIR__.'/../../README.md');
         $script = file_get_contents(__DIR__.'/../../scripts/compose-conformance.sh');
+        $artifactResolver = file_get_contents(__DIR__.'/../../scripts/resolve-current-artifacts.sh');
         $smokeScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke.sh');
         $smokeWorkflow = file_get_contents(__DIR__.'/../../.github/workflows/smoke.yml');
         $command = file_get_contents(__DIR__.'/../../app/Console/Commands/Conformance.php');
 
         $this->assertIsString($readme);
         $this->assertIsString($script);
+        $this->assertIsString($artifactResolver);
         $this->assertIsString($smokeScript);
         $this->assertIsString($smokeWorkflow);
         $this->assertIsString($command);
@@ -101,6 +103,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.155"', $artifactResolver);
+        $this->assertStringContainsString('default_python_sdk_version="0.4.67"', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);
