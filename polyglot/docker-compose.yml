@@ -79,7 +79,7 @@ services:
 
   # Server image pin for the published polyglot conformance smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.151}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.153}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -89,7 +89,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.151}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.153}"
     expose:
       - "8080"
     environment: *server-env
@@ -127,7 +127,7 @@ services:
     build:
       context: ./python_worker
       args:
-        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.47}"
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.53}"
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.64}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -146,7 +146,7 @@ services:
       args:
         DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -165,7 +165,7 @@ services:
       args:
         DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -184,7 +184,7 @@ services:
       args:
         DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -203,7 +203,7 @@ services:
       args:
         DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -222,7 +222,7 @@ services:
       args:
         DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+        DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
     environment:
       APP_NAME: "Durable Workflow Waterline"
@@ -265,19 +265,19 @@ services:
     build:
       context: ./python_worker
       args:
-        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.47}"
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.53}"
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.64}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.151}"
-      DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.47}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.153}"
+      DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.53}"
       DURABLE_WORKFLOW_CLI_PIN: "${DURABLE_WORKFLOW_CLI_PIN:-}"
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.64}"
       DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.166}"
       DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
-      DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.56}"
+      DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
       DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
       DURABLE_WORKFLOW_WATERLINE_URL: "http://waterline:8081/waterline"
       DURABLE_WORKFLOW_ARTIFACT_PROBE_URL: "http://waterline:8081/polyglot/conformance/artifacts"
@@ -301,5 +301,5 @@ services:
       python-workflow-worker:
         condition: service_started
       waterline:
-        condition: service_started
+        condition: service_healthy
     command: ["bash", "/app/scripts/smoke.sh"]
