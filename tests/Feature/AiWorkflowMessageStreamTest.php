@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Console\Commands\Ai;
+use App\Models\AiWorkflowMessage;
 use App\Workflows\Ai\AiWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionMethod;
@@ -13,6 +15,7 @@ use Workflow\V2\Enums\MessageDirection;
 use Workflow\V2\Models\WorkflowInstance;
 use Workflow\V2\Models\WorkflowMessage;
 use Workflow\V2\Models\WorkflowRun;
+use Workflow\V2\WorkflowStub;
 
 class AiWorkflowMessageStreamTest extends TestCase
 {
@@ -93,6 +96,33 @@ class AiWorkflowMessageStreamTest extends TestCase
         $this->assertStringNotContainsString('WorkflowMessage::query()->create', $source);
     }
 
+    public function test_ai_command_can_read_latest_assistant_message_after_terminal_run(): void
+    {
+        $run = $this->createRun(status: 'completed');
+
+        AiWorkflowMessage::query()->create([
+            'reference' => 'ai:ai-stream-test:2',
+            'workflow_id' => 'ai-stream-test',
+            'run_id' => $run->id,
+            'role' => 'assistant',
+            'content' => 'Earlier update result.',
+        ]);
+        AiWorkflowMessage::query()->create([
+            'reference' => 'ai:ai-stream-test:10',
+            'workflow_id' => 'ai-stream-test',
+            'run_id' => $run->id,
+            'role' => 'assistant',
+            'content' => 'Final cancellation output.',
+        ]);
+
+        $method = new ReflectionMethod(Ai::class, 'latestAssistantMessage');
+
+        $this->assertSame(
+            'Final cancellation output.',
+            $method->invoke(new Ai(), WorkflowStub::loadRun($run->id)),
+        );
+    }
+
     public function test_readme_teaches_the_public_message_stream_authoring_api(): void
     {
         $source = file_get_contents(base_path('README.md'));
@@ -114,7 +144,7 @@ class AiWorkflowMessageStreamTest extends TestCase
         $method->invoke($workflow, $content);
     }
 
-    private function createRun(): WorkflowRun
+    private function createRun(string $status = 'running'): WorkflowRun
     {
         $instance = WorkflowInstance::create([
             'id' => 'ai-stream-test',
@@ -128,7 +158,7 @@ class AiWorkflowMessageStreamTest extends TestCase
             'run_number' => 1,
             'workflow_class' => AiWorkflow::class,
             'workflow_type' => AiWorkflow::class,
-            'status' => 'running',
+            'status' => $status,
             'message_cursor_position' => 0,
         ]);
 

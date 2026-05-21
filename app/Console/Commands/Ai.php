@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\AiWorkflowMessage;
 use App\Workflows\Ai\AiWorkflow;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
@@ -128,8 +129,12 @@ class Ai extends Command
             // not completed yet: fall through to sleep and retry.
 
             $workflow->refresh();
-            if ($workflow->failed() || $workflow->completed()) {
+            if ($workflow->failed()) {
                 return false;
+            }
+
+            if ($workflow->completed()) {
+                return $this->printLatestAssistantMessage($workflow);
             }
 
             sleep(2);
@@ -139,6 +144,50 @@ class Ai extends Command
         $this->error('Timed out waiting for a response.');
 
         return false;
+    }
+
+    private function printLatestAssistantMessage(WorkflowStub $workflow): bool
+    {
+        $message = $this->latestAssistantMessage($workflow);
+
+        if ($message === null) {
+            return false;
+        }
+
+        $this->newLine();
+        $this->line("<comment>Agent:</comment> {$message}");
+
+        return true;
+    }
+
+    private function latestAssistantMessage(WorkflowStub $workflow): ?string
+    {
+        $messages = AiWorkflowMessage::query()
+            ->where('workflow_id', $workflow->workflowId())
+            ->when($workflow->runId() !== null, fn ($query) => $query->where('run_id', $workflow->runId()))
+            ->get(['reference', 'content'])
+            ->sortByDesc(fn (AiWorkflowMessage $message): int => $this->assistantMessageSequence($message->reference));
+
+        $message = $messages->first();
+
+        if (! $message instanceof AiWorkflowMessage || ! is_string($message->content)) {
+            return null;
+        }
+
+        return $message->content;
+    }
+
+    private function assistantMessageSequence(string $reference): int
+    {
+        $position = strrpos($reference, ':');
+
+        if ($position === false) {
+            return 0;
+        }
+
+        $sequence = substr($reference, $position + 1);
+
+        return ctype_digit($sequence) ? (int) $sequence : 0;
     }
 
     private function waitForTerminalState(WorkflowStub $workflow, int $timeoutSeconds): bool
