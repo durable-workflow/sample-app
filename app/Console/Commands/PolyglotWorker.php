@@ -578,7 +578,7 @@ class PolyglotWorker extends Command
         $envelope = $task['arguments'] ?? $task['workflow_arguments'] ?? null;
         $taskCodec = (string) ($task['payload_codec'] ?? 'avro');
 
-        if ($envelope === null) {
+        if ($this->isMissingPayloadPlaceholder($envelope)) {
             return [];
         }
 
@@ -607,34 +607,57 @@ class PolyglotWorker extends Command
      */
     private function extractActivityReplayValues(array $task): array
     {
-        $events = $task['history_events'] ?? [];
-
-        if (! is_array($events)) {
-            return [];
-        }
+        $events = $this->taskHistoryEvents($task);
 
         $results = [];
+        $exportActivities = $this->historyExportActivities($task);
+        $activityIndex = 0;
+        $activityTypeIndexes = [];
 
         foreach ($events as $event) {
             if (! is_array($event)) {
                 continue;
             }
 
-            $type = (string) ($event['event_type'] ?? '');
+            $type = $this->historyEventType($event);
             $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
+            $activityType = $this->nonEmptyString($payload['activity_type'] ?? null)
+                ?? $this->nonEmptyString($payload['activity_class'] ?? null);
+            $activityTypeIndex = $activityType === null ? null : ($activityTypeIndexes[$activityType] ?? 0);
 
             if ($type === 'ActivityCompleted') {
                 $envelope = $payload['result'] ?? null;
+                $exportActivity = $this->matchingHistoryExportActivity(
+                    $payload,
+                    $exportActivities,
+                    $activityIndex,
+                    $activityTypeIndex,
+                );
+
+                if ($this->isMissingPayloadPlaceholder($envelope) && $exportActivity !== null) {
+                    $envelope = $exportActivity['result'] ?? null;
+                }
+
                 if (is_array($envelope) || is_string($envelope) || $envelope === null) {
                     $results[] = Avro::decodeEnvelope($envelope);
                 } else {
                     $results[] = $envelope;
                 }
+
+                $activityIndex++;
+                if ($activityType !== null) {
+                    $activityTypeIndexes[$activityType] = $activityTypeIndex + 1;
+                }
+
                 continue;
             }
 
             if ($type === 'ActivityFailed') {
                 $results[] = PolyglotActivityFailure::fromHistoryPayload($payload);
+                $activityIndex++;
+                if ($activityType !== null) {
+                    $activityTypeIndexes[$activityType] = $activityTypeIndex + 1;
+                }
             }
         }
 
@@ -650,20 +673,12 @@ class PolyglotWorker extends Command
      */
     private function extractSignalReplayValues(array $task): array
     {
-        $events = $task['history_events'] ?? [];
-        if ((! is_array($events) || $events === []) && is_array($task['history_export'] ?? null)) {
-            $events = $task['history_export']['history_events'] ?? [];
-        }
-
-        if (! is_array($events)) {
-            return [];
-        }
-
+        $events = $this->taskHistoryEvents($task);
         $signals = [];
         $exportSignals = $this->historyExportSignals($task);
 
         foreach ($events as $event) {
-            if (! is_array($event) || ($event['event_type'] ?? null) !== 'SignalReceived') {
+            if (! is_array($event) || $this->historyEventType($event) !== 'SignalReceived') {
                 continue;
             }
 
@@ -705,8 +720,12 @@ class PolyglotWorker extends Command
     {
         $envelope = $payload['arguments'] ?? $payload['value'] ?? null;
 
-        if ($envelope === null && $historyExportSignal !== null) {
+        if ($this->isMissingPayloadPlaceholder($envelope) && $historyExportSignal !== null) {
             $envelope = $historyExportSignal['arguments'] ?? $historyExportSignal['value'] ?? null;
+        }
+
+        if ($this->isMissingPayloadPlaceholder($envelope)) {
+            return true;
         }
 
         if (is_array($envelope) || is_string($envelope)) {
@@ -730,6 +749,7 @@ class PolyglotWorker extends Command
      * @param array<string, mixed> $task
      * @return array{
      *     by_id: array<string, array<string, mixed>>,
+     *     by_wait_id: array<string, array<string, mixed>>,
      *     by_name: array<string, list<array<string, mixed>>>
      * }
      */
@@ -738,6 +758,7 @@ class PolyglotWorker extends Command
         $historyExport = is_array($task['history_export'] ?? null) ? $task['history_export'] : [];
         $records = is_array($historyExport['signals'] ?? null) ? $historyExport['signals'] : [];
         $byId = [];
+        $byWaitId = [];
         $byName = [];
 
         foreach ($records as $record) {
@@ -751,6 +772,11 @@ class PolyglotWorker extends Command
                 $byId[$id] = $record;
             }
 
+            $waitId = $this->nonEmptyString($record['signal_wait_id'] ?? null);
+            if ($waitId !== null) {
+                $byWaitId[$waitId] = $record;
+            }
+
             $name = $this->nonEmptyString($record['name'] ?? null)
                 ?? $this->nonEmptyString($record['signal_name'] ?? null);
             if ($name !== null) {
@@ -761,6 +787,7 @@ class PolyglotWorker extends Command
 
         return [
             'by_id' => $byId,
+            'by_wait_id' => $byWaitId,
             'by_name' => $byName,
         ];
     }
@@ -769,6 +796,7 @@ class PolyglotWorker extends Command
      * @param array<string, mixed> $payload
      * @param array{
      *     by_id: array<string, array<string, mixed>>,
+     *     by_wait_id: array<string, array<string, mixed>>,
      *     by_name: array<string, list<array<string, mixed>>>
      * } $exportSignals
      * @return array<string, mixed>|null
@@ -781,16 +809,21 @@ class PolyglotWorker extends Command
             return $exportSignals['by_id'][$signalId];
         }
 
+        $signalWaitId = $this->nonEmptyString($payload['signal_wait_id'] ?? null);
+        if ($signalWaitId !== null && isset($exportSignals['by_wait_id'][$signalWaitId])) {
+            return $exportSignals['by_wait_id'][$signalWaitId];
+        }
+
         $signalName = $this->nonEmptyString($payload['signal_name'] ?? null)
             ?? $this->nonEmptyString($payload['name'] ?? null);
         if ($signalName === null) {
             return null;
         }
 
-        $signalWaitId = $this->nonEmptyString($payload['signal_wait_id'] ?? null);
-        if ($signalWaitId !== null) {
+        $workflowSequence = $this->intValue($payload['workflow_sequence'] ?? null);
+        if ($workflowSequence !== null) {
             foreach ($exportSignals['by_name'][$signalName] ?? [] as $record) {
-                if ($this->nonEmptyString($record['signal_wait_id'] ?? null) === $signalWaitId) {
+                if ($this->intValue($record['workflow_sequence'] ?? null) === $workflowSequence) {
                     return $record;
                 }
             }
@@ -799,8 +832,152 @@ class PolyglotWorker extends Command
         return $exportSignals['by_name'][$signalName][$nameIndex] ?? null;
     }
 
+    /**
+     * @param array<string, mixed> $task
+     * @return array{
+     *     by_id: array<string, array<string, mixed>>,
+     *     by_sequence: array<int, array<string, mixed>>,
+     *     by_type: array<string, list<array<string, mixed>>>,
+     *     ordered: list<array<string, mixed>>
+     * }
+     */
+    private function historyExportActivities(array $task): array
+    {
+        $historyExport = is_array($task['history_export'] ?? null) ? $task['history_export'] : [];
+        $records = is_array($historyExport['activities'] ?? null) ? $historyExport['activities'] : [];
+        $byId = [];
+        $bySequence = [];
+        $byType = [];
+        $ordered = [];
+
+        foreach ($records as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+
+            $ordered[] = $record;
+
+            $id = $this->nonEmptyString($record['id'] ?? null)
+                ?? $this->nonEmptyString($record['activity_execution_id'] ?? null);
+            if ($id !== null) {
+                $byId[$id] = $record;
+            }
+
+            $sequence = $this->intValue($record['sequence'] ?? null);
+            if ($sequence !== null) {
+                $bySequence[$sequence] = $record;
+            }
+
+            $type = $this->nonEmptyString($record['activity_type'] ?? null)
+                ?? $this->nonEmptyString($record['activity_class'] ?? null);
+            if ($type !== null) {
+                $byType[$type] ??= [];
+                $byType[$type][] = $record;
+            }
+        }
+
+        return [
+            'by_id' => $byId,
+            'by_sequence' => $bySequence,
+            'by_type' => $byType,
+            'ordered' => $ordered,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array{
+     *     by_id: array<string, array<string, mixed>>,
+     *     by_sequence: array<int, array<string, mixed>>,
+     *     by_type: array<string, list<array<string, mixed>>>,
+     *     ordered: list<array<string, mixed>>
+     * } $exportActivities
+     * @return array<string, mixed>|null
+     */
+    private function matchingHistoryExportActivity(
+        array $payload,
+        array $exportActivities,
+        int $activityIndex,
+        ?int $activityTypeIndex,
+    ): ?array {
+        $id = $this->nonEmptyString($payload['activity_execution_id'] ?? null)
+            ?? $this->nonEmptyString($payload['id'] ?? null);
+        if ($id !== null && isset($exportActivities['by_id'][$id])) {
+            return $exportActivities['by_id'][$id];
+        }
+
+        $sequence = $this->intValue($payload['sequence'] ?? null)
+            ?? $this->intValue($payload['workflow_sequence'] ?? null);
+        if ($sequence !== null && isset($exportActivities['by_sequence'][$sequence])) {
+            return $exportActivities['by_sequence'][$sequence];
+        }
+
+        $type = $this->nonEmptyString($payload['activity_type'] ?? null)
+            ?? $this->nonEmptyString($payload['activity_class'] ?? null);
+        if (
+            $type !== null
+            && $activityTypeIndex !== null
+            && isset($exportActivities['by_type'][$type][$activityTypeIndex])
+        ) {
+            return $exportActivities['by_type'][$type][$activityTypeIndex];
+        }
+
+        return $exportActivities['ordered'][$activityIndex] ?? null;
+    }
+
+    /**
+     * @param array<string, mixed> $task
+     * @return array<int, mixed>
+     */
+    private function taskHistoryEvents(array $task): array
+    {
+        $events = $task['history_events'] ?? [];
+        if (is_array($events) && $events !== []) {
+            return $events;
+        }
+
+        $historyExport = is_array($task['history_export'] ?? null) ? $task['history_export'] : [];
+        $exportEvents = $historyExport['history_events'] ?? [];
+
+        return is_array($exportEvents) ? array_values($exportEvents) : [];
+    }
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    private function historyEventType(array $event): string
+    {
+        return (string) ($event['event_type'] ?? $event['type'] ?? '');
+    }
+
     private function nonEmptyString(mixed $value): ?string
     {
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function intValue(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        return null;
+    }
+
+    private function isMissingPayloadPlaceholder(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        if (is_array($value) && array_key_exists('blob', $value)) {
+            return $value['blob'] === null || $value['blob'] === '';
+        }
+
+        return false;
     }
 }

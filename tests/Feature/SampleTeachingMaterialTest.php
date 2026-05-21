@@ -78,6 +78,9 @@ class SampleTeachingMaterialTest extends TestCase
         $smokeScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke.sh');
         $smokeWorkflow = file_get_contents(__DIR__.'/../../.github/workflows/smoke.yml');
         $command = file_get_contents(__DIR__.'/../../app/Console/Commands/Conformance.php');
+        $aiCommand = file_get_contents(__DIR__.'/../../app/Console/Commands/Ai.php');
+        $aiWorkflow = file_get_contents(__DIR__.'/../../app/Workflows/Ai/AiWorkflow.php');
+        $travelAgentActivity = file_get_contents(__DIR__.'/../../app/Workflows/Ai/TravelAgentActivity.php');
 
         $this->assertIsString($readme);
         $this->assertIsString($script);
@@ -85,11 +88,15 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertIsString($smokeScript);
         $this->assertIsString($smokeWorkflow);
         $this->assertIsString($command);
+        $this->assertIsString($aiCommand);
+        $this->assertIsString($aiWorkflow);
+        $this->assertIsString($travelAgentActivity);
 
         $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
+        $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
@@ -105,7 +112,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
         $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.166"', $artifactResolver);
-        $this->assertStringContainsString('default_python_sdk_version="0.4.70"', $artifactResolver);
+        $this->assertStringContainsString('default_python_sdk_version="0.4.71"', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.171"', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
@@ -122,8 +129,18 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('runApiDocumentationSurface', $command);
         $this->assertStringContainsString('get_workflow_history', $command);
         $this->assertStringContainsString('workflow_completed', $command);
+        $this->assertStringContainsString('AI_CONFORMANCE_BOOKING_PLAN', $command);
+        $this->assertStringContainsString('--booking-plan-json={$bookingPlanJson}', $command);
+        $this->assertStringContainsString("'--inactivity-timeout=1'", $command);
         $this->assertStringContainsString('SANDBOX_PROCESS_TIMEOUT_SECONDS = 300', $command);
         $this->assertStringContainsString('--wait-seconds=180', $command);
+        $this->assertStringContainsString('{--booking-plan-json=', $aiCommand);
+        $this->assertStringContainsString('$workflow->start($injectFailure, $inactivityTimeout, $bookingPlan)', $aiCommand);
+        $this->assertStringContainsString('bookingPlanOption', $aiCommand);
+        $this->assertStringContainsString('?array $bookingPlan = null', $aiWorkflow);
+        $this->assertStringContainsString('TravelAgentActivity::class, $messages, $bookingPlan', $aiWorkflow);
+        $this->assertStringContainsString('public function handle(array $messages, ?array $bookingPlan = null)', $travelAgentActivity);
+        $this->assertStringContainsString('json_encode($bookingPlan, JSON_THROW_ON_ERROR)', $travelAgentActivity);
 
         foreach ([
             'browser_welcome',

@@ -139,6 +139,9 @@ artisan samples, browser checks for the app and Waterline, the MCP workflow API,
 an API documentation check that compares the README's documented MCP tools and
 workflow keys with the live endpoint, local sandbox lifecycle variants, sandbox
 recovery injection, and the Prism/AI samples when `OPENAI_API_KEY` is present.
+The AI failure-injection checks reuse one deterministic booking plan after the
+live AI path is exercised so the run proves compensation without spending extra
+model calls on each failure variant.
 Without AI credentials, `--strict` keeps the run non-passing and names those
 surfaces as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key lives
 in a dotenv file outside the repository; the wrapper also checks local
@@ -351,7 +354,7 @@ In addition to the basic example workflow, you can try these other workflows inc
 
 * `php artisan app:prism` - Uses Prism to build a durable AI agent loop. It asks an LLM to generate user profiles and hobbies, validates the result, and retries until the data meets business rules.
 
-* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation.
+* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If any errors occur, the workflow ensures all bookings are canceled. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation. `--booking-plan-json='{"text":"...","bookings":[...]}'` lets deterministic scripted checks reuse a known booking plan while still exercising the workflow, booking activities, and compensation.
 
 * `php artisan app:sandbox` - Durable sandbox orchestration sample. Provisions an ephemeral sandbox, dispatches a sequence of agent-decided tool calls through activities, snapshots the workspace at a configurable interval, recovers from sandbox loss by restoring the latest snapshot, and tears the sandbox down deterministically on every termination path. The default `local` provider runs subprocesses on the worker host; set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to run against the E2B Cloud sandbox API. Pass `--suspend-between` for suspend/resume, `--snapshot-every=2` for snapshots, or `--snapshot-every=2 --inject-loss-after=2` to force the documented local recovery path. See the [Sandbox Orchestration](#sandbox-orchestration) section below for the full pattern walkthrough.
 

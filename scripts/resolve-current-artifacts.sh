@@ -2,8 +2,8 @@
 set -euo pipefail
 
 default_server_image="durableworkflow/server:0.2.166"
-default_cli_version="0.1.53"
-default_python_sdk_version="0.4.70"
+default_cli_version="0.1.54"
+default_python_sdk_version="0.4.71"
 default_workflow_version="2.0.0-alpha.171"
 default_waterline_version="2.0.0-alpha.57"
 

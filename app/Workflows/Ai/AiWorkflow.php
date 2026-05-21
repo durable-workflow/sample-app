@@ -56,7 +56,11 @@ class AiWorkflow extends Workflow
         return $message->content;
     }
 
-    public function handle(?string $injectFailure = null, ?int $inactivityTimeoutSeconds = null): array
+    public function handle(
+        ?string $injectFailure = null,
+        ?int $inactivityTimeoutSeconds = null,
+        ?array $bookingPlan = null,
+    ): array
     {
         // The durable agent pattern combines signals for user input, activities
         // for LLM/booking work, compensation for rollback, and a stream for replies.
@@ -79,7 +83,7 @@ class AiWorkflow extends Workflow
                 }
 
                 $messages[] = new UserMessage((string) $userMessage);
-                $result = activity(TravelAgentActivity::class, $messages);
+                $result = activity(TravelAgentActivity::class, $messages, $bookingPlan);
                 $data = json_decode($result, true);
 
                 foreach ($data['bookings'] as $booking) {

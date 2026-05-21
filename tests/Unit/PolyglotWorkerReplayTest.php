@@ -376,6 +376,112 @@ final class PolyglotWorkerReplayTest extends TestCase
         $this->assertSame($expectedSignal, $result['signal'] ?? null);
     }
 
+    public function test_signal_replay_treats_empty_inline_arguments_as_missing(): void
+    {
+        $expectedSignal = ['message' => 'payload from compact history export'];
+
+        $body = $this->processWorkflowTask([
+            'workflow_type' => 'polyglot.php.signal-query',
+            'workflow_id' => 'php-signal-empty-placeholder',
+            'run_id' => 'run-signal-empty-placeholder',
+            'task_id' => 'task-signal-empty-placeholder',
+            'workflow_task_attempt' => 1,
+            'arguments' => Avro::envelope([['case' => 'empty-signal-placeholder']]),
+            'history_events' => [
+                [
+                    'event_type' => 'SignalReceived',
+                    'payload' => [
+                        'signal_id' => 'signal-empty-placeholder-1',
+                        'signal_name' => 'polyglot-signal',
+                        'workflow_sequence' => 1,
+                        'arguments' => '',
+                        'payload_codec' => 'avro',
+                    ],
+                ],
+                [
+                    'event_type' => 'SignalReceived',
+                    'payload' => [
+                        'signal_id' => 'signal-empty-placeholder-2',
+                        'signal_name' => 'polyglot-signal',
+                        'workflow_sequence' => 2,
+                        'arguments' => '',
+                        'payload_codec' => 'avro',
+                    ],
+                ],
+            ],
+            'history_export' => [
+                'signals' => [
+                    [
+                        'id' => 'signal-empty-placeholder-1',
+                        'name' => 'polyglot-signal',
+                        'workflow_sequence' => 1,
+                        'payload_codec' => 'avro',
+                        'arguments' => Avro::encode([$expectedSignal]),
+                    ],
+                    [
+                        'id' => 'signal-empty-placeholder-2',
+                        'name' => 'polyglot-signal',
+                        'workflow_sequence' => 2,
+                        'payload_codec' => 'avro',
+                        'arguments' => Avro::encode([['message' => 'query observed']]),
+                    ],
+                ],
+            ],
+        ]);
+
+        $command = $body['commands'][0] ?? [];
+        $result = Avro::decodeEnvelope($command['result'] ?? null);
+
+        $this->assertSame('complete_workflow', $command['type'] ?? null);
+        $this->assertSame($expectedSignal, $result['signal'] ?? null);
+    }
+
+    public function test_activity_replay_treats_empty_inline_result_as_missing(): void
+    {
+        $activityResult = [
+            'runtime' => 'python',
+            'input' => 'polyglot',
+            'reversed' => 'tolygolp',
+        ];
+
+        $body = $this->processWorkflowTask([
+            'workflow_type' => 'polyglot.php-to-python.PhpToPythonWorkflow',
+            'workflow_id' => 'php-activity-empty-result',
+            'run_id' => 'run-activity-empty-result',
+            'task_id' => 'task-activity-empty-result',
+            'workflow_task_attempt' => 1,
+            'arguments' => Avro::envelope(['polyglot']),
+            'history_events' => [
+                [
+                    'event_type' => 'ActivityCompleted',
+                    'payload' => [
+                        'activity_execution_id' => 'activity-empty-result-1',
+                        'activity_type' => 'polyglot.php-to-python.reverse',
+                        'sequence' => 1,
+                        'result' => '',
+                        'payload_codec' => 'avro',
+                    ],
+                ],
+            ],
+            'history_export' => [
+                'activities' => [
+                    [
+                        'id' => 'activity-empty-result-1',
+                        'activity_type' => 'polyglot.php-to-python.reverse',
+                        'sequence' => 1,
+                        'payload_codec' => 'avro',
+                        'result' => Avro::encode($activityResult),
+                    ],
+                ],
+            ],
+        ]);
+
+        $command = $body['commands'][0] ?? [];
+
+        $this->assertSame('schedule_activity', $command['type'] ?? null);
+        $this->assertSame('polyglot.php-to-python.tally', $command['activity_type'] ?? null);
+    }
+
     public function test_query_task_reports_waiting_state_with_python_parity_shape(): void
     {
         $request = ['workflow_runtime' => 'php'];
@@ -419,6 +525,96 @@ final class PolyglotWorkerReplayTest extends TestCase
                     'payload' => [
                         'signal_name' => 'polyglot-signal',
                         'arguments' => Avro::envelope([$signal]),
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame([
+            'workflow_runtime' => 'php',
+            'stage' => 'signaled',
+            'signal_count' => 1,
+            'signals' => [$signal],
+            'request' => $request,
+        ], $body['result'] ?? null);
+    }
+
+    public function test_query_task_treats_empty_inline_signal_arguments_as_missing(): void
+    {
+        $request = ['workflow_runtime' => 'php'];
+        $signal = ['source' => 'dw CLI', 'target_runtime' => 'php'];
+
+        $body = $this->processQueryTask([
+            'query_task_id' => 'query-empty-signal-placeholder',
+            'query_task_attempt' => 1,
+            'workflow_type' => 'polyglot.php.signal-query',
+            'workflow_id' => 'php-signal-query-empty',
+            'run_id' => 'run-php-signal-query-empty',
+            'query_name' => 'state',
+            'workflow_arguments' => Avro::envelope([$request]),
+            'history_events' => [
+                [
+                    'event_type' => 'SignalReceived',
+                    'payload' => [
+                        'signal_id' => 'signal-query-empty-1',
+                        'signal_name' => 'polyglot-signal',
+                        'signal_wait_id' => 'wait-query-empty-1',
+                        'arguments' => '',
+                        'payload_codec' => 'avro',
+                    ],
+                ],
+            ],
+            'history_export' => [
+                'signals' => [
+                    [
+                        'id' => 'signal-query-empty-1',
+                        'name' => 'polyglot-signal',
+                        'signal_wait_id' => 'wait-query-empty-1',
+                        'payload_codec' => 'avro',
+                        'arguments' => Avro::encode([$signal]),
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame([
+            'workflow_runtime' => 'php',
+            'stage' => 'signaled',
+            'signal_count' => 1,
+            'signals' => [$signal],
+            'request' => $request,
+        ], $body['result'] ?? null);
+    }
+
+    public function test_query_task_replays_signal_from_history_export_events_when_inline_history_is_empty(): void
+    {
+        $request = ['workflow_runtime' => 'php'];
+        $signal = ['source' => 'history export', 'target_runtime' => 'php'];
+
+        $body = $this->processQueryTask([
+            'query_task_id' => 'query-history-export-events',
+            'query_task_attempt' => 1,
+            'workflow_type' => 'polyglot.php.signal-query',
+            'workflow_id' => 'php-signal-query-export-events',
+            'run_id' => 'run-php-signal-query-export-events',
+            'query_name' => 'state',
+            'workflow_arguments' => Avro::envelope([$request]),
+            'history_events' => [],
+            'history_export' => [
+                'history_events' => [
+                    [
+                        'type' => 'SignalReceived',
+                        'payload' => [
+                            'signal_id' => 'signal-query-export-events-1',
+                        ],
+                    ],
+                ],
+                'signals' => [
+                    [
+                        'id' => 'signal-query-export-events-1',
+                        'name' => 'polyglot-signal',
+                        'payload_codec' => 'avro',
+                        'arguments' => Avro::encode([$signal]),
                     ],
                 ],
             ],

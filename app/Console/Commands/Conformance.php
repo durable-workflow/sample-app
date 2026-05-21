@@ -57,6 +57,32 @@ class Conformance extends Command
         'ai_failure_car',
     ];
 
+    private const AI_CONFORMANCE_BOOKING_PLAN = [
+        'text' => 'Booked the San Francisco hotel, round trip flight, and rental car from the scripted request.',
+        'bookings' => [
+            [
+                'type' => 'book_hotel',
+                'hotel_name' => 'San Francisco Demo Hotel',
+                'check_in_date' => '2026-06-15',
+                'check_out_date' => '2026-06-20',
+                'guests' => 1,
+            ],
+            [
+                'type' => 'book_flight',
+                'origin' => 'New York',
+                'destination' => 'San Francisco',
+                'departure_date' => '2026-06-15',
+                'return_date' => '2026-06-20',
+            ],
+            [
+                'type' => 'book_rental_car',
+                'pickup_location' => 'SFO',
+                'pickup_date' => '2026-06-15',
+                'return_date' => '2026-06-20',
+            ],
+        ],
+    ];
+
     protected $signature = 'app:conformance
         {--strict : Return non-zero when credential-dependent surfaces are skipped}
         {--allow-skips : Return zero when credential-dependent surfaces are skipped}
@@ -171,22 +197,24 @@ class Conformance extends Command
         }
 
         $message = 'Book a round trip flight from New York to San Francisco from 2026-06-15 to 2026-06-20, a hotel in San Francisco for one guest, and a rental car at SFO for the same dates.';
+        $bookingPlanJson = $this->jsonArgument(self::AI_CONFORMANCE_BOOKING_PLAN);
 
         $this->line('==> sample-app conformance: OpenAI-backed Prism and travel-agent samples');
         $this->runProcessSurface('prism_ai', ['php', 'artisan', 'app:prism'], '/Generated User:/', 300);
         $this->runProcessSurface('ai_agent_scripted', [
             'php', 'artisan', 'app:ai',
             "--message={$message}",
-            '--inactivity-timeout=5',
-        ], '/Agent:/', 300);
+            '--inactivity-timeout=1',
+        ], '/Agent:/', 180);
 
         foreach (['hotel', 'flight', 'car'] as $booking) {
             $this->runProcessSurface("ai_failure_{$booking}", [
                 'php', 'artisan', 'app:ai',
                 "--inject-failure={$booking}",
                 "--message={$message}",
-                '--inactivity-timeout=5',
-            ], '/Any previous bookings have been cancelled|booking failed/i', 300);
+                "--booking-plan-json={$bookingPlanJson}",
+                '--inactivity-timeout=1',
+            ], '/Any previous bookings have been cancelled|booking failed/i', 120);
         }
     }
 
@@ -704,6 +732,14 @@ class Conformance extends Command
     private function commandLine(array $command): string
     {
         return implode(' ', array_map('escapeshellarg', $command));
+    }
+
+    /**
+     * @param array<string, mixed> $value
+     */
+    private function jsonArgument(array $value): string
+    {
+        return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 
     private function durationMs(float $started): int

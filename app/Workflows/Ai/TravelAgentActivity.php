@@ -15,11 +15,15 @@ use Workflow\V2\Activity;
 
 class TravelAgentActivity extends Activity
 {
-    public function handle(array $messages): string
+    public function handle(array $messages, ?array $bookingPlan = null): string
     {
         BookHotel::$pending = [];
         BookFlight::$pending = [];
         BookRentalCar::$pending = [];
+
+        if ($bookingPlan !== null) {
+            return json_encode($bookingPlan, JSON_THROW_ON_ERROR);
+        }
 
         // Activity arguments are Avro-serialized under the v2 default codec,
         // which strips PHP class info from UserMessage/AssistantMessage and
