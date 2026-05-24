@@ -9,8 +9,8 @@
 # not the polyglot/ directory — see polyglot/docker-compose.yml.
 FROM php:8.4-cli AS base
 
-ARG DURABLE_WORKFLOW_PHP_SDK_PIN=durable-workflow/workflow:2.0.0-alpha.176
-ARG DURABLE_WORKFLOW_WATERLINE_PIN=durable-workflow/waterline:2.0.0-alpha.57
+ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
+ARG DURABLE_WORKFLOW_WATERLINE_PIN=
 ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=
 ARG DURABLE_WORKFLOW_WATERLINE_VERSION=
 

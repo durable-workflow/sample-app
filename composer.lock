@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-alpha.57",
+            "version": "2.0.0-alpha.59",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "f0103fa86095cda87d721ffbb8208c39a425e499"
+                "reference": "0ccfc4c57ea4fe271ae96ae1933ebe75e5cd8864"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/f0103fa86095cda87d721ffbb8208c39a425e499",
-                "reference": "f0103fa86095cda87d721ffbb8208c39a425e499",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/0ccfc4c57ea4fe271ae96ae1933ebe75e5cd8864",
+                "reference": "0ccfc4c57ea4fe271ae96ae1933ebe75e5cd8864",
                 "shasum": ""
             },
             "require": {
@@ -561,22 +561,22 @@
             "description": "An elegant UI for monitoring Laravel Workflows.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.57"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.59"
             },
-            "time": "2026-05-20T09:49:39+00:00"
+            "time": "2026-05-24T14:35:34+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-alpha.176",
+            "version": "2.0.0-alpha.177",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "2e47545303c088cd162041dce5b10d66b2da6585"
+                "reference": "0bf68a977471bc3730cc3a6a3d48bd199e6a0891"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/2e47545303c088cd162041dce5b10d66b2da6585",
-                "reference": "2e47545303c088cd162041dce5b10d66b2da6585",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/0bf68a977471bc3730cc3a6a3d48bd199e6a0891",
+                "reference": "0bf68a977471bc3730cc3a6a3d48bd199e6a0891",
                 "shasum": ""
             },
             "require": {
@@ -623,9 +623,9 @@
             "description": "Durable workflow engine that allows users to write long running persistent distributed workflows (orchestrations) in PHP powered by Laravel queues.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.176"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.177"
             },
-            "time": "2026-05-24T07:34:38+00:00"
+            "time": "2026-05-24T14:24:34+00:00"
         },
         {
             "name": "egulias/email-validator",

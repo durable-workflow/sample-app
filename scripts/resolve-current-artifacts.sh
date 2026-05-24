@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.178"
-default_cli_version="0.1.59"
-default_python_sdk_version="0.4.74"
-default_workflow_version="2.0.0-alpha.176"
-default_waterline_version="2.0.0-alpha.57"
+default_server_image="durableworkflow/server:0.2.184"
+default_cli_version="0.1.63"
+default_python_sdk_version="0.4.78"
+default_workflow_version="2.0.0-alpha.177"
+default_waterline_version="2.0.0-alpha.59"
 
 semantic_version_from_text() {
   local value="${1:-}"
@@ -25,6 +25,50 @@ emit_assignment() {
   fi
 
   printf '%s=%s\n' "$name" "$value"
+}
+
+latest_packagist_alpha_version() {
+  local package="$1"
+  local fallback="$2"
+  local latest
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  if latest="$(
+    curl -fsSL --retry 2 --connect-timeout 5 --max-time 15 \
+      "https://repo.packagist.org/p2/${package}.json" 2>/dev/null \
+      | PACKAGIST_PACKAGE="$package" node -e '
+const packageName = process.env.PACKAGIST_PACKAGE;
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const versions = (((payload || {}).packages || {})[packageName] || [])
+    .map(candidate => typeof candidate.version === "string" ? candidate.version : "")
+    .map(version => {
+      const match = /^2\.0\.0-alpha\.(\d+)$/.exec(version);
+      return match ? { version, ordinal: Number(match[1]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.ordinal - a.ordinal);
+
+  if (versions.length === 0) {
+    process.exit(1);
+  }
+
+  process.stdout.write(versions[0].version);
+});
+' 2>/dev/null
+  )" && [[ "$latest" =~ ^2\.0\.0-alpha\.[0-9]+$ ]]; then
+    printf '%s\n' "$latest"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback"
 }
 
 server_image="${DURABLE_SERVER_IMAGE:-$default_server_image}"
@@ -53,7 +97,7 @@ elif [[ -n "$workflow_pin" ]]; then
   workflow_version="$(semantic_version_from_text "$workflow_pin")"
   workflow_version="${workflow_version:-$default_workflow_version}"
 else
-  workflow_version="$default_workflow_version"
+  workflow_version="$(latest_packagist_alpha_version durable-workflow/workflow "$default_workflow_version")"
 fi
 if [[ -z "$workflow_pin" ]]; then
   workflow_pin="durable-workflow/workflow:${workflow_version}"
@@ -66,7 +110,7 @@ elif [[ -n "$waterline_pin" ]]; then
   waterline_version="$(semantic_version_from_text "$waterline_pin")"
   waterline_version="${waterline_version:-$default_waterline_version}"
 else
-  waterline_version="$default_waterline_version"
+  waterline_version="$(latest_packagist_alpha_version durable-workflow/waterline "$default_waterline_version")"
 fi
 if [[ -z "$waterline_pin" ]]; then
   waterline_pin="durable-workflow/waterline:${waterline_version}"
