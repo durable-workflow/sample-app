@@ -256,8 +256,9 @@ def artifact_metadata(
             ),
             "install": os.environ.get(
                 "DURABLE_WORKFLOW_CLI_PIN",
-                f"durable-workflow/cli:{DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli']}",
+                f"dw=={DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli']}",
             ),
+            "install_channel": "https://durable-workflow.com/install.sh",
             "version": versions.get("cli"),
             "exercised": True,
         },

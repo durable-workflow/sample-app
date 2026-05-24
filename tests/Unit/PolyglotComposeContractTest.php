@@ -229,7 +229,7 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString('append_env_var WATERLINE_NAMESPACE', $phpEntrypoint);
         $this->assertStringContainsString('append_env_var WATERLINE_ALLOW_UNAUTHENTICATED', $phpEntrypoint);
         $this->assertStringContainsString(
-            'DURABLE_WORKFLOW_CLI_PIN:=durable-workflow/cli:${DURABLE_WORKFLOW_CLI_VERSION}',
+            'DURABLE_WORKFLOW_CLI_PIN:=dw==${DURABLE_WORKFLOW_CLI_VERSION}',
             $smokeShell,
         );
         $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION:=0.1.63', $smokeShell);
@@ -383,6 +383,16 @@ final class PolyglotComposeContractTest extends TestCase
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
         $this->assertSame('2.0.0-alpha.778', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+    }
+
+    public function test_polyglot_artifact_resolver_normalizes_legacy_cli_package_pin(): void
+    {
+        $assignments = $this->resolveArtifactAssignments([
+            'DURABLE_WORKFLOW_CLI_PIN' => 'durable-workflow/cli:0.1.63',
+        ]);
+
+        $this->assertSame('0.1.63', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame('dw==0.1.63', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
     }
 
     public function test_polyglot_validation_exports_resolved_artifacts_before_compose(): void

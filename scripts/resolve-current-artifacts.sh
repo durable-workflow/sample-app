@@ -71,6 +71,27 @@ process.stdin.on("end", () => {
   printf '%s\n' "$fallback"
 }
 
+normalize_cli_pin() {
+  local pin="$1"
+  local version="$2"
+
+  if [[ -z "$pin" ]]; then
+    printf 'dw==%s\n' "$version"
+    return 0
+  fi
+
+  # Older conformance metadata used a Composer-shaped package pin for the
+  # CLI. The CLI is installed through its release installer, so normalize the
+  # project-owned legacy shape to the resolver-safe binary pin while keeping
+  # arbitrary explicit overrides intact.
+  if [[ "$pin" =~ ^durable-workflow/cli:([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+    printf 'dw==%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  printf '%s\n' "$pin"
+}
+
 server_image="${DURABLE_SERVER_IMAGE:-$default_server_image}"
 server_version="$(semantic_version_from_text "$server_image")"
 server_version="${server_version:-$(semantic_version_from_text "$default_server_image")}"
@@ -84,9 +105,7 @@ elif [[ -n "$cli_pin" ]]; then
 else
   cli_version="$default_cli_version"
 fi
-if [[ -z "$cli_pin" ]]; then
-  cli_pin="durable-workflow/cli:${cli_version}"
-fi
+cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 
 python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$default_python_sdk_version}"
 
