@@ -27,10 +27,10 @@ def semantic_version_from_text(value: str | None) -> str | None:
 
 
 DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
-    "server": "0.2.170",
+    "server": "0.2.171",
     "cli": "0.1.55",
-    "sdk-python": "0.4.72",
-    "workflow": "2.0.0-alpha.174",
+    "sdk-python": "0.4.73",
+    "workflow": "2.0.0-alpha.175",
     "waterline": "2.0.0-alpha.57",
 }
 
@@ -77,7 +77,7 @@ ARTIFACT_PROBE_URL = os.environ.get(
     "DURABLE_WORKFLOW_ARTIFACT_PROBE_URL",
     "http://waterline:8081/polyglot/conformance/artifacts",
 )
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.170")
+SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.171")
 
 REQUIRED_ARTIFACT_VERSIONS = {
     "server": semantic_version_from_text(SERVER_PIN) or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["server"],
