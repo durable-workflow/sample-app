@@ -123,6 +123,17 @@ class AiWorkflowMessageStreamTest extends TestCase
         );
     }
 
+    public function test_ai_command_polling_keeps_a_terminal_message_fallback(): void
+    {
+        $source = file_get_contents(app_path('Console/Commands/Ai.php'));
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('if ($workflow->completed()) {', $source);
+        $this->assertStringContainsString('return $this->printLatestAssistantMessage($workflow);', $source);
+        $this->assertStringContainsString('} elseif ($result->failed()) {', $source);
+        $this->assertStringContainsString('$workflow->completed() && $this->printLatestAssistantMessage($workflow)', $source);
+    }
+
     public function test_readme_teaches_the_public_message_stream_authoring_api(): void
     {
         $source = file_get_contents(base_path('README.md'));

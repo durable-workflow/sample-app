@@ -108,6 +108,15 @@ class Ai extends Command
         $elapsed = 0;
 
         while ($elapsed < $timeoutSeconds) {
+            $workflow->refresh();
+            if ($workflow->failed()) {
+                return false;
+            }
+
+            if ($workflow->completed()) {
+                return $this->printLatestAssistantMessage($workflow);
+            }
+
             $result = $workflow->attemptUpdate('receive');
 
             if ($result->completed()) {
@@ -121,6 +130,11 @@ class Ai extends Command
                     return ! $workflow->failed();
                 }
             } elseif ($result->failed()) {
+                $workflow->refresh();
+                if ($workflow->completed() && $this->printLatestAssistantMessage($workflow)) {
+                    return true;
+                }
+
                 $this->error('Update failed: '.($result->failureMessage() ?? 'unknown'));
 
                 return false;

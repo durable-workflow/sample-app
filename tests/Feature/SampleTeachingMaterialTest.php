@@ -112,7 +112,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
         $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.171"', $artifactResolver);
-        $this->assertStringContainsString('default_python_sdk_version="0.4.73"', $artifactResolver);
+        $this->assertStringContainsString('default_python_sdk_version="0.4.74"', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.175"', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
