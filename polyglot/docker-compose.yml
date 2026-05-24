@@ -79,7 +79,7 @@ services:
 
   # Server image pin for the published polyglot conformance smoke.
   bootstrap:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.171}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.178}"
     command: ["server-bootstrap"]
     environment: *server-env
     depends_on:
@@ -89,7 +89,7 @@ services:
         condition: service_healthy
 
   server:
-    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.171}"
+    image: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.178}"
     expose:
       - "8080"
     environment: *server-env
@@ -127,7 +127,7 @@ services:
     build:
       context: ./python_worker
       args:
-        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.56}"
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.59}"
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.74}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
@@ -144,7 +144,7 @@ services:
       context: ..
       dockerfile: polyglot/php_worker/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
         DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
@@ -163,7 +163,7 @@ services:
       context: ..
       dockerfile: polyglot/php_worker/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
         DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
@@ -182,7 +182,7 @@ services:
       context: ..
       dockerfile: polyglot/php_worker/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
         DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
@@ -201,7 +201,7 @@ services:
       context: ..
       dockerfile: polyglot/php_worker/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
         DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
@@ -220,7 +220,7 @@ services:
       context: ..
       dockerfile: polyglot/php_worker/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+        DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
         DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
         DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
         DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
@@ -265,17 +265,17 @@ services:
     build:
       context: ./python_worker
       args:
-        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.56}"
+        DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.59}"
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.74}"
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
-      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.171}"
-      DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.56}"
+      DURABLE_SERVER_IMAGE: "${DURABLE_SERVER_IMAGE:-durableworkflow/server:0.2.178}"
+      DURABLE_WORKFLOW_CLI_VERSION: "${DURABLE_WORKFLOW_CLI_VERSION:-0.1.59}"
       DURABLE_WORKFLOW_CLI_PIN: "${DURABLE_WORKFLOW_CLI_PIN:-}"
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-0.4.74}"
-      DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.175}"
+      DURABLE_WORKFLOW_PHP_SDK_PIN: "${DURABLE_WORKFLOW_PHP_SDK_PIN:-durable-workflow/workflow:2.0.0-alpha.176}"
       DURABLE_WORKFLOW_PHP_SDK_VERSION: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
       DURABLE_WORKFLOW_WATERLINE_PIN: "${DURABLE_WORKFLOW_WATERLINE_PIN:-durable-workflow/waterline:2.0.0-alpha.57}"
       DURABLE_WORKFLOW_WATERLINE_VERSION: "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
