@@ -262,11 +262,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.61',
+            '2.0.0-alpha.62',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            '6999cc86deb7a286b6a276a123eeaf2c9b4fc2e1',
+            'e03772f77fbf6505873202b3103379f53e2d48bf',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -350,6 +350,31 @@ final class PolyglotComposeContractTest extends TestCase
         }
     }
 
+    public function test_committed_waterline_assets_match_current_locked_package(): void
+    {
+        $manifest = json_decode(
+            (string) file_get_contents($this->repoPath('public/vendor/waterline/mix-manifest.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertSame([
+            '/app.js' => '/app.js?id=550e047707c9d564596b428bb30a0011',
+            '/app-dark.css' => '/app-dark.css?id=a84f0f42b0d872355eb4eca96e5be831',
+            '/app.css' => '/app.css?id=f87a5bb3ecda2dceae68cca620f0cd5e',
+            '/img/favicon.png' => '/img/favicon.png?id=7c006241b093796d6abfa3049df93a59',
+            '/img/sprite.svg' => '/img/sprite.svg?id=afc4952b74895bdef3ab4ebe9adb746f',
+        ], $manifest);
+
+        foreach ([
+            'public/vendor/waterline/app.js' => '2537e882a14838617d53404579f0da0ed4c127e23bea40f895542e3dc6f6f4aa',
+            'public/vendor/waterline/app-dark.css' => '3ab900036ac2eaa4fd4e6ca29147cc387463a1d2d5897319b95ffc0037ad5990',
+            'public/vendor/waterline/app.css' => '75ea859e81f5df8749c0721fc56b4b769bd593a1ba3c71d46290db71660ebe85',
+        ] as $path => $expectedHash) {
+            $this->assertSame($expectedHash, hash_file('sha256', $this->repoPath($path)), $path);
+        }
+    }
+
     public function test_polyglot_laravel_services_use_valid_aes_256_app_keys(): void
     {
         $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
@@ -426,7 +451,10 @@ final class PolyglotComposeContractTest extends TestCase
             '"requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS',
             '"artifactProbe":',
             '"artifact_versions_current": True',
+            '"waterline_assets_current": True',
             '"artifact_blocked"',
+            'def waterline_asset_findings(',
+            '"stale_assets": stale_assets',
             'PHP worker advertised workflow SDK',
         ] as $needle) {
             $this->assertStringContainsString($needle, $smoke);
@@ -460,13 +488,20 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString('InstalledVersions::getPrettyVersion($package)', $routes);
         $this->assertStringContainsString("'durable-workflow/workflow'", $routes);
         $this->assertStringContainsString("'durable-workflow/waterline'", $routes);
+        $this->assertStringContainsString("'assets' => [", $routes);
+        $this->assertStringContainsString("'waterline' => [", $routes);
+        $this->assertStringContainsString("public_path('vendor/waterline/mix-manifest.json')", $routes);
+        $this->assertStringContainsString("base_path('vendor/durable-workflow/waterline/public/mix-manifest.json')", $routes);
+        $this->assertStringContainsString("'current' =>", $routes);
 
         $this->assertStringContainsString('def fetch_php_artifact_probe()', $smoke);
         $this->assertStringContainsString('"http://waterline:8081/polyglot/conformance/artifacts"', $smoke);
         $this->assertStringContainsString('fetch_json_url(php_artifact_probe_url(), label="PHP artifact probe")', $smoke);
         $this->assertStringContainsString('def php_artifact_versions(', $smoke);
+        $this->assertStringContainsString('def php_waterline_assets(', $smoke);
         $this->assertStringContainsString('"workflow": php_versions.get("workflow")', $smoke);
         $this->assertStringContainsString('"waterline": php_versions.get("waterline")', $smoke);
+        $this->assertStringContainsString('"assets": php_waterline_assets(php_probe)', $smoke);
         $this->assertStringContainsString('"artifact_probe_error": php_probe_error', $smoke);
     }
 

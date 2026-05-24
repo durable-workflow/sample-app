@@ -31,7 +31,7 @@ DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
     "cli": "0.1.67",
     "sdk-python": "0.4.78",
     "workflow": "2.0.0-alpha.177",
-    "waterline": "2.0.0-alpha.61",
+    "waterline": "2.0.0-alpha.62",
 }
 
 
@@ -201,6 +201,15 @@ def php_artifact_versions(probe: dict[str, Any] | None) -> dict[str, str | None]
     return versions
 
 
+def php_waterline_assets(probe: dict[str, Any] | None) -> dict[str, Any] | None:
+    assets = probe.get("assets") if isinstance(probe, dict) else None
+    if not isinstance(assets, dict):
+        return None
+
+    waterline = assets.get("waterline")
+    return waterline if isinstance(waterline, dict) else None
+
+
 def resolved_artifact_versions(php_probe: dict[str, Any] | None = None) -> dict[str, str | None]:
     php_versions = php_artifact_versions(php_probe)
 
@@ -228,6 +237,36 @@ def artifact_version_findings(
                 "actual": actual,
             }
     return stale, missing
+
+
+def waterline_asset_findings(
+    php_probe: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    waterline = php_waterline_assets(php_probe)
+    if waterline is None:
+        return {
+            "waterline": {
+                "reason": "The PHP artifact probe did not report Waterline asset manifest status.",
+            },
+        }
+
+    if waterline.get("current") is True:
+        return {}
+
+    published = waterline.get("published_manifest")
+    package = waterline.get("package_manifest")
+    published = published if isinstance(published, dict) else {}
+    package = package if isinstance(package, dict) else {}
+
+    return {
+        "waterline": {
+            "reason": "Published Waterline assets do not match the installed Waterline package manifest.",
+            "published_manifest_present": published.get("present"),
+            "published_manifest_sha256": published.get("sha256"),
+            "package_manifest_present": package.get("present"),
+            "package_manifest_sha256": package.get("sha256"),
+        },
+    }
 
 
 def artifact_metadata(
@@ -289,6 +328,7 @@ def artifact_metadata(
             "version": versions.get("waterline"),
             "version_source": "waterline_conformance_artifact_probe",
             "probe": probe,
+            "assets": php_waterline_assets(php_probe),
             "exercised": True,
         },
     }
@@ -956,8 +996,9 @@ async def run_all() -> int:
     php_probe, php_probe_error = fetch_php_artifact_probe()
     artifact_versions = resolved_artifact_versions(php_probe)
     stale_artifacts, missing_artifacts = artifact_version_findings(artifact_versions)
+    stale_assets = waterline_asset_findings(php_probe)
 
-    if stale_artifacts or missing_artifacts:
+    if stale_artifacts or missing_artifacts or stale_assets:
         surfaces = {
             "artifact_versions": {
                 "surface": "artifact_versions",
@@ -967,6 +1008,7 @@ async def run_all() -> int:
                 "resolved": artifact_versions,
                 "stale": stale_artifacts,
                 "missing": missing_artifacts,
+                "stale_assets": stale_assets,
             },
         }
         metadata = {
@@ -990,6 +1032,8 @@ async def run_all() -> int:
                 "artifact_versions_current": False,
                 "stale_artifacts": stale_artifacts,
                 "missing_artifacts": missing_artifacts,
+                "waterline_assets_current": False,
+                "stale_assets": stale_assets,
                 "artifact_probe_error": php_probe_error,
             },
         }
@@ -1076,6 +1120,7 @@ async def run_all() -> int:
                 name for name, surface in surfaces.items() if surface.get("status") == "skipped"
             ],
             "artifact_versions_current": True,
+            "waterline_assets_current": True,
         },
     }
 

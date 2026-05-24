@@ -20,6 +20,36 @@ Route::get('/polyglot/conformance/artifacts', function () {
         return is_string($installed) && $installed !== '' ? $installed : null;
     };
 
+    $manifest = static function (string $path): array {
+        if (! is_file($path)) {
+            return [
+                'present' => false,
+                'sha256' => null,
+                'entries' => null,
+            ];
+        }
+
+        $contents = file_get_contents($path);
+        if (! is_string($contents)) {
+            return [
+                'present' => false,
+                'sha256' => null,
+                'entries' => null,
+            ];
+        }
+
+        $entries = json_decode($contents, true);
+
+        return [
+            'present' => true,
+            'sha256' => hash('sha256', $contents),
+            'entries' => is_array($entries) ? $entries : null,
+        ];
+    };
+
+    $publishedWaterlineManifest = $manifest(public_path('vendor/waterline/mix-manifest.json'));
+    $packageWaterlineManifest = $manifest(base_path('vendor/durable-workflow/waterline/public/mix-manifest.json'));
+
     return response()->json([
         'schema' => 'durable-workflow.sample-app.polyglot-artifacts',
         'artifacts' => [
@@ -30,6 +60,15 @@ Route::get('/polyglot/conformance/artifacts', function () {
             'waterline' => [
                 'artifact' => 'durable-workflow/waterline',
                 'version' => $version('durable-workflow/waterline'),
+            ],
+        ],
+        'assets' => [
+            'waterline' => [
+                'published_manifest' => $publishedWaterlineManifest,
+                'package_manifest' => $packageWaterlineManifest,
+                'current' => $publishedWaterlineManifest['present']
+                    && $packageWaterlineManifest['present']
+                    && $publishedWaterlineManifest['sha256'] === $packageWaterlineManifest['sha256'],
             ],
         ],
     ]);
