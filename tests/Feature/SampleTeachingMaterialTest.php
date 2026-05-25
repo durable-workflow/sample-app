@@ -115,7 +115,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.188"', $artifactResolver);
         $this->assertStringContainsString('default_python_sdk_version="0.4.78"', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.177"', $artifactResolver);
-        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.63"', $artifactResolver);
+        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.64"', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);

@@ -262,11 +262,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.63',
+            '2.0.0-alpha.64',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            'afb1d6c9c67cc0ad177c2993ab38606ddd03c1a7',
+            'd690b70a9d61c8ef0e081b94eb9a20333820cf8e',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 

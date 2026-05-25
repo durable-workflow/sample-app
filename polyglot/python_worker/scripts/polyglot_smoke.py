@@ -31,7 +31,7 @@ DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
     "cli": "0.1.67",
     "sdk-python": "0.4.78",
     "workflow": "2.0.0-alpha.177",
-    "waterline": "2.0.0-alpha.63",
+    "waterline": "2.0.0-alpha.64",
 }
 
 
