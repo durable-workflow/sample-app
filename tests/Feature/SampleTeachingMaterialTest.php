@@ -113,12 +113,12 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.194"', $artifactResolver);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.199"', $artifactResolver);
         $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
-        $this->assertStringContainsString('default_python_sdk_version="0.4.79"', $artifactResolver);
+        $this->assertStringContainsString('default_python_sdk_version="0.4.82"', $artifactResolver);
         $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
-        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.179"', $artifactResolver);
-        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.65"', $artifactResolver);
+        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.181"', $artifactResolver);
+        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.66"', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
