@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.188"
+default_server_image="durableworkflow/server:0.2.190"
 default_cli_version="0.1.67"
 default_python_sdk_version="0.4.78"
 default_workflow_version="2.0.0-alpha.177"
@@ -71,6 +71,50 @@ process.stdin.on("end", () => {
   printf '%s\n' "$fallback"
 }
 
+latest_dockerhub_server_image() {
+  local fallback="$1"
+  local repository="${fallback%:*}"
+  local latest
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  if latest="$(
+    curl -fsSL --retry 2 --connect-timeout 5 --max-time 15 \
+      "https://registry.hub.docker.com/v2/repositories/${repository}/tags?page_size=100" 2>/dev/null \
+      | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const tags = Array.isArray(payload.results) ? payload.results : [];
+  const versions = tags
+    .map(tag => typeof tag.name === "string" ? tag.name : "")
+    .map(name => {
+      const match = /^0\.2\.(\d+)$/.exec(name);
+      return match ? { name, patch: Number(match[1]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.patch - a.patch);
+
+  if (versions.length === 0) {
+    process.exit(1);
+  }
+
+  process.stdout.write(versions[0].name);
+});
+' 2>/dev/null
+  )" && [[ "$latest" =~ ^0\.2\.[0-9]+$ ]]; then
+    printf '%s:%s\n' "$repository" "$latest"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
 normalize_cli_pin() {
   local pin="$1"
   local version="$2"
@@ -92,7 +136,7 @@ normalize_cli_pin() {
   printf '%s\n' "$pin"
 }
 
-server_image="${DURABLE_SERVER_IMAGE:-$default_server_image}"
+server_image="${DURABLE_SERVER_IMAGE:-$(latest_dockerhub_server_image "$default_server_image")}"
 server_version="$(semantic_version_from_text "$server_image")"
 server_version="${server_version:-$(semantic_version_from_text "$default_server_image")}"
 

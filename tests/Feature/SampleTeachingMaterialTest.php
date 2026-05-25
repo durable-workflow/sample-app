@@ -97,6 +97,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
         $this->assertStringContainsString('Waterline/manual observation check', $readme);
+        $this->assertStringContainsString('focused findings', $readme);
         $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
@@ -112,7 +113,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.188"', $artifactResolver);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.190"', $artifactResolver);
+        $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
         $this->assertStringContainsString('default_python_sdk_version="0.4.78"', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.177"', $artifactResolver);
         $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.64"', $artifactResolver);
@@ -129,6 +131,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('required_surfaces', $command);
         $this->assertStringContainsString('missing_surfaces', $command);
         $this->assertStringContainsString('uncovered_surfaces', $command);
+        $this->assertStringContainsString('focused findings', $command);
+        $this->assertStringContainsString('failedSurfaceImpact', $command);
         $this->assertStringContainsString('api_documentation', $command);
         $this->assertStringContainsString('runApiDocumentationSurface', $command);
         $this->assertStringContainsString('get_workflow_history', $command);

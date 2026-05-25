@@ -165,6 +165,19 @@ class Conformance extends Command
             return self::FAILURE;
         }
 
+        if ($metadata['summary']['findings'] !== []) {
+            $this->line('==> sample-app conformance: focused findings');
+            foreach ($metadata['summary']['findings'] as $finding) {
+                if (! is_array($finding)) {
+                    continue;
+                }
+
+                $surface = is_string($finding['surface'] ?? null) ? $finding['surface'] : 'unknown';
+                $impact = is_string($finding['impact'] ?? null) ? $finding['impact'] : 'No impact summary recorded.';
+                $this->line("[finding] {$surface}: {$impact}");
+            }
+        }
+
         $this->line('==> sample-app conformance: run metadata');
         $this->line($json);
 
@@ -703,6 +716,7 @@ class Conformance extends Command
         $missing = array_values(array_diff(self::REQUIRED_SURFACES, array_keys($this->surfaces)));
         $uncovered = array_values(array_unique([...$skipped, ...$missing]));
         $status = $failed !== [] || $missing !== [] || ($strict && $skipped !== []) ? 'failed' : 'passed';
+        $findings = $this->findings($failed, $skipped, $missing);
 
         return [
             'schema' => 'durable-workflow.sample-app.conformance.run',
@@ -723,8 +737,86 @@ class Conformance extends Command
                 'skipped_surfaces' => $skipped,
                 'missing_surfaces' => $missing,
                 'uncovered_surfaces' => $uncovered,
+                'findings' => $findings,
             ],
         ];
+    }
+
+    /**
+     * @param list<string> $failed
+     * @param list<string> $skipped
+     * @param list<string> $missing
+     * @return list<array<string, mixed>>
+     */
+    private function findings(array $failed, array $skipped, array $missing): array
+    {
+        $findings = [];
+
+        foreach ($failed as $surface) {
+            $result = $this->surfaces[$surface] ?? [];
+
+            $findings[] = [
+                'surface' => $surface,
+                'status' => 'failed',
+                'impact' => $this->failedSurfaceImpact($surface),
+                'command' => $result['command'] ?? null,
+                'url' => $result['url'] ?? null,
+                'exit_code' => $result['exit_code'] ?? null,
+                'expected' => $result['expected'] ?? null,
+                'evidence' => $this->surfaceEvidence($result),
+            ];
+        }
+
+        foreach ($skipped as $surface) {
+            $result = $this->surfaces[$surface] ?? [];
+            $reason = is_string($result['reason'] ?? null) ? $result['reason'] : 'The surface was not exercised.';
+
+            $findings[] = [
+                'surface' => $surface,
+                'status' => 'skipped',
+                'impact' => "The {$surface} sample surface was not exercised, so this run does not prove the documented user workflow.",
+                'reason' => $reason,
+            ];
+        }
+
+        foreach ($missing as $surface) {
+            $findings[] = [
+                'surface' => $surface,
+                'status' => 'missing',
+                'impact' => "The {$surface} sample surface did not report any result, so the harness did not cover the documented user workflow.",
+            ];
+        }
+
+        return $findings;
+    }
+
+    private function failedSurfaceImpact(string $surface): string
+    {
+        return match ($surface) {
+            'ai_agent_scripted' => 'The scripted AI travel-agent sample did not complete as documented; users following the repeatable app:ai command can see a nonzero exit or miss the expected booking confirmation.',
+            'ai_failure_hotel', 'ai_failure_flight', 'ai_failure_car' => 'The AI travel-agent failure-mode sample did not demonstrate compensation; users cannot verify that failed bookings roll back as documented.',
+            'prism_ai' => 'The Prism AI sample did not produce a generated user; users with AI credentials cannot confirm the documented durable AI loop.',
+            'mcp_workflow_api' => 'The MCP workflow API did not start and observe a sample workflow to completion; AI clients cannot rely on the documented tool flow.',
+            'waterline_operator_dashboard' => 'The Waterline dashboard was not reachable with the expected operator content; users cannot inspect workflow state through the documented UI.',
+            'waterline_manual_observation' => 'The manual observation path did not export completed workflow history; operators cannot verify the documented Waterline/history inspection flow.',
+            default => "The {$surface} sample surface failed, so a user following the documented sample path would not see the expected successful result.",
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     */
+    private function surfaceEvidence(array $result): ?string
+    {
+        foreach (['error', 'stderr_tail', 'stdout_tail', 'body_tail'] as $key) {
+            $value = $result[$key] ?? null;
+
+            if (is_string($value) && trim($value) !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

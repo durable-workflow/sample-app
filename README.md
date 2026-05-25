@@ -134,7 +134,7 @@ scripts/compose-conformance.sh --strict
 ```
 
 The harness emits a JSON document with the sample-app commit, artifact versions,
-timestamp, per-surface outcome, and any skipped surfaces. It runs the documented
+timestamp, per-surface outcome, focused findings, and any skipped surfaces. It runs the documented
 artisan samples, browser checks for the app and Waterline, the MCP workflow API,
 an API documentation check that compares the README's documented MCP tools and
 workflow keys with the live endpoint, a Waterline/manual observation check using
