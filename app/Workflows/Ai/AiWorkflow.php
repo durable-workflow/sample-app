@@ -77,9 +77,7 @@ class AiWorkflow extends Workflow
                 $userMessage = await('send', $inactivityTimeout);
 
                 if ($userMessage === null) {
-                    throw new Exception(
-                        'Session ended due to inactivity. Please start a new conversation.'
-                    );
+                    break;
                 }
 
                 $messages[] = new UserMessage((string) $userMessage);
