@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.186', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.188', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.186', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.188', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -262,11 +262,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.62',
+            '2.0.0-alpha.63',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            'e03772f77fbf6505873202b3103379f53e2d48bf',
+            'afb1d6c9c67cc0ad177c2993ab38606ddd03c1a7',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -622,8 +622,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.186', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.186, got %s.', $image),
+            version_compare($matches['version'], '0.2.188', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.188, got %s.', $image),
         );
     }
 
