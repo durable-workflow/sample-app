@@ -115,7 +115,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
         $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.199"', $artifactResolver);
         $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
-        $this->assertStringContainsString('default_python_sdk_version="0.4.82"', $artifactResolver);
+        $this->assertStringContainsString('default_python_sdk_version="0.4.83"', $artifactResolver);
         $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.181"', $artifactResolver);
         $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.66"', $artifactResolver);
