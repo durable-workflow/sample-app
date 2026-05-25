@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.191"
+default_server_image="durableworkflow/server:0.2.194"
 default_cli_version="0.1.67"
-default_python_sdk_version="0.4.78"
-default_workflow_version="2.0.0-alpha.177"
-default_waterline_version="2.0.0-alpha.64"
+default_python_sdk_version="0.4.79"
+default_workflow_version="2.0.0-alpha.179"
+default_waterline_version="2.0.0-alpha.65"
 
 semantic_version_from_text() {
   local value="${1:-}"
@@ -115,6 +115,51 @@ process.stdin.on("end", () => {
   printf '%s\n' "$fallback"
 }
 
+latest_pypi_version() {
+  local package="$1"
+  local fallback="$2"
+  local latest
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  if latest="$(
+    curl -fsSL --retry 2 --connect-timeout 5 --max-time 15 \
+      "https://pypi.org/pypi/${package}/json" 2>/dev/null \
+      | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const releases = payload && payload.releases && typeof payload.releases === "object"
+    ? Object.keys(payload.releases)
+    : [];
+  const versions = releases
+    .map(version => {
+      const match = /^0\.4\.(\d+)$/.exec(version);
+      return match ? { version, patch: Number(match[1]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.patch - a.patch);
+
+  if (versions.length === 0) {
+    process.exit(1);
+  }
+
+  process.stdout.write(versions[0].version);
+});
+' 2>/dev/null
+  )" && [[ "$latest" =~ ^0\.4\.[0-9]+$ ]]; then
+    printf '%s\n' "$latest"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
 normalize_cli_pin() {
   local pin="$1"
   local version="$2"
@@ -151,7 +196,7 @@ else
 fi
 cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 
-python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$default_python_sdk_version}"
+python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$(latest_pypi_version durable-workflow "$default_python_sdk_version")}"
 
 workflow_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
 if [[ -n "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}" ]]; then

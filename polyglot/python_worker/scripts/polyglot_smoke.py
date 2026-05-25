@@ -27,11 +27,11 @@ def semantic_version_from_text(value: str | None) -> str | None:
 
 
 DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
-    "server": "0.2.188",
+    "server": "0.2.194",
     "cli": "0.1.67",
-    "sdk-python": "0.4.78",
-    "workflow": "2.0.0-alpha.177",
-    "waterline": "2.0.0-alpha.64",
+    "sdk-python": "0.4.79",
+    "workflow": "2.0.0-alpha.179",
+    "waterline": "2.0.0-alpha.65",
 }
 
 
@@ -68,6 +68,33 @@ def latest_packagist_alpha_version(package: str, fallback: str) -> str:
     return max(candidates)[1]
 
 
+def latest_pypi_version(package: str, fallback: str) -> str:
+    try:
+        request = Request(
+            f"https://pypi.org/pypi/{quote(package, safe='')}/json",
+            headers={"Accept": "application/json"},
+        )
+        with urlopen(request, timeout=15) as response:
+            payload = json.load(response)
+    except Exception:  # noqa: BLE001
+        return fallback
+
+    releases = payload.get("releases") if isinstance(payload, dict) else None
+    versions = releases.keys() if isinstance(releases, dict) else []
+    candidates: list[tuple[int, str]] = []
+    for version in versions:
+        if not isinstance(version, str):
+            continue
+        match = re.fullmatch(r"0\.4\.(\d+)", version)
+        if match:
+            candidates.append((int(match.group(1)), version))
+
+    if not candidates:
+        return fallback
+
+    return max(candidates)[1]
+
+
 SERVER_URL = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
 TOKEN = os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN", "test-token")
 NAMESPACE = os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default")
@@ -77,7 +104,7 @@ ARTIFACT_PROBE_URL = os.environ.get(
     "DURABLE_WORKFLOW_ARTIFACT_PROBE_URL",
     "http://waterline:8081/polyglot/conformance/artifacts",
 )
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.188")
+SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.194")
 
 REQUIRED_ARTIFACT_VERSIONS = {
     "server": semantic_version_from_text(SERVER_PIN) or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["server"],
@@ -87,7 +114,10 @@ REQUIRED_ARTIFACT_VERSIONS = {
     ),
     "sdk-python": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"))
-        or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["sdk-python"]
+        or latest_pypi_version(
+            "durable-workflow",
+            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["sdk-python"],
+        )
     ),
     "workflow": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_VERSION"))
