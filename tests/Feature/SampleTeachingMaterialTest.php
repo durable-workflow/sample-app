@@ -96,6 +96,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
+        $this->assertStringContainsString('Waterline/manual observation check', $readme);
         $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
@@ -132,8 +133,13 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('runApiDocumentationSurface', $command);
         $this->assertStringContainsString('get_workflow_history', $command);
         $this->assertStringContainsString('workflow_completed', $command);
+        $this->assertStringContainsString('runWaterlineManualObservationSurface', $command);
+        $this->assertStringContainsString('waterline_manual_observation', $command);
+        $this->assertStringContainsString('workflow:v2:history-export', $command);
+        $this->assertStringContainsString('durable-workflow.v2.history-export', $command);
         $this->assertStringContainsString('AI_CONFORMANCE_BOOKING_PLAN', $command);
         $this->assertStringContainsString('--booking-plan-json={$bookingPlanJson}', $command);
+        $this->assertStringContainsString("'--inactivity-timeout=5'", $command);
         $this->assertStringContainsString("'--inactivity-timeout=1'", $command);
         $this->assertStringContainsString('SANDBOX_PROCESS_TIMEOUT_SECONDS = 300', $command);
         $this->assertStringContainsString('--wait-seconds=180', $command);
@@ -148,6 +154,7 @@ class SampleTeachingMaterialTest extends TestCase
         foreach ([
             'browser_welcome',
             'browser_waterline',
+            'waterline_manual_observation',
             'mcp_workflow_api',
             'api_webhook',
             'prism_ai',

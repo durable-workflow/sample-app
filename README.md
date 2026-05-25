@@ -137,14 +137,16 @@ The harness emits a JSON document with the sample-app commit, artifact versions,
 timestamp, per-surface outcome, and any skipped surfaces. It runs the documented
 artisan samples, browser checks for the app and Waterline, the MCP workflow API,
 an API documentation check that compares the README's documented MCP tools and
-workflow keys with the live endpoint, local sandbox lifecycle variants, sandbox
-recovery injection, and the Prism/AI samples when `OPENAI_API_KEY` is present.
-The AI failure-injection checks reuse one deterministic booking plan after the
-live AI path is exercised so the run proves compensation without spending extra
+workflow keys with the live endpoint, a Waterline/manual observation check using
+`workflow:v2:history-export`, local sandbox lifecycle variants, sandbox recovery
+injection, and the Prism/AI samples. The Prism check uses `OPENAI_API_KEY` for
+the live model-backed AI surface. The travel-agent success and failure-injection
+checks reuse one deterministic booking plan so the run proves signals, durable
+assistant messages, booking activities, and compensation without spending extra
 model calls on each failure variant.
-Without AI credentials, `--strict` keeps the run non-passing and names those
-surfaces as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key lives
-in a dotenv file outside the repository; the wrapper also checks local
+Without AI credentials, `--strict` keeps the run non-passing and names the live
+Prism surface as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key
+lives in a dotenv file outside the repository; the wrapper also checks local
 workspace-level dotenv files without printing credential values. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`, and
 `DURABLE_WORKFLOW_PYTHON_SDK_VERSION` to override the wider published artifact

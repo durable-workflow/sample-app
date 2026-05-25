@@ -46,6 +46,7 @@ class Conformance extends Command
         'browser_welcome',
         'browser_waterline',
         'waterline_operator_dashboard',
+        'waterline_manual_observation',
         'sandbox_default',
         'sandbox_snapshot',
         'sandbox_suspend_resume',
@@ -97,6 +98,8 @@ class Conformance extends Command
      */
     private array $surfaces = [];
 
+    private ?string $mcpWorkflowId = null;
+
     public function handle(): int
     {
         $startedAt = gmdate('c');
@@ -116,6 +119,7 @@ class Conformance extends Command
         $this->runProcessSurface('browser_welcome', ['php', 'artisan', 'app:playwright', $baseUrl], '/\.mp4\b/');
         $this->runProcessSurface('browser_waterline', ['php', 'artisan', 'app:playwright', "{$baseUrl}/waterline/dashboard"], '/\.mp4\b/');
         $this->runHttpSurface('waterline_operator_dashboard', "{$baseUrl}/waterline/dashboard", '/Waterline|Workflow|Dashboard/i');
+        $this->runWaterlineManualObservationSurface();
 
         $this->line('==> sample-app conformance: sandbox lifecycle variants');
         $this->runProcessSurface(
@@ -177,11 +181,11 @@ class Conformance extends Command
     private function runAiSurfaces(): void
     {
         $hasOpenAiKey = trim((string) env('OPENAI_API_KEY', '')) !== '';
+        $message = 'Book a round trip flight from New York to San Francisco from 2026-06-15 to 2026-06-20, a hotel in San Francisco for one guest, and a rental car at SFO for the same dates.';
+        $bookingPlanJson = $this->jsonArgument(self::AI_CONFORMANCE_BOOKING_PLAN);
 
-        if ((bool) $this->option('skip-ai') || ! $hasOpenAiKey) {
-            $reason = (bool) $this->option('skip-ai')
-                ? 'OpenAI-backed samples were explicitly skipped.'
-                : 'OPENAI_API_KEY is not set; AI-backed samples are uncovered in this run.';
+        if ((bool) $this->option('skip-ai')) {
+            $reason = 'AI-backed samples were explicitly skipped.';
 
             foreach ([
                 'prism_ai',
@@ -196,16 +200,19 @@ class Conformance extends Command
             return;
         }
 
-        $message = 'Book a round trip flight from New York to San Francisco from 2026-06-15 to 2026-06-20, a hotel in San Francisco for one guest, and a rental car at SFO for the same dates.';
-        $bookingPlanJson = $this->jsonArgument(self::AI_CONFORMANCE_BOOKING_PLAN);
+        $this->line('==> sample-app conformance: Prism and travel-agent samples');
+        if ($hasOpenAiKey) {
+            $this->runProcessSurface('prism_ai', ['php', 'artisan', 'app:prism'], '/Generated User:/', 300);
+        } else {
+            $this->skipSurface('prism_ai', 'OPENAI_API_KEY is not set; the live Prism sample is uncovered in this run.');
+        }
 
-        $this->line('==> sample-app conformance: OpenAI-backed Prism and travel-agent samples');
-        $this->runProcessSurface('prism_ai', ['php', 'artisan', 'app:prism'], '/Generated User:/', 300);
         $this->runProcessSurface('ai_agent_scripted', [
             'php', 'artisan', 'app:ai',
             "--message={$message}",
-            '--inactivity-timeout=1',
-        ], '/Agent:/', 180);
+            "--booking-plan-json={$bookingPlanJson}",
+            '--inactivity-timeout=5',
+        ], '/Agent:.*Booked the San Francisco hotel/s', 180);
 
         foreach (['hotel', 'flight', 'car'] as $booking) {
             $this->runProcessSurface("ai_failure_{$booking}", [
@@ -434,6 +441,7 @@ class Conformance extends Command
         $started = microtime(true);
         $url = "{$baseUrl}/mcp/workflows";
         $workflowId = 'sample-app-conformance-mcp-'.bin2hex(random_bytes(4));
+        $this->mcpWorkflowId = $workflowId;
 
         try {
             $initialize = Http::timeout(20)
@@ -593,6 +601,78 @@ class Conformance extends Command
             '%s %s',
             ($this->surfaces['mcp_workflow_api']['status'] ?? null) === 'passed' ? '[pass]' : '[fail]',
             'mcp_workflow_api',
+        ));
+    }
+
+    private function runWaterlineManualObservationSurface(): void
+    {
+        $name = 'waterline_manual_observation';
+        $started = microtime(true);
+        $workflowId = $this->mcpWorkflowId;
+
+        if ($workflowId === null) {
+            $this->surfaces[$name] = [
+                'surface' => $name,
+                'status' => 'failed',
+                'driver' => 'artisan-history-export',
+                'duration_ms' => $this->durationMs($started),
+                'error' => 'No MCP-started workflow id was available for manual observation.',
+            ];
+
+            $this->line("[fail] {$name}");
+
+            return;
+        }
+
+        $command = ['php', 'artisan', 'workflow:v2:history-export', $workflowId, '--pretty'];
+        $process = new Process($command, base_path(), null, null, 60);
+
+        try {
+            $process->run();
+
+            $stdout = $process->getOutput();
+            $stderr = $process->getErrorOutput();
+            $bundle = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
+            $passed = $process->isSuccessful()
+                && is_array($bundle)
+                && ($bundle['schema'] ?? null) === 'durable-workflow.v2.history-export'
+                && ($bundle['workflow']['instance_id'] ?? null) === $workflowId
+                && ($bundle['workflow']['status'] ?? null) === 'completed'
+                && (int) ($bundle['summary']['history_event_count'] ?? 0) > 0
+                && str_contains($stdout, 'WorkflowCompleted');
+
+            $this->surfaces[$name] = [
+                'surface' => $name,
+                'status' => $passed ? 'passed' : 'failed',
+                'driver' => 'artisan-history-export',
+                'command' => $this->commandLine($command),
+                'workflow_id' => $workflowId,
+                'exit_code' => $process->getExitCode(),
+                'duration_ms' => $this->durationMs($started),
+                'schema' => is_array($bundle) ? ($bundle['schema'] ?? null) : null,
+                'workflow_status' => is_array($bundle) ? ($bundle['workflow']['status'] ?? null) : null,
+                'history_event_count' => is_array($bundle) ? ($bundle['summary']['history_event_count'] ?? null) : null,
+                'stdout_tail' => $this->tail($stdout),
+                'stderr_tail' => $this->tail($stderr),
+            ];
+        } catch (Throwable $e) {
+            $this->surfaces[$name] = [
+                'surface' => $name,
+                'status' => 'failed',
+                'driver' => 'artisan-history-export',
+                'command' => $this->commandLine($command),
+                'workflow_id' => $workflowId,
+                'duration_ms' => $this->durationMs($started),
+                'stdout_tail' => $this->tail($process->getOutput()),
+                'stderr_tail' => $this->tail($process->getErrorOutput()),
+                'error' => $e->getMessage(),
+            ];
+        }
+
+        $this->line(sprintf(
+            '%s %s',
+            ($this->surfaces[$name]['status'] ?? null) === 'passed' ? '[pass]' : '[fail]',
+            $name,
         ));
     }
 
