@@ -113,7 +113,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.190"', $artifactResolver);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.191"', $artifactResolver);
         $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
         $this->assertStringContainsString('default_python_sdk_version="0.4.78"', $artifactResolver);
         $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.177"', $artifactResolver);
@@ -145,11 +145,15 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('--booking-plan-json={$bookingPlanJson}', $command);
         $this->assertStringContainsString("'--inactivity-timeout=5'", $command);
         $this->assertStringContainsString("'--inactivity-timeout=1'", $command);
+        $this->assertStringContainsString('AI_FAILURE_PROCESS_TIMEOUT_SECONDS = 180', $command);
         $this->assertStringContainsString('SANDBOX_PROCESS_TIMEOUT_SECONDS = 300', $command);
         $this->assertStringContainsString('--wait-seconds=180', $command);
         $this->assertStringContainsString('{--booking-plan-json=', $aiCommand);
         $this->assertStringContainsString('$workflow->start($injectFailure, $inactivityTimeout, $bookingPlan)', $aiCommand);
         $this->assertStringContainsString('bookingPlanOption', $aiCommand);
+        $this->assertStringContainsString('printedAssistantMessageSequences', $aiCommand);
+        $this->assertStringContainsString('printLatestAssistantMessage($workflow, onlyNew: true)', $aiCommand);
+        $this->assertStringContainsString('latestAssistantMessageRecord', $aiCommand);
         $this->assertStringContainsString('?array $bookingPlan = null', $aiWorkflow);
         $this->assertStringContainsString('TravelAgentActivity::class, $messages, $bookingPlan', $aiWorkflow);
         $this->assertStringContainsString('public function handle(array $messages, ?array $bookingPlan = null)', $travelAgentActivity);

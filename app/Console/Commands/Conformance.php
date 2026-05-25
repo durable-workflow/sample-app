@@ -15,6 +15,8 @@ class Conformance extends Command
 {
     private const SANDBOX_PROCESS_TIMEOUT_SECONDS = 300;
 
+    private const AI_FAILURE_PROCESS_TIMEOUT_SECONDS = 180;
+
     private const DOCUMENTED_MCP_TOOLS = [
         'list_workflows',
         'start_workflow',
@@ -234,7 +236,7 @@ class Conformance extends Command
                 "--message={$message}",
                 "--booking-plan-json={$bookingPlanJson}",
                 '--inactivity-timeout=1',
-            ], '/Any previous bookings have been cancelled|booking failed/i', 120);
+            ], '/Any previous bookings have been cancelled|booking failed/i', self::AI_FAILURE_PROCESS_TIMEOUT_SECONDS);
         }
     }
 

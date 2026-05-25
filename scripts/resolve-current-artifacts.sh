@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.190"
+default_server_image="durableworkflow/server:0.2.191"
 default_cli_version="0.1.67"
 default_python_sdk_version="0.4.78"
 default_workflow_version="2.0.0-alpha.177"

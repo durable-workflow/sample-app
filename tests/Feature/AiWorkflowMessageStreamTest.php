@@ -137,9 +137,13 @@ class AiWorkflowMessageStreamTest extends TestCase
 
         $this->assertIsString($source);
         $this->assertStringContainsString('if ($workflow->completed()) {', $source);
-        $this->assertStringContainsString('return $this->printLatestAssistantMessage($workflow);', $source);
+        $this->assertStringContainsString('return $this->printLatestAssistantMessage($workflow, onlyNew: true);', $source);
         $this->assertStringContainsString('} elseif ($result->failed()) {', $source);
-        $this->assertStringContainsString('$workflow->completed() && $this->printLatestAssistantMessage($workflow)', $source);
+        $this->assertStringContainsString('$workflow->completed() && $this->printLatestAssistantMessage($workflow, onlyNew: true)', $source);
+        $this->assertStringContainsString('printLatestAssistantMessage($workflow, onlyNew: true)', $source);
+        $this->assertStringContainsString('printedAssistantMessageSequences', $source);
+        $this->assertStringContainsString('assistantMessageAlreadyPrinted', $source);
+        $this->assertStringContainsString('latestAssistantMessageRecord', $source);
     }
 
     public function test_scripted_success_timeout_completes_without_cancelling_bookings(): void

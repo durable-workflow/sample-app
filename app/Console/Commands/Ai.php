@@ -20,6 +20,11 @@ class Ai extends Command
 
     protected $description = 'Interactive AI travel agent powered by a durable workflow';
 
+    /**
+     * @var array<string, int>
+     */
+    private array $printedAssistantMessageSequences = [];
+
     public function handle(): int
     {
         $injectFailure = $this->option('inject-failure');
@@ -97,7 +102,7 @@ class Ai extends Command
     }
 
     /**
-     * Poll the workflow's assistant message stream until one message arrives, then display it.
+     * Poll the workflow's durable assistant projection and message stream until one message arrives, then display it.
      *
      * Uses attemptUpdate() so that v2 protocol-level rejections like
      * earlier_signal_pending (the signal we just sent has not been applied to
@@ -105,16 +110,23 @@ class Ai extends Command
      */
     private function waitForMessage(WorkflowStub $workflow, int $timeoutSeconds = 120): bool
     {
-        $elapsed = 0;
+        $deadline = time() + $timeoutSeconds;
 
-        while ($elapsed < $timeoutSeconds) {
+        while (time() < $deadline) {
             $workflow->refresh();
+
+            if ($this->printLatestAssistantMessage($workflow, onlyNew: true)) {
+                $workflow->refresh();
+
+                return ! $workflow->failed();
+            }
+
             if ($workflow->failed()) {
                 return false;
             }
 
             if ($workflow->completed()) {
-                return $this->printLatestAssistantMessage($workflow);
+                return $this->printLatestAssistantMessage($workflow, onlyNew: true);
             }
 
             $result = $workflow->attemptUpdate('receive');
@@ -123,15 +135,21 @@ class Ai extends Command
                 $message = $result->result();
 
                 if ($message !== null) {
+                    if ($this->assistantMessageAlreadyPrinted($workflow, (string) $message)) {
+                        sleep(1);
+                        continue;
+                    }
+
                     $this->newLine();
                     $this->line("<comment>Agent:</comment> {$message}");
+                    $this->rememberLatestAssistantMessageSequence($workflow);
                     $workflow->refresh();
 
                     return ! $workflow->failed();
                 }
             } elseif ($result->failed()) {
                 $workflow->refresh();
-                if ($workflow->completed() && $this->printLatestAssistantMessage($workflow)) {
+                if ($workflow->completed() && $this->printLatestAssistantMessage($workflow, onlyNew: true)) {
                     return true;
                 }
 
@@ -148,11 +166,10 @@ class Ai extends Command
             }
 
             if ($workflow->completed()) {
-                return $this->printLatestAssistantMessage($workflow);
+                return $this->printLatestAssistantMessage($workflow, onlyNew: true);
             }
 
             sleep(2);
-            $elapsed += 2;
         }
 
         $this->error('Timed out waiting for a response.');
@@ -160,21 +177,36 @@ class Ai extends Command
         return false;
     }
 
-    private function printLatestAssistantMessage(WorkflowStub $workflow): bool
+    private function printLatestAssistantMessage(WorkflowStub $workflow, bool $onlyNew = false): bool
     {
-        $message = $this->latestAssistantMessage($workflow);
+        $record = $this->latestAssistantMessageRecord($workflow);
 
-        if ($message === null) {
+        if ($record === null) {
+            return false;
+        }
+
+        if ($onlyNew && $record['sequence'] <= $this->printedAssistantMessageSequence($workflow)) {
             return false;
         }
 
         $this->newLine();
-        $this->line("<comment>Agent:</comment> {$message}");
+        $this->line("<comment>Agent:</comment> {$record['content']}");
+        $this->rememberAssistantMessageSequence($workflow, $record['sequence']);
 
         return true;
     }
 
     private function latestAssistantMessage(WorkflowStub $workflow): ?string
+    {
+        $record = $this->latestAssistantMessageRecord($workflow);
+
+        return $record['content'] ?? null;
+    }
+
+    /**
+     * @return array{content: string, sequence: int}|null
+     */
+    private function latestAssistantMessageRecord(WorkflowStub $workflow): ?array
     {
         $messages = AiWorkflowMessage::query()
             ->where('workflow_id', $workflow->workflowId())
@@ -188,7 +220,10 @@ class Ai extends Command
             return null;
         }
 
-        return $message->content;
+        return [
+            'content' => $message->content,
+            'sequence' => $this->assistantMessageSequence($message->reference),
+        ];
     }
 
     private function assistantMessageSequence(string $reference): int
@@ -202,6 +237,43 @@ class Ai extends Command
         $sequence = substr($reference, $position + 1);
 
         return ctype_digit($sequence) ? (int) $sequence : 0;
+    }
+
+    private function printedAssistantMessageSequence(WorkflowStub $workflow): int
+    {
+        return $this->printedAssistantMessageSequences[$this->assistantMessageKey($workflow)] ?? 0;
+    }
+
+    private function rememberLatestAssistantMessageSequence(WorkflowStub $workflow): void
+    {
+        $record = $this->latestAssistantMessageRecord($workflow);
+
+        if ($record !== null) {
+            $this->rememberAssistantMessageSequence($workflow, $record['sequence']);
+        }
+    }
+
+    private function rememberAssistantMessageSequence(WorkflowStub $workflow, int $sequence): void
+    {
+        $key = $this->assistantMessageKey($workflow);
+        $this->printedAssistantMessageSequences[$key] = max(
+            $sequence,
+            $this->printedAssistantMessageSequences[$key] ?? 0,
+        );
+    }
+
+    private function assistantMessageAlreadyPrinted(WorkflowStub $workflow, string $content): bool
+    {
+        $record = $this->latestAssistantMessageRecord($workflow);
+
+        return $record !== null
+            && $record['content'] === $content
+            && $record['sequence'] <= $this->printedAssistantMessageSequence($workflow);
+    }
+
+    private function assistantMessageKey(WorkflowStub $workflow): string
+    {
+        return $workflow->workflowId().':'.($workflow->runId() ?? 'pending');
     }
 
     private function waitForTerminalState(WorkflowStub $workflow, int $timeoutSeconds): bool
