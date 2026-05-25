@@ -11,8 +11,8 @@ FROM php:8.4-cli AS base
 
 ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
 ARG DURABLE_WORKFLOW_WATERLINE_PIN=
-ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=
-ARG DURABLE_WORKFLOW_WATERLINE_VERSION=
+ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.183
+ARG DURABLE_WORKFLOW_WATERLINE_VERSION=2.0.0-alpha.66
 
 RUN apt-get update && apt-get install -y \
     curl libpq-dev libzip-dev unzip git \
@@ -27,12 +27,12 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN set -eux; \
     workflow_version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"; \
-    if [ -z "$workflow_version" ] && [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then \
+    if [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then \
         workflow_version="${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}"; \
     fi; \
     workflow_version="${workflow_version%@*}"; \
     waterline_version="$DURABLE_WORKFLOW_WATERLINE_VERSION"; \
-    if [ -z "$waterline_version" ] && [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then \
+    if [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then \
         waterline_version="${DURABLE_WORKFLOW_WATERLINE_PIN#durable-workflow/waterline:}"; \
     fi; \
     waterline_version="${waterline_version%@*}"; \

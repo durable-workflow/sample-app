@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.199"
-default_cli_version="0.1.69"
+default_server_image="durableworkflow/server:0.2.201"
+default_cli_version="0.1.70"
 default_python_sdk_version="0.4.83"
-default_workflow_version="2.0.0-alpha.181"
+default_workflow_version="2.0.0-alpha.183"
 default_waterline_version="2.0.0-alpha.66"
 
 semantic_version_from_text() {
@@ -115,6 +115,43 @@ process.stdin.on("end", () => {
   printf '%s\n' "$fallback"
 }
 
+latest_github_release_version() {
+  local repo="$1"
+  local fallback="$2"
+  local latest
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  if latest="$(
+    curl -fsSL --retry 2 --connect-timeout 5 --max-time 15 \
+      -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+      | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const tag = typeof payload.tag_name === "string" ? payload.tag_name.replace(/^v/, "") : "";
+  const match = /^0\.1\.(\d+)$/.exec(tag);
+  if (!match) {
+    process.exit(1);
+  }
+
+  process.stdout.write(tag);
+});
+' 2>/dev/null
+  )" && [[ "$latest" =~ ^0\.1\.[0-9]+$ ]]; then
+    printf '%s\n' "$latest"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
 latest_pypi_version() {
   local package="$1"
   local fallback="$2"
@@ -192,7 +229,7 @@ elif [[ -n "$cli_pin" ]]; then
   cli_version="$(semantic_version_from_text "$cli_pin")"
   cli_version="${cli_version:-$default_cli_version}"
 else
-  cli_version="$default_cli_version"
+  cli_version="$(latest_github_release_version durable-workflow/cli "$default_cli_version")"
 fi
 cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 
