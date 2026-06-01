@@ -49,7 +49,7 @@ class Ai extends Command
                 $this->line("<comment>You:</comment> {$message}");
                 $workflow->signal('send', $message);
 
-                if (! $this->waitForMessage($workflow)) {
+                if (! $this->waitForMessage($workflow, pollReceiveUpdate: false)) {
                     return self::FAILURE;
                 }
 
@@ -108,7 +108,11 @@ class Ai extends Command
      * earlier_signal_pending (the signal we just sent has not been applied to
      * the workflow yet) are treated as "try again shortly" rather than fatal.
      */
-    private function waitForMessage(WorkflowStub $workflow, int $timeoutSeconds = 120): bool
+    private function waitForMessage(
+        WorkflowStub $workflow,
+        int $timeoutSeconds = 120,
+        bool $pollReceiveUpdate = true,
+    ): bool
     {
         $deadline = time() + $timeoutSeconds;
 
@@ -127,6 +131,11 @@ class Ai extends Command
 
             if ($workflow->completed()) {
                 return $this->printLatestAssistantMessage($workflow, onlyNew: true);
+            }
+
+            if (! $pollReceiveUpdate) {
+                sleep(2);
+                continue;
             }
 
             $result = $workflow->attemptUpdate('receive');

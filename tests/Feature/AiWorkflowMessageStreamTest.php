@@ -7,11 +7,13 @@ namespace Tests\Feature;
 use App\Console\Commands\Ai;
 use App\Models\AiWorkflowMessage;
 use App\Workflows\Ai\AiWorkflow;
+use App\Workflows\Ai\CancelHotelActivity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use ReflectionMethod;
 use Tests\TestCase;
+use Workflow\V2\Enums\ActivityStatus;
 use Workflow\V2\Enums\MessageConsumeState;
 use Workflow\V2\Enums\MessageDirection;
 use Workflow\V2\Enums\TaskStatus;
@@ -19,6 +21,7 @@ use Workflow\V2\Enums\TaskType;
 use Workflow\V2\Jobs\RunActivityTask;
 use Workflow\V2\Jobs\RunTimerTask;
 use Workflow\V2\Jobs\RunWorkflowTask;
+use Workflow\V2\Models\ActivityExecution;
 use Workflow\V2\Models\WorkflowInstance;
 use Workflow\V2\Models\WorkflowMessage;
 use Workflow\V2\Models\WorkflowRun;
@@ -144,6 +147,7 @@ class AiWorkflowMessageStreamTest extends TestCase
         $this->assertStringContainsString('printedAssistantMessageSequences', $source);
         $this->assertStringContainsString('assistantMessageAlreadyPrinted', $source);
         $this->assertStringContainsString('latestAssistantMessageRecord', $source);
+        $this->assertStringContainsString('pollReceiveUpdate: false', $source);
     }
 
     public function test_scripted_success_timeout_completes_without_cancelling_bookings(): void
@@ -204,6 +208,71 @@ class AiWorkflowMessageStreamTest extends TestCase
                 ->where('workflow_id', 'ai-scripted-success-timeout')
                 ->where('content', 'like', '%Any previous bookings have been cancelled.%')
                 ->count());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_scripted_flight_failure_publishes_cancellation_after_compensation(): void
+    {
+        Queue::fake();
+        config()->set('workflows.v2.task_dispatch_mode', 'poll');
+        Carbon::setTestNow(Carbon::parse('2026-05-25 12:00:00'));
+
+        try {
+            $workflow = WorkflowStub::make(AiWorkflow::class, 'ai-scripted-flight-failure');
+
+            $workflow->start('flight', 1, [
+                'text' => 'Booked the San Francisco hotel, round trip flight, and rental car from the scripted request.',
+                'bookings' => [
+                    [
+                        'type' => 'book_hotel',
+                        'hotel_name' => 'San Francisco Demo Hotel',
+                        'check_in_date' => '2026-06-15',
+                        'check_out_date' => '2026-06-20',
+                        'guests' => 1,
+                    ],
+                    [
+                        'type' => 'book_flight',
+                        'origin' => 'New York',
+                        'destination' => 'San Francisco',
+                        'departure_date' => '2026-06-15',
+                        'return_date' => '2026-06-20',
+                    ],
+                    [
+                        'type' => 'book_rental_car',
+                        'pickup_location' => 'SFO',
+                        'pickup_date' => '2026-06-15',
+                        'return_date' => '2026-06-20',
+                    ],
+                ],
+            ]);
+
+            $this->drainReadyWorkflowTasks();
+
+            $workflow->signal('send', 'Book the scripted San Francisco trip.');
+            $this->drainReadyWorkflowTasks();
+
+            $this->assertTrue($workflow->refresh()->completed());
+
+            /** @var AiWorkflowMessage|null $message */
+            $message = AiWorkflowMessage::query()
+                ->where('workflow_id', 'ai-scripted-flight-failure')
+                ->where('role', 'assistant')
+                ->first();
+
+            $this->assertNotNull($message);
+            $this->assertStringContainsString('Flight booking failed: New York to San Francisco.', $message->content);
+            $this->assertStringContainsString('Any previous bookings have been cancelled.', $message->content);
+
+            /** @var ActivityExecution|null $cancelActivity */
+            $cancelActivity = ActivityExecution::query()
+                ->where('workflow_run_id', $workflow->runId())
+                ->where('activity_class', CancelHotelActivity::class)
+                ->first();
+
+            $this->assertNotNull($cancelActivity);
+            $this->assertSame(ActivityStatus::Completed, $cancelActivity->status);
         } finally {
             Carbon::setTestNow();
         }
