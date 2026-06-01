@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.201', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.203', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.201', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.203', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -210,8 +210,8 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_PIN=\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_PIN=\n", $phpDockerfile);
-        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.183\n", $phpDockerfile);
-        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=2.0.0-alpha.66\n", $phpDockerfile);
+        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.185\n", $phpDockerfile);
+        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=2.0.0-alpha.69\n", $phpDockerfile);
         $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then', $phpDockerfile);
         $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then', $phpDockerfile);
         $this->assertStringContainsString('if [ -n "$workflow_version" ] && [ -n "$waterline_version" ]; then', $phpDockerfile);
@@ -236,8 +236,8 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION:=0.1.70', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.83', $smokeShell);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_VERSION:=2.0.0-alpha.183', $smokeShell);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.66', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_VERSION:=2.0.0-alpha.185', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.69', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_PIN:=}', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_PIN:=}', $smokeShell);
         $this->assertStringContainsString('${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}', $smokeShell);
@@ -257,20 +257,20 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.50', $smokeShell);
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.183',
+            '2.0.0-alpha.185',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            '45a7c51727e9dd68cfbb724a0fbba44f765afa1f',
+            'b63ca8a59c85e2b50961c7420af0e0dc4a8f14cd',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.66',
+            '2.0.0-alpha.69',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            '71d1c764c37682b39e6eb52b59ddb9784c21f22a',
+            '40bcd330e257777fcf984f23196ec0aee02fc5d2',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -316,7 +316,7 @@ final class PolyglotComposeContractTest extends TestCase
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.183}',
+            '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.185}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null,
         );
         $this->assertSame(
@@ -324,7 +324,7 @@ final class PolyglotComposeContractTest extends TestCase
             $services['smoke']['environment']['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.66}',
+            '${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.69}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null,
         );
 
@@ -344,11 +344,11 @@ final class PolyglotComposeContractTest extends TestCase
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
             );
             $this->assertSame(
-                '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.183}',
+                '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.185}',
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null,
             );
             $this->assertSame(
-                '${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.66}',
+                '${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.69}',
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null,
             );
         }
@@ -626,8 +626,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.201', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.201, got %s.', $image),
+            version_compare($matches['version'], '0.2.203', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.203, got %s.', $image),
         );
     }
 
