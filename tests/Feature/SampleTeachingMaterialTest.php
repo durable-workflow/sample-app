@@ -119,7 +119,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertStringContainsString('default_python_sdk_version="0.4.83"', $artifactResolver);
         $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
-        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.185"', $artifactResolver);
+        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.186"', $artifactResolver);
         $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.69"', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/waterline', $artifactResolver);
