@@ -114,7 +114,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.301"', $artifactResolver);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.307"', $artifactResolver);
         $this->assertStringContainsString('DURABLE_WORKFLOW_RESOLVE_LATEST', $artifactResolver);
         $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
         $this->assertStringContainsString('default_cli_version="0.1.77"', $artifactResolver);
