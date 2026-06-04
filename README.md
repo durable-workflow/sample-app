@@ -153,6 +153,9 @@ workspace-level dotenv files without printing credential values. Set
 set recorded alongside the Composer pins. By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which emits the current public
 conformance tuple as shell assignments and preserves explicit overrides.
+Set `DURABLE_WORKFLOW_RESOLVE_LATEST=1` only for exploratory runs that should
+probe the latest public artifact channels instead of the committed conformance
+tuple.
 The wrapper passes the host checkout SHA into the app container as
 `SAMPLE_APP_COMMIT`; set that variable explicitly when running from a source
 archive or another environment without Git metadata.

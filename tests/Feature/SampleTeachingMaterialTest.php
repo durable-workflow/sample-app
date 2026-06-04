@@ -95,6 +95,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_RESOLVE_LATEST=1', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
         $this->assertStringContainsString('Waterline/manual observation check', $readme);
         $this->assertStringContainsString('focused findings', $readme);
@@ -113,14 +114,15 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.233"', $artifactResolver);
+        $this->assertStringContainsString('default_server_image="durableworkflow/server:0.2.272"', $artifactResolver);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_RESOLVE_LATEST', $artifactResolver);
         $this->assertStringContainsString('latest_dockerhub_server_image', $artifactResolver);
-        $this->assertStringContainsString('default_cli_version="0.1.75"', $artifactResolver);
+        $this->assertStringContainsString('default_cli_version="0.1.76"', $artifactResolver);
         $this->assertStringContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertStringContainsString('default_python_sdk_version="0.4.84"', $artifactResolver);
         $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
-        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.189"', $artifactResolver);
-        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.71"', $artifactResolver);
+        $this->assertStringContainsString('default_workflow_version="2.0.0-alpha.195"', $artifactResolver);
+        $this->assertStringContainsString('default_waterline_version="2.0.0-alpha.81"', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_alpha_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.233"
-default_cli_version="0.1.75"
+default_server_image="durableworkflow/server:0.2.272"
+default_cli_version="0.1.76"
 default_python_sdk_version="0.4.84"
-default_workflow_version="2.0.0-alpha.189"
-default_waterline_version="2.0.0-alpha.71"
+default_workflow_version="2.0.0-alpha.195"
+default_waterline_version="2.0.0-alpha.81"
+resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-0}"
 
 semantic_version_from_text() {
   local value="${1:-}"
@@ -218,7 +219,17 @@ normalize_cli_pin() {
   printf '%s\n' "$pin"
 }
 
-server_image="${DURABLE_SERVER_IMAGE:-$(latest_dockerhub_server_image "$default_server_image")}"
+should_resolve_latest() {
+  [[ "$resolve_latest" == "1" || "$resolve_latest" == "true" || "$resolve_latest" == "yes" ]]
+}
+
+if [[ -n "${DURABLE_SERVER_IMAGE:-}" ]]; then
+  server_image="$DURABLE_SERVER_IMAGE"
+elif should_resolve_latest; then
+  server_image="$(latest_dockerhub_server_image "$default_server_image")"
+else
+  server_image="$default_server_image"
+fi
 server_version="$(semantic_version_from_text "$server_image")"
 server_version="${server_version:-$(semantic_version_from_text "$default_server_image")}"
 
@@ -228,12 +239,20 @@ if [[ -n "${DURABLE_WORKFLOW_CLI_VERSION:-}" ]]; then
 elif [[ -n "$cli_pin" ]]; then
   cli_version="$(semantic_version_from_text "$cli_pin")"
   cli_version="${cli_version:-$default_cli_version}"
-else
+elif should_resolve_latest; then
   cli_version="$(latest_github_release_version durable-workflow/cli "$default_cli_version")"
+else
+  cli_version="$default_cli_version"
 fi
 cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 
-python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$(latest_pypi_version durable-workflow "$default_python_sdk_version")}"
+if [[ -n "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-}" ]]; then
+  python_sdk_version="$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"
+elif should_resolve_latest; then
+  python_sdk_version="$(latest_pypi_version durable-workflow "$default_python_sdk_version")"
+else
+  python_sdk_version="$default_python_sdk_version"
+fi
 
 workflow_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
 if [[ -n "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}" ]]; then
@@ -241,8 +260,10 @@ if [[ -n "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}" ]]; then
 elif [[ -n "$workflow_pin" ]]; then
   workflow_version="$(semantic_version_from_text "$workflow_pin")"
   workflow_version="${workflow_version:-$default_workflow_version}"
-else
+elif should_resolve_latest; then
   workflow_version="$(latest_packagist_alpha_version durable-workflow/workflow "$default_workflow_version")"
+else
+  workflow_version="$default_workflow_version"
 fi
 if [[ -z "$workflow_pin" ]]; then
   workflow_pin="durable-workflow/workflow:${workflow_version}"
@@ -254,8 +275,10 @@ if [[ -n "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}" ]]; then
 elif [[ -n "$waterline_pin" ]]; then
   waterline_version="$(semantic_version_from_text "$waterline_pin")"
   waterline_version="${waterline_version:-$default_waterline_version}"
-else
+elif should_resolve_latest; then
   waterline_version="$(latest_packagist_alpha_version durable-workflow/waterline "$default_waterline_version")"
+else
+  waterline_version="$default_waterline_version"
 fi
 if [[ -z "$waterline_pin" ]]; then
   waterline_pin="durable-workflow/waterline:${waterline_version}"
