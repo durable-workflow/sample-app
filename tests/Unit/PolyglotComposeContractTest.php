@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.300', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.301', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.300', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.301', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -428,8 +428,8 @@ final class PolyglotComposeContractTest extends TestCase
     {
         $assignments = $this->resolveArtifactAssignments();
 
-        $this->assertSame('durableworkflow/server:0.2.300', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.300', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.301', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.301', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.77', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.77', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.85', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
@@ -659,8 +659,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.300', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.300, got %s.', $image),
+            version_compare($matches['version'], '0.2.301', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.301, got %s.', $image),
         );
     }
 
