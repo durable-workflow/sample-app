@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-default_server_image="durableworkflow/server:0.2.272"
-default_cli_version="0.1.76"
-default_python_sdk_version="0.4.84"
-default_workflow_version="2.0.0-alpha.195"
-default_waterline_version="2.0.0-alpha.81"
+default_server_image="durableworkflow/server:0.2.300"
+default_cli_version="0.1.77"
+default_python_sdk_version="0.4.85"
+default_workflow_version="2.0.0-alpha.197"
+default_waterline_version="2.0.0-alpha.83"
 resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-0}"
 
 semantic_version_from_text() {
