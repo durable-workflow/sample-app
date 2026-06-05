@@ -44,11 +44,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.307', $smokeShell);
+        $this->assertStringContainsString('durableworkflow/server:0.2.345', $smokeShell);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeShell);
 
         $smokeDriver = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/polyglot_smoke.py'));
-        $this->assertStringContainsString('durableworkflow/server:0.2.307', $smokeDriver);
+        $this->assertStringContainsString('durableworkflow/server:0.2.345', $smokeDriver);
         $this->assertStringNotContainsString('durableworkflow/server:0.2.128', $smokeDriver);
     }
 
@@ -210,7 +210,7 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_PIN=\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_PIN=\n", $phpDockerfile);
-        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.197\n", $phpDockerfile);
+        $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.200\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=2.0.0-alpha.83\n", $phpDockerfile);
         $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then', $phpDockerfile);
         $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then', $phpDockerfile);
@@ -236,7 +236,7 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertStringContainsString('DURABLE_WORKFLOW_CLI_VERSION:=0.1.77', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.85', $smokeShell);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_VERSION:=2.0.0-alpha.197', $smokeShell);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_VERSION:=2.0.0-alpha.200', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.83', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_PIN:=}', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_PIN:=}', $smokeShell);
@@ -257,11 +257,11 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.50', $smokeShell);
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.197',
+            '2.0.0-alpha.200',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            'e3f6908037170c5ff2c6bbf58068f0d7c67b9c10',
+            '86e220054309b0d55eaa47f98e5cdd63d3e36042',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
@@ -316,7 +316,7 @@ final class PolyglotComposeContractTest extends TestCase
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame(
-            '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.197}',
+            '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.200}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null,
         );
         $this->assertSame(
@@ -344,7 +344,7 @@ final class PolyglotComposeContractTest extends TestCase
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
             );
             $this->assertSame(
-                '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.197}',
+                '${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.200}',
                 $services[$serviceName]['build']['args']['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null,
             );
             $this->assertSame(
@@ -428,14 +428,14 @@ final class PolyglotComposeContractTest extends TestCase
     {
         $assignments = $this->resolveArtifactAssignments();
 
-        $this->assertSame('durableworkflow/server:0.2.307', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.307', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.345', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.345', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.77', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.77', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.85', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.197', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.200', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/workflow:2.0.0-alpha.197',
+            'durable-workflow/workflow:2.0.0-alpha.200',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame('2.0.0-alpha.83', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
@@ -659,8 +659,8 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertArrayHasKey('version', $matches);
         $this->assertTrue(
-            version_compare($matches['version'], '0.2.307', '>='),
-            sprintf('Expected durableworkflow/server default >= 0.2.307, got %s.', $image),
+            version_compare($matches['version'], '0.2.345', '>='),
+            sprintf('Expected durableworkflow/server default >= 0.2.345, got %s.', $image),
         );
     }
 

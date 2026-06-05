@@ -567,16 +567,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-alpha.197",
+            "version": "2.0.0-alpha.200",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "e3f6908037170c5ff2c6bbf58068f0d7c67b9c10"
+                "reference": "86e220054309b0d55eaa47f98e5cdd63d3e36042"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/e3f6908037170c5ff2c6bbf58068f0d7c67b9c10",
-                "reference": "e3f6908037170c5ff2c6bbf58068f0d7c67b9c10",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/86e220054309b0d55eaa47f98e5cdd63d3e36042",
+                "reference": "86e220054309b0d55eaa47f98e5cdd63d3e36042",
                 "shasum": ""
             },
             "require": {
@@ -589,7 +589,7 @@
                 "laravel-workflow/laravel-workflow": "self.version"
             },
             "require-dev": {
-                "orchestra/testbench": "^8.0",
+                "orchestra/testbench": "^8.0|^11.0",
                 "phpstan/phpstan": "^2.0",
                 "symplify/easy-coding-standard": "^11.0"
             },
@@ -623,9 +623,9 @@
             "description": "Durable workflow engine that allows users to write long running persistent distributed workflows (orchestrations) in PHP powered by Laravel queues.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.197"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.200"
             },
-            "time": "2026-06-04T18:15:59+00:00"
+            "time": "2026-06-05T12:54:25+00:00"
         },
         {
             "name": "egulias/email-validator",
