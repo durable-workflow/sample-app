@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.377"
+pinned_server_image="durableworkflow/server:0.2.391"
 pinned_cli_version="0.1.80"
-pinned_python_sdk_version="0.4.86"
+pinned_python_sdk_version="0.4.88"
 pinned_workflow_version="2.0.0-alpha.203"
-pinned_waterline_version="2.0.0-alpha.86"
+pinned_waterline_version="2.0.0-alpha.87"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
 legacy_resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-}"
