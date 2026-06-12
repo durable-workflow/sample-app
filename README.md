@@ -151,11 +151,13 @@ workspace-level dotenv files without printing credential values. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`, and
 `DURABLE_WORKFLOW_PYTHON_SDK_VERSION` to override the wider published artifact
 set recorded alongside the Composer pins. By default, the wrapper calls
-`scripts/resolve-current-artifacts.sh`, which emits the current public
-conformance tuple as shell assignments and preserves explicit overrides.
-Set `DURABLE_WORKFLOW_RESOLVE_LATEST=1` only for exploratory runs that should
-probe the latest public artifact channels instead of the committed conformance
-tuple.
+`scripts/resolve-current-artifacts.sh`, which resolves the current published
+conformance tuple from public artifact channels, emits it as shell assignments,
+and preserves explicit overrides. Set
+`DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned` for a reproducible run against the
+committed sample-app fallback tuple instead. Set
+`DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json` when a local run
+should use a previously captured public tuple manifest.
 The wrapper passes the host checkout SHA into the app container as
 `SAMPLE_APP_COMMIT`; set that variable explicitly when running from a source
 archive or another environment without Git metadata.
@@ -359,7 +361,7 @@ In addition to the basic example workflow, you can try these other workflows inc
 
 * `php artisan app:prism` - Uses Prism to build a durable AI agent loop. It asks an LLM to generate user profiles and hobbies, validates the result, and retries until the data meets business rules.
 
-* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If a booking error occurs, the workflow ensures prior bookings are canceled; an inactivity timeout closes the conversation without rolling back successful bookings. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation. `--booking-plan-json='{"text":"...","bookings":[...]}'` lets deterministic scripted checks reuse a known booking plan while still exercising the workflow, booking activities, and compensation.
+* `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If a booking error occurs, the workflow ensures prior bookings are canceled; an inactivity timeout closes the conversation without rolling back successful interactive bookings. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation. `--booking-plan-json='{"text":"...","bookings":[...]}'` lets deterministic scripted checks run a single planned turn while still exercising the workflow, booking activities, and compensation.
 
 * `php artisan app:sandbox` - Durable sandbox orchestration sample. Provisions an ephemeral sandbox, dispatches a sequence of agent-decided tool calls through activities, snapshots the workspace at a configurable interval, recovers from sandbox loss by restoring the latest snapshot, and tears the sandbox down deterministically on every termination path. The default `local` provider runs subprocesses on the worker host; set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to run against the E2B Cloud sandbox API. Pass `--suspend-between` for suspend/resume, `--snapshot-every=2` for snapshots, or `--snapshot-every=2 --inject-loss-after=2` to force the documented local recovery path. See the [Sandbox Orchestration](#sandbox-orchestration) section below for the full pattern walkthrough.
 

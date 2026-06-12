@@ -150,7 +150,7 @@ class AiWorkflowMessageStreamTest extends TestCase
         $this->assertStringContainsString('pollReceiveUpdate: false', $source);
     }
 
-    public function test_scripted_success_timeout_completes_without_cancelling_bookings(): void
+    public function test_scripted_success_completes_without_cancelling_bookings(): void
     {
         Queue::fake();
         config()->set('workflows.v2.task_dispatch_mode', 'poll');
@@ -187,6 +187,7 @@ class AiWorkflowMessageStreamTest extends TestCase
             ]);
 
             $this->drainReadyWorkflowTasks();
+            $this->assertNoTimerTasks($workflow);
 
             $workflow->signal('send', 'Book the scripted San Francisco trip.');
             $this->drainReadyWorkflowTasks();
@@ -196,6 +197,7 @@ class AiWorkflowMessageStreamTest extends TestCase
                 'role' => 'assistant',
                 'content' => $bookingText,
             ]);
+            $this->assertTrue($workflow->refresh()->completed());
 
             Carbon::setTestNow(now()->addSecond());
             $this->drainReadyWorkflowTasks();
@@ -249,6 +251,7 @@ class AiWorkflowMessageStreamTest extends TestCase
             ]);
 
             $this->drainReadyWorkflowTasks();
+            $this->assertNoTimerTasks($workflow);
 
             $workflow->signal('send', 'Book the scripted San Francisco trip.');
             $this->drainReadyWorkflowTasks();
@@ -324,18 +327,32 @@ class AiWorkflowMessageStreamTest extends TestCase
         return $run;
     }
 
+    private function assertNoTimerTasks(WorkflowStub $workflow): void
+    {
+        $this->assertSame(
+            0,
+            WorkflowTask::query()
+                ->where('workflow_run_id', $workflow->runId())
+                ->where('task_type', TaskType::Timer->value)
+                ->count(),
+        );
+    }
+
     private function drainReadyWorkflowTasks(): void
     {
         $deadline = microtime(true) + 10;
 
         while (microtime(true) < $deadline) {
+            $cutoff = now()->format('Y-m-d H:i:s.u');
+
             /** @var WorkflowTask|null $task */
             $task = WorkflowTask::query()
                 ->where('status', TaskStatus::Ready->value)
-                ->where(function ($query): void {
+                ->where(function ($query) use ($cutoff): void {
                     $query->whereNull('available_at')
-                        ->orWhere('available_at', '<=', now());
+                        ->orWhere('available_at', '<=', $cutoff);
                 })
+                ->orderBy('available_at')
                 ->orderBy('created_at')
                 ->first();
 

@@ -8,17 +8,31 @@ set -euo pipefail
 
 scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+semantic_version_from_text() {
+    local value="${1:-}"
+
+    if [[ "$value" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    fi
+}
+
+require_artifact_env() {
+    local name="$1"
+
+    if [ -z "${!name:-}" ]; then
+        printf 'polyglot smoke: %s must be set; run scripts/resolve-current-artifacts.sh before starting the smoke service\n' "$name" >&2
+        exit 1
+    fi
+}
+
 : "${DURABLE_WORKFLOW_SERVER_URL:?DURABLE_WORKFLOW_SERVER_URL must be set}"
 : "${DURABLE_WORKFLOW_AUTH_TOKEN:=test-token}"
 : "${DURABLE_WORKFLOW_NAMESPACE:=default}"
-: "${DURABLE_SERVER_IMAGE:=durableworkflow/server:0.2.377}"
-: "${DURABLE_WORKFLOW_CLI_VERSION:=0.1.80}"
-: "${DURABLE_WORKFLOW_CLI_PIN:=dw==${DURABLE_WORKFLOW_CLI_VERSION}}"
-: "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:=0.4.86}"
 : "${DURABLE_WORKFLOW_PHP_SDK_PIN:=}"
 : "${DURABLE_WORKFLOW_WATERLINE_PIN:=}"
-: "${DURABLE_WORKFLOW_PHP_SDK_VERSION:=2.0.0-alpha.203}"
-: "${DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-alpha.86}"
+if [ -z "${DURABLE_WORKFLOW_CLI_VERSION:-}" ] && [ -n "${DURABLE_WORKFLOW_CLI_PIN:-}" ]; then
+    DURABLE_WORKFLOW_CLI_VERSION="$(semantic_version_from_text "$DURABLE_WORKFLOW_CLI_PIN")"
+fi
 if [ -n "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}" ]; then
     DURABLE_WORKFLOW_PHP_SDK_VERSION="${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}"
     DURABLE_WORKFLOW_PHP_SDK_VERSION="${DURABLE_WORKFLOW_PHP_SDK_VERSION%@*}"
@@ -32,6 +46,16 @@ if [ -z "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}" ] && [ -n "${DURABLE_WORKFLOW_PHP_SD
 fi
 if [ -z "${DURABLE_WORKFLOW_WATERLINE_PIN:-}" ] && [ -n "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}" ]; then
     DURABLE_WORKFLOW_WATERLINE_PIN="durable-workflow/waterline:${DURABLE_WORKFLOW_WATERLINE_VERSION}"
+fi
+require_artifact_env DURABLE_SERVER_IMAGE
+require_artifact_env DURABLE_WORKFLOW_CLI_VERSION
+require_artifact_env DURABLE_WORKFLOW_PYTHON_SDK_VERSION
+require_artifact_env DURABLE_WORKFLOW_PHP_SDK_VERSION
+require_artifact_env DURABLE_WORKFLOW_PHP_SDK_PIN
+require_artifact_env DURABLE_WORKFLOW_WATERLINE_VERSION
+require_artifact_env DURABLE_WORKFLOW_WATERLINE_PIN
+if [ -z "${DURABLE_WORKFLOW_CLI_PIN:-}" ]; then
+    DURABLE_WORKFLOW_CLI_PIN="dw==${DURABLE_WORKFLOW_CLI_VERSION}"
 fi
 : "${DURABLE_WORKFLOW_WATERLINE_URL:=http://waterline:8081/waterline}"
 : "${DURABLE_WORKFLOW_ARTIFACT_PROBE_URL:=http://waterline:8081/polyglot/conformance/artifacts}"

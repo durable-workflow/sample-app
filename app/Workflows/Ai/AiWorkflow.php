@@ -65,16 +65,17 @@ class AiWorkflow extends Workflow
         // The durable agent pattern combines signals for user input, activities
         // for LLM/booking work, compensation for rollback, and a stream for replies.
         $messages = [];
+        $scriptedSingleTurn = $bookingPlan !== null;
         $inactivityTimeout = $inactivityTimeoutSeconds !== null && $inactivityTimeoutSeconds > 0
             ? $inactivityTimeoutSeconds.' seconds'
             : self::INACTIVITY_TIMEOUT;
 
         try {
             while (count($messages) < self::MAX_MESSAGES) {
-                // v2 pull-style signal: blocks until a `send` signal arrives or
-                // the inactivity timeout elapses. Returns the signal's `message`
-                // arg, or null on timeout.
-                $userMessage = await('send', $inactivityTimeout);
+                // v2 pull-style signal: interactive runs include an inactivity
+                // timeout; deterministic booking-plan runs wait for one
+                // explicit scripted turn and then complete.
+                $userMessage = await('send', $scriptedSingleTurn ? null : $inactivityTimeout);
 
                 if ($userMessage === null) {
                     break;
@@ -90,6 +91,10 @@ class AiWorkflow extends Workflow
 
                 $messages[] = new AssistantMessage($data['text']);
                 $this->publishAssistantMessage($data['text']);
+
+                if ($scriptedSingleTurn) {
+                    break;
+                }
             }
 
             if (count($messages) >= self::MAX_MESSAGES) {

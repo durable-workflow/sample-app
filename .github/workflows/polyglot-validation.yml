@@ -26,6 +26,8 @@ jobs:
 
       - name: Resolve current artifact tuple
         shell: bash
+        env:
+          DURABLE_WORKFLOW_ARTIFACT_SOURCE: current
         run: |
           while IFS= read -r assignment; do
             echo "$assignment" >> "$GITHUB_ENV"

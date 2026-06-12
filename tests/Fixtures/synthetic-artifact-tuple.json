@@ -1,0 +1,12 @@
+{
+  "schema": "durable-workflow.sample-app.synthetic-artifact-tuple",
+  "schemaVersion": 1,
+  "description": "Synthetic parser fixture for sample-app tests; these versions are not a public artifact tuple.",
+  "artifacts": {
+    "cli": "0.1.902",
+    "sdk-python": "0.4.903",
+    "server": "0.2.901",
+    "waterline": "2.0.0-alpha.905",
+    "workflow": "2.0.0-alpha.904"
+  }
+}

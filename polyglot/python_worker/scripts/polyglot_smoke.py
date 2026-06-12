@@ -26,73 +26,20 @@ def semantic_version_from_text(value: str | None) -> str | None:
     return match.group(0) if match else None
 
 
-DEFAULT_REQUIRED_ARTIFACT_VERSIONS = {
-    "server": "0.2.377",
-    "cli": "0.1.80",
-    "sdk-python": "0.4.86",
-    "workflow": "2.0.0-alpha.203",
-    "waterline": "2.0.0-alpha.86",
-}
-
-
-def latest_packagist_alpha_version(package: str, fallback: str) -> str:
-    try:
-        request = Request(
-            f"https://repo.packagist.org/p2/{quote(package, safe='/')}.json",
-            headers={"Accept": "application/json"},
+def required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        raise RuntimeError(
+            f"{name} must be set by scripts/resolve-current-artifacts.sh before running polyglot smoke"
         )
-        with urlopen(request, timeout=15) as response:
-            payload = json.load(response)
-    except Exception:  # noqa: BLE001
-        return fallback
-
-    package_versions = (
-        ((payload.get("packages") or {}).get(package) or [])
-        if isinstance(payload, dict)
-        else []
-    )
-    candidates: list[tuple[int, str]] = []
-    for candidate in package_versions:
-        if not isinstance(candidate, dict):
-            continue
-        version = candidate.get("version")
-        if not isinstance(version, str):
-            continue
-        match = re.fullmatch(r"2\.0\.0-alpha\.(\d+)", version)
-        if match:
-            candidates.append((int(match.group(1)), version))
-
-    if not candidates:
-        return fallback
-
-    return max(candidates)[1]
+    return value
 
 
-def latest_pypi_version(package: str, fallback: str) -> str:
-    try:
-        request = Request(
-            f"https://pypi.org/pypi/{quote(package, safe='')}/json",
-            headers={"Accept": "application/json"},
-        )
-        with urlopen(request, timeout=15) as response:
-            payload = json.load(response)
-    except Exception:  # noqa: BLE001
-        return fallback
-
-    releases = payload.get("releases") if isinstance(payload, dict) else None
-    versions = releases.keys() if isinstance(releases, dict) else []
-    candidates: list[tuple[int, str]] = []
-    for version in versions:
-        if not isinstance(version, str):
-            continue
-        match = re.fullmatch(r"0\.4\.(\d+)", version)
-        if match:
-            candidates.append((int(match.group(1)), version))
-
-    if not candidates:
-        return fallback
-
-    return max(candidates)[1]
+def required_env_version(name: str) -> str:
+    value = semantic_version_from_text(required_env(name))
+    if value is None:
+        raise RuntimeError(f"{name} must contain a semantic version")
+    return value
 
 
 SERVER_URL = os.environ["DURABLE_WORKFLOW_SERVER_URL"]
@@ -104,36 +51,19 @@ ARTIFACT_PROBE_URL = os.environ.get(
     "DURABLE_WORKFLOW_ARTIFACT_PROBE_URL",
     "http://waterline:8081/polyglot/conformance/artifacts",
 )
-SERVER_PIN = os.environ.get("DURABLE_SERVER_IMAGE", "durableworkflow/server:0.2.377")
+SERVER_PIN = required_env("DURABLE_SERVER_IMAGE")
 
 REQUIRED_ARTIFACT_VERSIONS = {
-    "server": semantic_version_from_text(SERVER_PIN) or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["server"],
-    "cli": (
-        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_CLI_VERSION"))
-        or DEFAULT_REQUIRED_ARTIFACT_VERSIONS["cli"]
-    ),
-    "sdk-python": (
-        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"))
-        or latest_pypi_version(
-            "durable-workflow",
-            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["sdk-python"],
-        )
-    ),
+    "server": semantic_version_from_text(SERVER_PIN) or required_env_version("DURABLE_SERVER_VERSION"),
+    "cli": required_env_version("DURABLE_WORKFLOW_CLI_VERSION"),
+    "sdk-python": required_env_version("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"),
     "workflow": (
-        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_VERSION"))
-        or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
-        or latest_packagist_alpha_version(
-            "durable-workflow/workflow",
-            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["workflow"],
-        )
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
+        or required_env_version("DURABLE_WORKFLOW_PHP_SDK_VERSION")
     ),
     "waterline": (
-        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_VERSION"))
-        or semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN"))
-        or latest_packagist_alpha_version(
-            "durable-workflow/waterline",
-            DEFAULT_REQUIRED_ARTIFACT_VERSIONS["waterline"],
-        )
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN"))
+        or required_env_version("DURABLE_WORKFLOW_WATERLINE_VERSION")
     ),
 }
 
@@ -319,13 +249,10 @@ def artifact_metadata(
         },
         "cli": {
             "artifact": "dw",
-            "pin": (
-                "dw=="
-                f"{os.environ.get('DURABLE_WORKFLOW_CLI_VERSION', DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli'])}"
-            ),
+            "pin": f"dw=={REQUIRED_ARTIFACT_VERSIONS['cli']}",
             "install": os.environ.get(
                 "DURABLE_WORKFLOW_CLI_PIN",
-                f"dw=={DEFAULT_REQUIRED_ARTIFACT_VERSIONS['cli']}",
+                f"dw=={REQUIRED_ARTIFACT_VERSIONS['cli']}",
             ),
             "install_channel": "https://durable-workflow.com/install.sh",
             "version": versions.get("cli"),
