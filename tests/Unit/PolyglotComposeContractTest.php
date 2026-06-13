@@ -372,11 +372,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.95',
+            '2.0.0-alpha.96',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            'f6253136e31bc3b1779b2f9fc6675d4f24d0d6b6',
+            'f7916a3342fa02978a446114685991bdaad83c63',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -585,9 +585,9 @@ final class PolyglotComposeContractTest extends TestCase
             'durable-workflow/workflow:2.0.0-alpha.204',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
-        $this->assertSame('2.0.0-alpha.95', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.96', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/waterline:2.0.0-alpha.95',
+            'durable-workflow/waterline:2.0.0-alpha.96',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
     }
