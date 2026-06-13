@@ -372,11 +372,11 @@ final class PolyglotComposeContractTest extends TestCase
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.92',
+            '2.0.0-alpha.94',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            'fb8822e7b19a2b88b8a2899540a9d953d10eb14d',
+            'bbda1aa3648e030b0c30ca122cf216460ee1b490',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -575,8 +575,8 @@ final class PolyglotComposeContractTest extends TestCase
             'DURABLE_WORKFLOW_ARTIFACT_SOURCE' => 'pinned',
         ]);
 
-        $this->assertSame('durableworkflow/server:0.2.404', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.404', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.408', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.408', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.80', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.80', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.88', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
@@ -585,9 +585,9 @@ final class PolyglotComposeContractTest extends TestCase
             'durable-workflow/workflow:2.0.0-alpha.204',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
-        $this->assertSame('2.0.0-alpha.92', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.94', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/waterline:2.0.0-alpha.92',
+            'durable-workflow/waterline:2.0.0-alpha.94',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
     }
