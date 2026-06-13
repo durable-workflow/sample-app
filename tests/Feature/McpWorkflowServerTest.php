@@ -156,7 +156,7 @@ class McpWorkflowServerTest extends TestCase
                     ->where('available_workflows.8.key', 'polyglot_php_to_python')
                     ->where('available_workflows.8.class', PhpToPythonWorkflow::class)
                     ->where('available_workflows.8.pattern', 'cross-language activity dispatch')
-                    ->where('available_workflows.8.command', 'docker compose -f polyglot/docker-compose.yml run --rm smoke')
+                    ->where('available_workflows.8.command', 'while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke')
                     ->etc();
             });
     }

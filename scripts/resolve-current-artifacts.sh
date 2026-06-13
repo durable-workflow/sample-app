@@ -6,6 +6,7 @@ pinned_cli_version="0.1.80"
 pinned_python_sdk_version="0.4.88"
 pinned_workflow_version="2.0.0-alpha.204"
 pinned_waterline_version="2.0.0-alpha.91"
+current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
 legacy_resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-}"
@@ -186,171 +187,6 @@ load_artifact_tuple_url() {
   load_artifact_tuple_assignments "$assignments"
 }
 
-latest_packagist_prerelease_version() {
-  local package="$1"
-  local latest
-
-  require_command curl "resolve ${package} from Packagist"
-  require_command node "select the latest ${package} prerelease"
-
-  if ! latest="$(
-    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 \
-      "https://repo.packagist.org/p2/${package}.json" \
-      | PACKAGIST_PACKAGE="$package" node -e '
-const packageName = process.env.PACKAGIST_PACKAGE;
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", chunk => { raw += chunk; });
-process.stdin.on("end", () => {
-  const payload = JSON.parse(raw);
-  const versions = (((payload || {}).packages || {})[packageName] || [])
-    .map(candidate => typeof candidate.version === "string" ? candidate.version : "")
-    .map(version => {
-      const match = /^2\.0\.0-(alpha|beta)\.(\d+)$/.exec(version);
-      return match ? { version, channel: match[1] === "beta" ? 1 : 0, ordinal: Number(match[2]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => (b.channel - a.channel) || (b.ordinal - a.ordinal));
-
-  if (versions.length === 0) {
-    process.exit(1);
-  }
-
-  process.stdout.write(versions[0].version);
-});
-'
-  )" || ! [[ "$latest" =~ ^2\.0\.0-(alpha|beta)\.[0-9]+$ ]]; then
-    printf 'resolve-current-artifacts: unable to resolve latest Packagist prerelease for %s\n' "$package" >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$latest"
-}
-
-latest_dockerhub_server_version() {
-  local latest
-
-  require_command curl "resolve durableworkflow/server from Docker Hub"
-  require_command node "select the latest server image tag"
-
-  if ! latest="$(
-    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 \
-      "https://registry.hub.docker.com/v2/repositories/durableworkflow/server/tags?page_size=100" \
-      | node -e '
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", chunk => { raw += chunk; });
-process.stdin.on("end", () => {
-  const payload = JSON.parse(raw);
-  const tags = Array.isArray(payload.results) ? payload.results : [];
-  const versions = tags
-    .map(tag => typeof tag.name === "string" ? tag.name : "")
-    .map(name => {
-      const match = /^0\.2\.(\d+)$/.exec(name);
-      return match ? { name, patch: Number(match[1]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.patch - a.patch);
-
-  if (versions.length === 0) {
-    process.exit(1);
-  }
-
-  process.stdout.write(versions[0].name);
-});
-'
-  )" || ! [[ "$latest" =~ ^0\.2\.[0-9]+$ ]]; then
-    printf 'resolve-current-artifacts: unable to resolve latest durableworkflow/server tag\n' >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$latest"
-}
-
-latest_github_release_version() {
-  local repo="$1"
-  local latest
-
-  require_command curl "resolve ${repo} from GitHub releases"
-  require_command node "select the latest ${repo} release"
-
-  if ! latest="$(
-    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 \
-      -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${repo}/releases/latest" \
-      | node -e '
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", chunk => { raw += chunk; });
-process.stdin.on("end", () => {
-  const payload = JSON.parse(raw);
-  const tag = typeof payload.tag_name === "string" ? payload.tag_name.replace(/^v/, "") : "";
-  if (!/^0\.1\.\d+$/.test(tag)) {
-    process.exit(1);
-  }
-
-  process.stdout.write(tag);
-});
-'
-  )" || ! [[ "$latest" =~ ^0\.1\.[0-9]+$ ]]; then
-    printf 'resolve-current-artifacts: unable to resolve latest GitHub release for %s\n' "$repo" >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$latest"
-}
-
-latest_pypi_version() {
-  local package="$1"
-  local latest
-
-  require_command curl "resolve ${package} from PyPI"
-  require_command node "select the latest ${package} release"
-
-  if ! latest="$(
-    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 \
-      "https://pypi.org/pypi/${package}/json" \
-      | node -e '
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", chunk => { raw += chunk; });
-process.stdin.on("end", () => {
-  const payload = JSON.parse(raw);
-  const releases = payload && payload.releases && typeof payload.releases === "object"
-    ? Object.entries(payload.releases)
-    : [];
-  const versions = releases
-    .filter(([, files]) => !Array.isArray(files) || files.some(file => !file.yanked))
-    .map(([version]) => {
-      const match = /^0\.4\.(\d+)$/.exec(version);
-      return match ? { version, patch: Number(match[1]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.patch - a.patch);
-
-  if (versions.length === 0) {
-    process.exit(1);
-  }
-
-  process.stdout.write(versions[0].version);
-});
-'
-  )" || ! [[ "$latest" =~ ^0\.4\.[0-9]+$ ]]; then
-    printf 'resolve-current-artifacts: unable to resolve latest PyPI release for %s\n' "$package" >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$latest"
-}
-
-resolve_published_tuple() {
-  current_server_version="$(latest_dockerhub_server_version)"
-  current_cli_version="$(latest_github_release_version durable-workflow/cli)"
-  current_python_sdk_version="$(latest_pypi_version durable-workflow)"
-  current_workflow_version="$(latest_packagist_prerelease_version durable-workflow/workflow)"
-  current_waterline_version="$(latest_packagist_prerelease_version durable-workflow/waterline)"
-}
-
 normalize_cli_pin() {
   local pin="$1"
   local version="$2"
@@ -389,7 +225,7 @@ elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE:-}" ]]; then
 elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL:-}" ]]; then
   load_artifact_tuple_url "$DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL"
 else
-  resolve_published_tuple
+  load_artifact_tuple_url "$current_artifact_tuple_url"
 fi
 
 server_image="${DURABLE_SERVER_IMAGE:-}"

@@ -11,8 +11,8 @@ FROM php:8.4-cli AS base
 
 ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
 ARG DURABLE_WORKFLOW_WATERLINE_PIN=
-ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=2.0.0-alpha.204
-ARG DURABLE_WORKFLOW_WATERLINE_VERSION=2.0.0-alpha.91
+ARG DURABLE_WORKFLOW_PHP_SDK_VERSION
+ARG DURABLE_WORKFLOW_WATERLINE_VERSION
 
 RUN apt-get update && apt-get install -y \
     curl libpq-dev libzip-dev unzip git \
@@ -36,15 +36,11 @@ RUN set -eux; \
         waterline_version="${DURABLE_WORKFLOW_WATERLINE_PIN#durable-workflow/waterline:}"; \
     fi; \
     waterline_version="${waterline_version%@*}"; \
-    if [ -n "$workflow_version" ] && [ -n "$waterline_version" ]; then \
-        composer require --no-update \
-            "durable-workflow/workflow:${workflow_version}" \
-            "durable-workflow/waterline:${waterline_version}"; \
-    elif [ -n "$workflow_version" ]; then \
-        composer require --no-update "durable-workflow/workflow:${workflow_version}"; \
-    elif [ -n "$waterline_version" ]; then \
-        composer require --no-update "durable-workflow/waterline:${waterline_version}"; \
-    fi; \
+    test -n "$workflow_version"; \
+    test -n "$waterline_version"; \
+    composer require --no-update \
+        "durable-workflow/workflow:${workflow_version}" \
+        "durable-workflow/waterline:${waterline_version}"; \
     composer update durable-workflow/workflow durable-workflow/waterline \
         --with-dependencies \
         --no-dev \

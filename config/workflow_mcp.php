@@ -118,8 +118,10 @@ return [
             'class' => PhpToPythonWorkflow::class,
             'description' => 'PHP-authored workflow that schedules Python activities; the polyglot compose smoke also exercises Python-authored workflows.',
             'pattern' => 'cross-language activity dispatch',
-            'command' => 'docker compose -f polyglot/docker-compose.yml run --rm smoke',
-            'requires' => ['polyglot/ docker compose stack'],
+            'command' => 'while IFS= read -r assignment; do export "$assignment"; done '
+                .'< <(scripts/resolve-current-artifacts.sh); '
+                .'docker compose -f polyglot/docker-compose.yml run --rm smoke',
+            'requires' => ['polyglot/ docker compose stack', 'current artifact tuple resolver'],
             'arguments' => [
                 ['name' => 'value', 'type' => 'string', 'default' => 'polyglot'],
             ],

@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
-ARG DURABLE_WORKFLOW_CLI_VERSION=0.1.80
-ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.88
+ARG DURABLE_WORKFLOW_CLI_VERSION
+ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -11,7 +11,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
+RUN set -eux; \
+    test -n "$DURABLE_WORKFLOW_CLI_VERSION"; \
+    test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"; \
+    apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh \

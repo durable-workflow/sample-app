@@ -115,19 +115,23 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('git rev-parse HEAD', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertStringContainsString('pinned_server_image="durableworkflow/server:0.2.403"', $artifactResolver);
+        $this->assertMatchesRegularExpression(
+            '/pinned_server_image="durableworkflow\/server:0\.2\.\d+"/',
+            $artifactResolver,
+        );
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE', $artifactResolver);
         $this->assertStringContainsString('DURABLE_WORKFLOW_RESOLVE_LATEST', $artifactResolver);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE', $artifactResolver);
-        $this->assertStringContainsString('latest_dockerhub_server_version', $artifactResolver);
+        $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
+        $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
         $this->assertStringContainsString('pinned_cli_version="0.1.80"', $artifactResolver);
-        $this->assertStringContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
-        $this->assertStringContainsString('pinned_python_sdk_version="0.4.88"', $artifactResolver);
-        $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
-        $this->assertStringContainsString('pinned_workflow_version="2.0.0-alpha.204"', $artifactResolver);
-        $this->assertStringContainsString('pinned_waterline_version="2.0.0-alpha.91"', $artifactResolver);
-        $this->assertStringContainsString('latest_packagist_prerelease_version durable-workflow/workflow', $artifactResolver);
-        $this->assertStringContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
+        $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
+        $this->assertMatchesRegularExpression('/pinned_python_sdk_version="0\.4\.\d+"/', $artifactResolver);
+        $this->assertStringNotContainsString('latest_pypi_version durable-workflow', $artifactResolver);
+        $this->assertMatchesRegularExpression('/pinned_workflow_version="2\.0\.0-(?:alpha|beta)\.\d+"/', $artifactResolver);
+        $this->assertMatchesRegularExpression('/pinned_waterline_version="2\.0\.0-(?:alpha|beta)\.\d+"/', $artifactResolver);
+        $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/workflow', $artifactResolver);
+        $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);

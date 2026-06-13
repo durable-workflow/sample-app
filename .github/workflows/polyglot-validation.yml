@@ -35,14 +35,13 @@ jobs:
             printf '%s\n' "$assignment"
           done < <(scripts/resolve-current-artifacts.sh)
 
-      - name: Show pinned server image
+      - name: Show resolved server image
         working-directory: polyglot
         run: |
           # Surface the durableworkflow/server tag the smoke is about to run
           # against, so a human reviewing the CI log can immediately see which
-          # server build the polyglot scenarios were exercised on. The pin
-          # itself is held in docker-compose.yml; this step just prints it.
-          echo "Polyglot server image pin:"
+          # server build the polyglot scenarios were exercised on.
+          echo "Polyglot server image:"
           docker compose config server | awk '/^[[:space:]]+image:/ {print; exit}'
 
       - name: Bring up polyglot stack

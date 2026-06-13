@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.88
+ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,7 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
+RUN set -eux; \
+    test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"; \
+    pip install --no-cache-dir "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
 
 COPY workflow.py ./workflow.py
 
