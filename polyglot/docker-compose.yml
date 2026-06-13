@@ -60,7 +60,7 @@ x-artifact-defaults:
   php-sdk-pin: &durable-php-sdk-pin "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
   php-sdk-version: &durable-php-sdk-version "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-2.0.0-alpha.204}"
   waterline-pin: &durable-waterline-pin "${DURABLE_WORKFLOW_WATERLINE_PIN:-}"
-  waterline-version: &durable-waterline-version "${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.89}"
+  waterline-version: &durable-waterline-version "${DURABLE_WORKFLOW_WATERLINE_VERSION:-2.0.0-alpha.91}"
 
 services:
   mysql:

@@ -125,7 +125,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('pinned_python_sdk_version="0.4.88"', $artifactResolver);
         $this->assertStringContainsString('latest_pypi_version durable-workflow', $artifactResolver);
         $this->assertStringContainsString('pinned_workflow_version="2.0.0-alpha.204"', $artifactResolver);
-        $this->assertStringContainsString('pinned_waterline_version="2.0.0-alpha.89"', $artifactResolver);
+        $this->assertStringContainsString('pinned_waterline_version="2.0.0-alpha.91"', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_prerelease_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
