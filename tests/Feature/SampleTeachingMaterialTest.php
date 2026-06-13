@@ -105,6 +105,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
+        $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
+        $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
         $this->assertStringContainsString('refresh_services_for_conformance_env', $script);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY', $smokeScript);
@@ -122,6 +124,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE', $artifactResolver);
         $this->assertStringContainsString('DURABLE_WORKFLOW_RESOLVE_LATEST', $artifactResolver);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE', $artifactResolver);
+        $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_CATALOG_URL', $artifactResolver);
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
         $this->assertStringContainsString('pinned_cli_version="0.1.80"', $artifactResolver);
@@ -134,6 +137,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
+        $this->assertStringContainsString('-e DURABLE_WORKFLOW_PHP_SDK_VERSION', $script);
+        $this->assertStringContainsString('-e DURABLE_WORKFLOW_WATERLINE_VERSION', $script);
         $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);
         $this->assertStringContainsString('{--allow-skips', $command);
         $this->assertStringContainsString("envString('SAMPLE_APP_COMMIT')", $command);

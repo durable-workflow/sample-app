@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.403"
+pinned_server_image="durableworkflow/server:0.2.404"
 pinned_cli_version="0.1.80"
 pinned_python_sdk_version="0.4.88"
 pinned_workflow_version="2.0.0-alpha.204"
-pinned_waterline_version="2.0.0-alpha.91"
+pinned_waterline_version="2.0.0-alpha.92"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
+waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
 legacy_resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-}"
@@ -187,6 +188,84 @@ load_artifact_tuple_url() {
   load_artifact_tuple_assignments "$assignments"
 }
 
+latest_waterline_prerelease_version() {
+  local latest
+
+  require_command curl "resolve durable-workflow/waterline from Packagist"
+  require_command node "select the current durable-workflow/waterline prerelease"
+
+  if ! latest="$(
+    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 "$waterline_catalog_url" \
+      | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const versions = (((payload || {}).packages || {})["durable-workflow/waterline"] || [])
+    .map(candidate => typeof candidate.version === "string" ? candidate.version : "")
+    .map(version => {
+      const match = /^2\.0\.0-(alpha|beta)\.(\d+)$/.exec(version);
+      return match ? { version, channel: match[1] === "beta" ? 1 : 0, ordinal: Number(match[2]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.channel - a.channel) || (b.ordinal - a.ordinal));
+
+  if (versions.length === 0) {
+    process.exit(1);
+  }
+
+  process.stdout.write(versions[0].version);
+});
+'
+  )" || ! [[ "$latest" =~ ^2\.0\.0-(alpha|beta)\.[0-9]+$ ]]; then
+    printf 'resolve-current-artifacts: unable to resolve current durable-workflow/waterline prerelease from %s\n' "$waterline_catalog_url" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$latest"
+}
+
+is_newer_prerelease() {
+  local candidate="$1"
+  local current="$2"
+  local candidate_channel
+  local current_channel
+  local candidate_rank
+  local current_rank
+  local candidate_ordinal
+  local current_ordinal
+
+  if ! [[ "$candidate" =~ ^2\.0\.0-(alpha|beta)\.([0-9]+)$ ]]; then
+    return 1
+  fi
+  candidate_channel="${BASH_REMATCH[1]}"
+  candidate_ordinal="${BASH_REMATCH[2]}"
+
+  if ! [[ "$current" =~ ^2\.0\.0-(alpha|beta)\.([0-9]+)$ ]]; then
+    return 0
+  fi
+  current_channel="${BASH_REMATCH[1]}"
+  current_ordinal="${BASH_REMATCH[2]}"
+
+  candidate_rank=0
+  current_rank=0
+  [[ "$candidate_channel" == "beta" ]] && candidate_rank=1
+  [[ "$current_channel" == "beta" ]] && current_rank=1
+
+  (( candidate_rank > current_rank )) \
+    || (( candidate_rank == current_rank && candidate_ordinal > current_ordinal ))
+}
+
+advance_waterline_from_public_catalog() {
+  local latest_waterline_version
+
+  latest_waterline_version="$(latest_waterline_prerelease_version)"
+  if is_newer_prerelease "$latest_waterline_version" "$current_waterline_version"; then
+    current_waterline_version="$latest_waterline_version"
+  fi
+}
+
 normalize_cli_pin() {
   local pin="$1"
   local version="$2"
@@ -226,6 +305,7 @@ elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL:-}" ]]; then
   load_artifact_tuple_url "$DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL"
 else
   load_artifact_tuple_url "$current_artifact_tuple_url"
+  advance_waterline_from_public_catalog
 fi
 
 server_image="${DURABLE_SERVER_IMAGE:-}"

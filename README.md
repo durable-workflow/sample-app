@@ -148,12 +148,17 @@ Without AI credentials, `--strict` keeps the run non-passing and names the live
 Prism surface as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key
 lives in a dotenv file outside the repository; the wrapper also checks local
 workspace-level dotenv files without printing credential values. Set
-`DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`, and
-`DURABLE_WORKFLOW_PYTHON_SDK_VERSION` to override the wider published artifact
-set recorded alongside the Composer pins. By default, the wrapper calls
+`DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`,
+`DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_PHP_SDK_VERSION`, and
+`DURABLE_WORKFLOW_WATERLINE_VERSION` to override the published artifact set.
+By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which resolves the current published
-conformance tuple from the public docs release-audit manifest, emits it as shell
-assignments, and preserves explicit overrides. Set
+conformance tuple from the public docs release-audit manifest, advances routine
+Waterline prereleases from the public Waterline package catalog, emits it as
+shell assignments, and preserves explicit overrides. The wrapper rebuilds the
+app and worker containers with the resolved Composer pins before running the
+harness, so the recorded PHP SDK and Waterline versions come from installed
+packages rather than the committed fallback lock. Set
 `DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned` for a reproducible run against the
 committed sample-app fallback tuple instead. Set
 `DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json` when a local run

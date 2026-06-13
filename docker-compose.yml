@@ -1,3 +1,11 @@
+x-app-build: &app-build
+  context: .
+  args:
+    DURABLE_WORKFLOW_PHP_SDK_PIN: ${DURABLE_WORKFLOW_PHP_SDK_PIN:-}
+    DURABLE_WORKFLOW_PHP_SDK_VERSION: ${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}
+    DURABLE_WORKFLOW_WATERLINE_PIN: ${DURABLE_WORKFLOW_WATERLINE_PIN:-}
+    DURABLE_WORKFLOW_WATERLINE_VERSION: ${DURABLE_WORKFLOW_WATERLINE_VERSION:-}
+
 services:
   mysql:
     image: mysql:8.0
@@ -29,7 +37,7 @@ services:
       retries: 10
 
   app:
-    build: .
+    build: *app-build
     depends_on:
       mysql:
         condition: service_healthy
@@ -66,6 +74,8 @@ services:
       DURABLE_SERVER_IMAGE: ${DURABLE_SERVER_IMAGE:-}
       DURABLE_WORKFLOW_CLI_VERSION: ${DURABLE_WORKFLOW_CLI_VERSION:-}
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: ${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-}
+      DURABLE_WORKFLOW_PHP_SDK_VERSION: ${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}
+      DURABLE_WORKFLOW_WATERLINE_VERSION: ${DURABLE_WORKFLOW_WATERLINE_VERSION:-}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
@@ -77,7 +87,7 @@ services:
       start_period: 30s
 
   worker:
-    build: .
+    build: *app-build
     depends_on:
       app:
         condition: service_healthy
@@ -100,12 +110,14 @@ services:
       REDIS_HOST: redis
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
+      DURABLE_WORKFLOW_PHP_SDK_VERSION: ${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}
+      DURABLE_WORKFLOW_WATERLINE_VERSION: ${DURABLE_WORKFLOW_WATERLINE_VERSION:-}
     volumes:
       - playwright_videos:/app/videos
     command: php artisan queue:work redis --queue=default,activity --tries=3 --timeout=60
 
   seed:
-    build: .
+    build: *app-build
     depends_on:
       app:
         condition: service_healthy

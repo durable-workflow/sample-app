@@ -106,6 +106,11 @@ refresh_services_for_conformance_env() {
   docker compose up -d --no-deps --force-recreate --wait app worker
 }
 
+rebuild_services_for_artifact_tuple() {
+  printf '\n==> rebuilding app and worker containers with resolved artifact tuple\n'
+  docker compose up -d --build --wait app worker
+}
+
 restart_worker_after_schema_refresh() {
   printf '\n==> restarting worker after schema refresh\n'
   docker compose up -d --no-deps --force-recreate --wait worker
@@ -126,6 +131,7 @@ fi
 printf '\n==> resolving current published artifact tuple\n'
 resolve_artifacts
 
+rebuild_services_for_artifact_tuple
 refresh_services_for_conformance_env
 
 printf '\n==> waiting for database to accept app connections\n'
@@ -150,5 +156,7 @@ docker compose exec -T \
   -e DURABLE_SERVER_IMAGE \
   -e DURABLE_WORKFLOW_CLI_VERSION \
   -e DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
+  -e DURABLE_WORKFLOW_PHP_SDK_VERSION \
+  -e DURABLE_WORKFLOW_WATERLINE_VERSION \
   -e OPENAI_API_KEY \
   app php artisan app:conformance --app-url="${app_url}" "${args[@]}"

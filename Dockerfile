@@ -13,8 +13,39 @@ WORKDIR /app
 # ── Dependencies ─────────────────────────────────────────
 FROM base AS vendor
 
+ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
+ARG DURABLE_WORKFLOW_WATERLINE_PIN=
+ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=
+ARG DURABLE_WORKFLOW_WATERLINE_VERSION=
+
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+RUN set -eux; \
+    workflow_version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"; \
+    if [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then \
+        workflow_version="${DURABLE_WORKFLOW_PHP_SDK_PIN#durable-workflow/workflow:}"; \
+    fi; \
+    workflow_version="${workflow_version%@*}"; \
+    waterline_version="$DURABLE_WORKFLOW_WATERLINE_VERSION"; \
+    if [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then \
+        waterline_version="${DURABLE_WORKFLOW_WATERLINE_PIN#durable-workflow/waterline:}"; \
+    fi; \
+    waterline_version="${waterline_version%@*}"; \
+    if [ -n "$workflow_version" ] || [ -n "$waterline_version" ]; then \
+        test -n "$workflow_version"; \
+        test -n "$waterline_version"; \
+        composer require --no-update \
+            "durable-workflow/workflow:${workflow_version}" \
+            "durable-workflow/waterline:${waterline_version}"; \
+        composer update durable-workflow/workflow durable-workflow/waterline \
+            --with-dependencies \
+            --no-dev \
+            --no-scripts \
+            --no-autoloader \
+            --prefer-dist \
+            --no-interaction; \
+    else \
+        composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction; \
+    fi
 
 COPY . .
 RUN composer dump-autoload --optimize
