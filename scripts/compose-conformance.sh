@@ -106,6 +106,11 @@ refresh_services_for_conformance_env() {
   docker compose up -d --no-deps --force-recreate --wait app worker
 }
 
+restart_worker_after_schema_refresh() {
+  printf '\n==> restarting worker after schema refresh\n'
+  docker compose up -d --no-deps --force-recreate --wait worker
+}
+
 load_conformance_env
 
 docker compose ps
@@ -128,6 +133,7 @@ wait_for_db
 
 printf '\n==> fresh database migrations\n'
 docker compose exec -T app php artisan migrate:fresh --force
+restart_worker_after_schema_refresh
 
 printf '\n==> full sample-app conformance\n'
 args=("$@")

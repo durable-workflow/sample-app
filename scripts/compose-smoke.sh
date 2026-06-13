@@ -53,6 +53,11 @@ wait_for_db() {
   return 1
 }
 
+restart_worker_after_schema_refresh() {
+  printf '\n==> restarting worker after schema refresh\n'
+  docker compose up -d --no-deps --force-recreate --wait worker
+}
+
 docker compose ps
 
 printf '\n==> waiting for database to accept app connections\n'
@@ -60,6 +65,7 @@ wait_for_db
 
 printf '\n==> fresh database migrations\n'
 docker compose exec -T app php artisan migrate:fresh --force
+restart_worker_after_schema_refresh
 
 run_sample "simple workflow" "app:workflow" "workflow_activity_other"
 run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
