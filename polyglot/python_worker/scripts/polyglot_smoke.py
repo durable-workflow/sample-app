@@ -858,7 +858,7 @@ def compare_waterline(cli_runs: list[dict[str, Any]]) -> dict[str, Any]:
         run_id = run.get("run_id")
         if not isinstance(run_id, str) or not run_id:
             raise RuntimeError(f"Waterline comparison missing run_id for {run['scenario']}: {run}")
-        path = f"/api/instances/{quote(run['workflow_id'])}/runs/{quote(run_id)}"
+        path = f"/api/instances/{quote(run['workflow_id'])}/runs/{quote(run_id)}?history_limit=all"
         detail = fetch_waterline(path)
         if detail.get("workflow_type") != run["workflow_type"]:
             raise RuntimeError(f"Waterline workflow_type mismatch for {run['scenario']}: {detail}")

@@ -682,6 +682,7 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString('def fetch_php_artifact_probe()', $smoke);
         $this->assertStringContainsString('"http://waterline:8081/polyglot/conformance/artifacts"', $smoke);
         $this->assertStringContainsString('fetch_json_url(php_artifact_probe_url(), label="PHP artifact probe")', $smoke);
+        $this->assertStringContainsString('?history_limit=all', $smoke);
         $this->assertStringContainsString('def php_artifact_versions(', $smoke);
         $this->assertStringContainsString('def php_waterline_assets(', $smoke);
         $this->assertStringContainsString('"workflow": php_versions.get("workflow")', $smoke);
