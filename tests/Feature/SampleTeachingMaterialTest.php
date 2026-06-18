@@ -153,6 +153,12 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('api_documentation', $command);
         $this->assertStringContainsString('runApiDocumentationSurface', $command);
         $this->assertStringContainsString('get_workflow_history', $command);
+        $this->assertStringContainsString('diagnose_workflow', $command);
+        $this->assertStringContainsString('repair_workflow', $command);
+        $this->assertStringContainsString('durable-workflow.v2.agent-root-cause', $command);
+        $this->assertStringContainsString('durable-workflow.v2.agent-remediation', $command);
+        $this->assertStringContainsString('durable-workflow.v2.safe-mutation', $command);
+        $this->assertStringContainsString('agent_loop_steps', $command);
         $this->assertStringContainsString('workflow_completed', $command);
         $this->assertStringContainsString('runWaterlineManualObservationSurface', $command);
         $this->assertStringContainsString('waterline_manual_observation', $command);

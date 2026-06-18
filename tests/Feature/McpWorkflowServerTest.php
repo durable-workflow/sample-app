@@ -9,6 +9,7 @@ use App\Mcp\Tools\DiagnoseWorkflowTool;
 use App\Mcp\Tools\GetWorkflowHistoryTool;
 use App\Mcp\Tools\GetWorkflowResultTool;
 use App\Mcp\Tools\ListWorkflowsTool;
+use App\Mcp\Tools\RepairWorkflowTool;
 use App\Mcp\Tools\StartWorkflowTool;
 use App\Models\User;
 use App\Workflows\Ai\AiWorkflow;
@@ -43,6 +44,7 @@ class McpWorkflowServerTest extends TestCase
         $this->assertSame('get_workflow_result', app(GetWorkflowResultTool::class)->name());
         $this->assertSame('get_workflow_history', app(GetWorkflowHistoryTool::class)->name());
         $this->assertSame('diagnose_workflow', app(DiagnoseWorkflowTool::class)->name());
+        $this->assertSame('repair_workflow', app(RepairWorkflowTool::class)->name());
     }
 
     public function test_workflow_mcp_http_route_is_registered(): void
@@ -113,7 +115,9 @@ class McpWorkflowServerTest extends TestCase
             ->assertOk()
             ->assertJsonFragment(['name' => 'list_workflows'])
             ->assertJsonFragment(['name' => 'start_workflow'])
-            ->assertJsonFragment(['name' => 'get_workflow_result']);
+            ->assertJsonFragment(['name' => 'get_workflow_result'])
+            ->assertJsonFragment(['name' => 'diagnose_workflow'])
+            ->assertJsonFragment(['name' => 'repair_workflow']);
     }
 
     public function test_list_workflows_returns_v2_agent_contract_metadata(): void
@@ -370,6 +374,15 @@ class McpWorkflowServerTest extends TestCase
                     ->where('facts.liveness_state', 'waiting_for_signal')
                     ->where('facts.business_key', 'mcp-diagnose')
                     ->where('latest_failure', null)
+                    ->where('root_cause.schema', 'durable-workflow.v2.agent-root-cause')
+                    ->where('root_cause.category', 'waiting_for_signal')
+                    ->where('root_cause.source.kind', 'workflow_wait')
+                    ->where('root_cause.source.id', 'signal')
+                    ->where('root_cause.actionable', true)
+                    ->where('remediation.schema', 'durable-workflow.v2.agent-remediation')
+                    ->where('remediation.classification', 'provide_expected_input_or_wait')
+                    ->where('remediation.automatic_repair.allowed', false)
+                    ->where('remediation.automatic_repair.reason', 'waiting_state_is_not_task_repair')
                     ->where('next_actions.0.code', 'inspect_wait_signal')
                     ->has('recent_history', 2)
                     ->etc();
@@ -436,9 +449,56 @@ class McpWorkflowServerTest extends TestCase
                     ->where('latest_failure.source_kind', 'activity')
                     ->where('latest_failure.exception_class', RuntimeException::class)
                     ->where('latest_failure.non_retryable', true)
+                    ->where('root_cause.schema', 'durable-workflow.v2.agent-root-cause')
+                    ->where('root_cause.category', 'activity_failure')
+                    ->where('root_cause.source.kind', 'activity')
+                    ->where('root_cause.source.id', 'activity-1')
+                    ->where('root_cause.failure_category', 'application')
+                    ->where('root_cause.retryable', false)
+                    ->where('remediation.schema', 'durable-workflow.v2.agent-remediation')
+                    ->where('remediation.classification', 'change_workflow_or_activity_source')
+                    ->where('remediation.automatic_repair.allowed', false)
+                    ->where('remediation.automatic_repair.reason', 'terminal_run')
                     ->where('next_actions.0.code', 'inspect_history')
                     ->where('next_actions.1.code', 'open_waterline')
-                    ->where('next_actions.2.code', 'inspect_waterline_diagnostics')
+                    ->where('next_actions.2.code', 'repair_workflow')
+                    ->where('next_actions.2.allowed', false)
+                    ->where('next_actions.3.code', 'inspect_waterline_diagnostics')
+                    ->etc();
+            });
+    }
+
+    public function test_agent_can_request_repair_as_structured_safe_mutation(): void
+    {
+        config(['queue.default' => 'database']);
+
+        $instanceId = 'mcp-repair-test';
+
+        WorkflowServer::tool(StartWorkflowTool::class, [
+            'workflow' => 'simple',
+            'instance_id' => $instanceId,
+        ])->assertOk();
+
+        WorkflowServer::tool(RepairWorkflowTool::class, [
+            'workflow_id' => $instanceId,
+        ])
+            ->assertOk()
+            ->assertStructuredContent(function (AssertableJson $json) use ($instanceId): void {
+                $json
+                    ->where('found', true)
+                    ->where('workflow_id', $instanceId)
+                    ->where('accepted', true)
+                    ->where('mutation.schema', 'durable-workflow.v2.safe-mutation')
+                    ->where('mutation.tool', 'repair_workflow')
+                    ->where('mutation.operation', 'repair')
+                    ->where('mutation.safe', true)
+                    ->where('mutation.applied', true)
+                    ->where('command.type', 'repair')
+                    ->where('command.status', 'accepted')
+                    ->where('command.outcome', 'repair_not_needed')
+                    ->where('remediation.schema', 'durable-workflow.v2.agent-remediation')
+                    ->where('remediation.classification', 'repair_not_needed')
+                    ->where('next_actions.0.code', 'diagnose_workflow')
                     ->etc();
             });
     }

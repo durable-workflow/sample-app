@@ -8,6 +8,7 @@ use App\Mcp\Tools\DiagnoseWorkflowTool;
 use App\Mcp\Tools\GetWorkflowHistoryTool;
 use App\Mcp\Tools\GetWorkflowResultTool;
 use App\Mcp\Tools\ListWorkflowsTool;
+use App\Mcp\Tools\RepairWorkflowTool;
 use App\Mcp\Tools\StartWorkflowTool;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Prompt;
@@ -49,7 +50,10 @@ class WorkflowServer extends Server
         Inspect a bounded slice of typed v2 history and latest failure facts for debugging.
 
         ### diagnose_workflow
-        Summarize workflow health facts and safe next actions for AI operators.
+        Summarize workflow health facts, root-cause classification, remediation, and safe next actions for AI operators.
+
+        ### repair_workflow
+        Request the built-in v2 repair command for a selected run. The result is structured even when repair is refused or not needed.
 
         The `ai` workflow demonstrates the v2 repeated-human-input pattern:
         callers signal user input with `send`, then poll the `receive` update
@@ -62,7 +66,7 @@ class WorkflowServer extends Server
         3. Store the returned `workflow_id`.
         4. Periodically call `get_workflow_result` with the `workflow_id` to check progress.
         5. When status becomes `completed`, read the `output` field for results.
-        6. If status becomes `failed` or waits longer than expected, call `diagnose_workflow`, then inspect history.
+        6. If status becomes `failed` or waits longer than expected, call `diagnose_workflow`, then call `repair_workflow` only when remediation marks it allowed.
 
         ## Status Values
 
@@ -86,6 +90,7 @@ class WorkflowServer extends Server
         GetWorkflowResultTool::class,
         GetWorkflowHistoryTool::class,
         DiagnoseWorkflowTool::class,
+        RepairWorkflowTool::class,
     ];
 
     /**

@@ -23,6 +23,7 @@ class Conformance extends Command
         'get_workflow_result',
         'get_workflow_history',
         'diagnose_workflow',
+        'repair_workflow',
     ];
 
     private const DOCUMENTED_WORKFLOW_KEYS = [
@@ -498,6 +499,19 @@ class Conformance extends Command
                 'params' => new \stdClass(),
             ]);
 
+            $workflows = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-list-workflows',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'list_workflows',
+                    'arguments' => [
+                        'show_recent' => true,
+                        'limit' => 5,
+                    ],
+                ],
+            ]);
+
             $start = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-start-simple',
@@ -508,6 +522,31 @@ class Conformance extends Command
                         'workflow' => 'simple',
                         'instance_id' => $workflowId,
                         'business_key' => 'sample-app-conformance',
+                    ],
+                ],
+            ]);
+
+            $diagnosis = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-diagnose-before-repair',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'diagnose_workflow',
+                    'arguments' => [
+                        'workflow_id' => $workflowId,
+                        'history_limit' => 5,
+                    ],
+                ],
+            ]);
+
+            $repair = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-repair',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'repair_workflow',
+                    'arguments' => [
+                        'workflow_id' => $workflowId,
                     ],
                 ],
             ]);
@@ -549,6 +588,19 @@ class Conformance extends Command
                 }
             }
 
+            $postRepairDiagnosis = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-diagnose-after-run',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'diagnose_workflow',
+                    'arguments' => [
+                        'workflow_id' => $workflowId,
+                        'history_limit' => 5,
+                    ],
+                ],
+            ]);
+
             $history = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-history',
@@ -566,20 +618,33 @@ class Conformance extends Command
                 $initialize->body(),
                 $initialized->body(),
                 $tools->body(),
+                $workflows->body(),
                 $start->body(),
+                $diagnosis->body(),
+                $repair->body(),
                 $result?->body() ?? '',
+                $postRepairDiagnosis->body(),
                 $history->body(),
             ]);
             $passed = $initialize->successful()
                 && $initialized->successful()
                 && $tools->successful()
+                && $workflows->successful()
                 && $start->successful()
+                && $diagnosis->successful()
+                && $repair->successful()
                 && ($result?->successful() ?? false)
+                && $postRepairDiagnosis->successful()
                 && $history->successful()
                 && str_contains($body, 'list_workflows')
                 && str_contains($body, 'start_workflow')
                 && str_contains($body, 'get_workflow_result')
                 && str_contains($body, 'get_workflow_history')
+                && str_contains($body, 'diagnose_workflow')
+                && str_contains($body, 'repair_workflow')
+                && str_contains($body, 'durable-workflow.v2.agent-root-cause')
+                && str_contains($body, 'durable-workflow.v2.agent-remediation')
+                && str_contains($body, 'durable-workflow.v2.safe-mutation')
                 && str_contains($start->body(), $workflowId)
                 && $completed
                 && str_contains($history->body(), 'WorkflowCompleted');
@@ -593,11 +658,23 @@ class Conformance extends Command
                 'initialize_status' => $initialize->status(),
                 'initialized_status' => $initialized->status(),
                 'tools_status' => $tools->status(),
+                'workflows_status' => $workflows->status(),
                 'start_status' => $start->status(),
+                'diagnosis_status' => $diagnosis->status(),
+                'repair_status' => $repair->status(),
                 'result_status' => $result?->status(),
+                'post_repair_diagnosis_status' => $postRepairDiagnosis->status(),
                 'history_status' => $history->status(),
                 'result_attempts' => $resultAttempts,
                 'workflow_completed' => $completed,
+                'agent_loop_steps' => [
+                    'discover' => 'tools/list plus list_workflows',
+                    'change' => 'caller selects the no-credential simple workflow and explicit business key',
+                    'run' => 'start_workflow',
+                    'diagnose' => 'diagnose_workflow root_cause plus remediation',
+                    'repair' => 'repair_workflow safe structured mutation or refusal',
+                    'verify' => 'get_workflow_result plus get_workflow_history',
+                ],
                 'duration_ms' => $this->durationMs($started),
                 'body_tail' => $this->tail($body),
             ];

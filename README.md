@@ -405,7 +405,8 @@ If you prefer Docker, run `docker compose up --build`, then run `docker compose 
 | `start_workflow` | Start a configured v2 workflow asynchronously and get a workflow instance ID plus run ID |
 | `get_workflow_result` | Check workflow status, output, visibility metadata, and latest failure summary |
 | `get_workflow_history` | Inspect a bounded slice of typed v2 history events and latest durable failures |
-| `diagnose_workflow` | Summarize health facts, latest failure evidence, and safe next actions for stuck or failed runs |
+| `diagnose_workflow` | Summarize health facts, root-cause classification, remediation, latest failure evidence, and safe next actions for stuck or failed runs |
+| `repair_workflow` | Request the built-in v2 repair command and receive a structured accepted, refused, or not-needed mutation result |
 
 ##### Configuration
 
@@ -455,7 +456,9 @@ An AI client would typically:
 3. Receive `workflow_id` and `run_id` in the response
 4. Poll `get_workflow_result` with the `workflow_id` until status is `completed`
 5. Read the `output` field for the workflow result
-6. If status is `failed` or `waiting` longer than expected, call `diagnose_workflow`, then inspect `get_workflow_history` with the `run_id`
+6. If status is `failed` or `waiting` longer than expected, call `diagnose_workflow`
+7. Read `root_cause.category`, `remediation.classification`, and `remediation.automatic_repair.allowed`
+8. Call `repair_workflow` only when remediation marks repair as allowed, then poll `get_workflow_result` and inspect `get_workflow_history` with the `run_id`
 ## Reporting Bugs and Requesting Samples
 
 Use the structured templates under [Issues](https://github.com/durable-workflow/sample-app/issues/new/choose) so reproducers and sample requests land with the metadata maintainers need:
