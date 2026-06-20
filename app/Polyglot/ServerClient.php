@@ -26,6 +26,8 @@ use Workflow\V2\Support\WorkerProtocolVersion;
  */
 final class ServerClient
 {
+    private const HEARTBEAT_TIMEOUT_SECONDS = 2;
+
     private readonly string $protocolVersion;
 
     public function __construct(
@@ -69,9 +71,17 @@ final class ServerClient
      */
     public function heartbeatWorker(string $workerId): ?array
     {
-        return $this->workerPost('/api/worker/heartbeat', [
-            'worker_id' => $workerId,
-        ]);
+        try {
+            return $this->workerPost('/api/worker/heartbeat', [
+                'worker_id' => $workerId,
+            ], requestTimeoutSeconds: self::HEARTBEAT_TIMEOUT_SECONDS);
+        } catch (ConnectionException $exception) {
+            if ($this->isHttpTimeout($exception)) {
+                return null;
+            }
+
+            throw $exception;
+        }
     }
 
     /**

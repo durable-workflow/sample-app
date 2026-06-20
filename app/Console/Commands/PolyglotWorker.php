@@ -153,8 +153,6 @@ class PolyglotWorker extends Command
         $consecutiveIdle = 0;
 
         while (true) {
-            $client->heartbeatWorker($workerId);
-
             $queryTask = $client->pollQueryTask($workerId, $taskQueue, 1);
 
             if ($queryTask !== null) {
@@ -183,8 +181,12 @@ class PolyglotWorker extends Command
                     }
                 }
 
+                $client->heartbeatWorker($workerId);
+
                 continue;
             }
+
+            $client->heartbeatWorker($workerId);
 
             $task = $client->pollWorkflowTask($workerId, $taskQueue, $pollTimeout);
 

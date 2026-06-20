@@ -89,7 +89,7 @@ final class PolyglotWorkerReplayTest extends TestCase
         $this->assertSame('php-query-worker', $requests[0]['body']['worker_id'] ?? null);
     }
 
-    public function test_workflow_worker_heartbeats_after_advertising_signal_query_type(): void
+    public function test_workflow_worker_polls_query_tasks_before_heartbeat_after_registration(): void
     {
         $http = new HttpFactory();
         $requests = [];
@@ -128,12 +128,93 @@ final class PolyglotWorkerReplayTest extends TestCase
             [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
             $requests[0]['body']['capabilities'] ?? null,
         );
-        $this->assertSame('http://server:8080/api/worker/heartbeat', $requests[1]['url'] ?? null);
-        $this->assertSame('php-workflow-worker', $requests[1]['body']['worker_id'] ?? null);
         $this->assertSame(
             'http://server:8080/api/worker/query-tasks/poll',
+            $requests[1]['url'] ?? null,
+        );
+        $this->assertSame(
+            'http://server:8080/api/worker/heartbeat',
             $requests[2]['url'] ?? null,
         );
+        $this->assertSame('php-workflow-worker', $requests[2]['body']['worker_id'] ?? null);
+    }
+
+    public function test_workflow_worker_keeps_polling_queries_after_heartbeat_timeout(): void
+    {
+        $http = new HttpFactory();
+        $requests = [];
+        $heartbeatAttempts = 0;
+        $queryPolls = 0;
+
+        $http->fake(function (Request $request) use ($http, &$requests, &$heartbeatAttempts, &$queryPolls) {
+            $url = $request->url();
+            $requests[] = [
+                'url' => $url,
+                'body' => $request->data(),
+            ];
+
+            if (str_ends_with($url, '/api/worker/heartbeat')) {
+                $heartbeatAttempts++;
+
+                if ($heartbeatAttempts === 1) {
+                    throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out');
+                }
+
+                return $http->response(['acknowledged' => true]);
+            }
+
+            if (str_ends_with($url, '/api/worker/query-tasks/poll')) {
+                $queryPolls++;
+
+                if ($queryPolls === 2) {
+                    return $http->response([
+                        'task' => [
+                            'query_task_id' => 'query-after-heartbeat-timeout',
+                            'query_task_attempt' => 1,
+                            'workflow_type' => 'polyglot.php.signal-query',
+                            'workflow_id' => 'php-signal-query-heartbeat-timeout',
+                            'run_id' => 'run-php-signal-query-heartbeat-timeout',
+                            'query_name' => 'state',
+                            'workflow_arguments' => Avro::envelope([['workflow_runtime' => 'php']]),
+                            'history_events' => [],
+                        ],
+                    ]);
+                }
+
+                return $http->response(['task' => null]);
+            }
+
+            return $http->response(['task' => null, 'ok' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $worker = new PolyglotWorker();
+        $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
+
+        $method = new ReflectionMethod($worker, 'runWorkflowWorker');
+        $method->setAccessible(true);
+        $status = $method->invoke(
+            $worker,
+            $client,
+            'php-workflow-worker',
+            'polyglot-php-to-python',
+            2,
+            1,
+        );
+
+        $this->assertSame(0, $status);
+        $urls = array_column($requests, 'url');
+        $heartbeatIndex = array_search('http://server:8080/api/worker/heartbeat', $urls, true);
+        $queryCompleteIndex = array_search(
+            'http://server:8080/api/worker/query-tasks/query-after-heartbeat-timeout/complete',
+            $urls,
+            true,
+        );
+
+        $this->assertGreaterThanOrEqual(1, $heartbeatAttempts);
+        $this->assertNotFalse($heartbeatIndex);
+        $this->assertNotFalse($queryCompleteIndex);
+        $this->assertGreaterThan($heartbeatIndex, $queryCompleteIndex);
     }
 
     public function test_activity_worker_registration_advertises_installed_workflow_sdk(): void
