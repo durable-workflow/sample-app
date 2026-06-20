@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 use App\Workflows\Ai\AiWorkflow;
+use App\Workflows\Diagnostics\DiagnosticFailureWorkflow;
 use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
@@ -124,6 +125,16 @@ return [
             'requires' => ['polyglot/ docker compose stack', 'current artifact tuple resolver'],
             'arguments' => [
                 ['name' => 'value', 'type' => 'string', 'default' => 'polyglot'],
+            ],
+        ],
+        'diagnostic_failure' => [
+            'class' => DiagnosticFailureWorkflow::class,
+            'description' => 'No-credential workflow that intentionally records a durable activity failure for MCP diagnosis and repair drills.',
+            'pattern' => 'agent diagnostic failure drill',
+            'command' => 'use /mcp/workflows start_workflow with workflow=diagnostic_failure',
+            'requires' => [],
+            'arguments' => [
+                ['name' => 'reason', 'type' => 'string', 'default' => 'agent-operability-induced-failure'],
             ],
         ],
     ],

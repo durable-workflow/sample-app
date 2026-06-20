@@ -130,7 +130,7 @@ class McpWorkflowServerTest extends TestCase
                     ->where('workflow_id_kind', 'workflow_instance_id')
                     ->where('run_id_kind', 'workflow_run_id')
                     ->has('status_values')
-                    ->has('available_workflows', 9)
+                    ->has('available_workflows', 10)
                     ->where('available_workflows.0.key', 'simple')
                     ->where('available_workflows.0.class', SimpleWorkflow::class)
                     ->where('available_workflows.0.pattern', 'deterministic activity chain')
@@ -161,6 +161,9 @@ class McpWorkflowServerTest extends TestCase
                     ->where('available_workflows.8.class', PhpToPythonWorkflow::class)
                     ->where('available_workflows.8.pattern', 'cross-language activity dispatch')
                     ->where('available_workflows.8.command', 'while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke')
+                    ->where('available_workflows.9.key', 'diagnostic_failure')
+                    ->where('available_workflows.9.requires', [])
+                    ->where('available_workflows.9.pattern', 'agent diagnostic failure drill')
                     ->etc();
             });
     }

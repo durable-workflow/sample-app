@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Symfony\Component\Process\Process;
@@ -36,6 +37,7 @@ class Conformance extends Command
         'ai',
         'sandbox',
         'polyglot_php_to_python',
+        'diagnostic_failure',
     ];
 
     private const REQUIRED_SURFACES = [
@@ -457,6 +459,7 @@ class Conformance extends Command
         $started = microtime(true);
         $url = "{$baseUrl}/mcp/workflows";
         $workflowId = 'sample-app-conformance-mcp-'.bin2hex(random_bytes(4));
+        $failureWorkflowId = $workflowId.'-failure';
         $this->mcpWorkflowId = $workflowId;
 
         try {
@@ -526,6 +529,21 @@ class Conformance extends Command
                 ],
             ]);
 
+            $failureStart = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-start-failure',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'start_workflow',
+                    'arguments' => [
+                        'workflow' => 'diagnostic_failure',
+                        'instance_id' => $failureWorkflowId,
+                        'business_key' => 'sample-app-conformance-failure',
+                        'arguments' => ['agent-operability-induced-failure'],
+                    ],
+                ],
+            ]);
+
             $diagnosis = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-diagnose-before-repair',
@@ -588,6 +606,80 @@ class Conformance extends Command
                 }
             }
 
+            $failureResult = null;
+            $failureObserved = false;
+            $failureResultAttempts = 0;
+
+            for ($attempt = 1; $attempt <= 20; $attempt++) {
+                $failureResultAttempts = $attempt;
+
+                if ($attempt > 1) {
+                    sleep(1);
+                }
+
+                $failureResult = $request->post($url, [
+                    'jsonrpc' => '2.0',
+                    'id' => 'sample-app-conformance-failure-result',
+                    'method' => 'tools/call',
+                    'params' => [
+                        'name' => 'get_workflow_result',
+                        'arguments' => [
+                            'workflow_id' => $failureWorkflowId,
+                            'include_recent_history' => true,
+                            'history_limit' => 10,
+                        ],
+                    ],
+                ]);
+
+                $failureResultBody = $failureResult->body();
+                if (
+                    $failureResult->successful()
+                    && str_contains($failureResultBody, $failureWorkflowId)
+                    && str_contains($failureResultBody, 'failed')
+                ) {
+                    $failureObserved = true;
+                    break;
+                }
+            }
+
+            $failureDiagnosis = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-diagnose-failure',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'diagnose_workflow',
+                    'arguments' => [
+                        'workflow_id' => $failureWorkflowId,
+                        'history_limit' => 5,
+                    ],
+                ],
+            ]);
+
+            $failureRepair = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-repair-failure',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'repair_workflow',
+                    'arguments' => [
+                        'workflow_id' => $failureWorkflowId,
+                    ],
+                ],
+            ]);
+
+            $failureHistory = $request->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 'sample-app-conformance-failure-history',
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'get_workflow_history',
+                    'arguments' => [
+                        'workflow_id' => $failureWorkflowId,
+                        'limit' => 25,
+                    ],
+                ],
+            ]);
+
             $postRepairDiagnosis = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-diagnose-after-run',
@@ -620,20 +712,47 @@ class Conformance extends Command
                 $tools->body(),
                 $workflows->body(),
                 $start->body(),
+                $failureStart->body(),
                 $diagnosis->body(),
                 $repair->body(),
                 $result?->body() ?? '',
+                $failureResult?->body() ?? '',
+                $failureDiagnosis->body(),
+                $failureRepair->body(),
+                $failureHistory->body(),
                 $postRepairDiagnosis->body(),
                 $history->body(),
             ]);
+            $agentLoopEvidence = $this->agentLoopEvidence(
+                $url,
+                $workflowId,
+                $failureWorkflowId,
+                $tools,
+                $workflows,
+                $start,
+                $result,
+                $history,
+                $failureStart,
+                $failureResult,
+                $failureDiagnosis,
+                $failureRepair,
+                $failureHistory,
+                $completed,
+                $failureObserved,
+            );
             $passed = $initialize->successful()
                 && $initialized->successful()
                 && $tools->successful()
                 && $workflows->successful()
                 && $start->successful()
+                && $failureStart->successful()
                 && $diagnosis->successful()
                 && $repair->successful()
                 && ($result?->successful() ?? false)
+                && ($failureResult?->successful() ?? false)
+                && $failureDiagnosis->successful()
+                && $failureRepair->successful()
+                && $failureHistory->successful()
                 && $postRepairDiagnosis->successful()
                 && $history->successful()
                 && str_contains($body, 'list_workflows')
@@ -647,6 +766,12 @@ class Conformance extends Command
                 && str_contains($body, 'durable-workflow.v2.safe-mutation')
                 && str_contains($start->body(), $workflowId)
                 && $completed
+                && str_contains($failureStart->body(), $failureWorkflowId)
+                && $failureObserved
+                && ($agentLoopEvidence['diagnose']['failure']['root_cause_schema'] ?? null) === 'durable-workflow.v2.agent-root-cause'
+                && in_array($agentLoopEvidence['diagnose']['failure']['root_cause_category'] ?? null, ['activity_failure', 'workflow_failure'], true)
+                && ($agentLoopEvidence['diagnose']['failure']['remediation_schema'] ?? null) === 'durable-workflow.v2.agent-remediation'
+                && ($agentLoopEvidence['repair']['failure']['safe_mutation_schema'] ?? null) === 'durable-workflow.v2.safe-mutation'
                 && str_contains($history->body(), 'WorkflowCompleted');
 
             $this->surfaces['mcp_workflow_api'] = [
@@ -655,26 +780,35 @@ class Conformance extends Command
                 'driver' => 'mcp-json-rpc',
                 'url' => $url,
                 'workflow_id' => $workflowId,
+                'failure_workflow_id' => $failureWorkflowId,
                 'initialize_status' => $initialize->status(),
                 'initialized_status' => $initialized->status(),
                 'tools_status' => $tools->status(),
                 'workflows_status' => $workflows->status(),
                 'start_status' => $start->status(),
+                'failure_start_status' => $failureStart->status(),
                 'diagnosis_status' => $diagnosis->status(),
                 'repair_status' => $repair->status(),
                 'result_status' => $result?->status(),
+                'failure_result_status' => $failureResult?->status(),
+                'failure_diagnosis_status' => $failureDiagnosis->status(),
+                'failure_repair_status' => $failureRepair->status(),
+                'failure_history_status' => $failureHistory->status(),
                 'post_repair_diagnosis_status' => $postRepairDiagnosis->status(),
                 'history_status' => $history->status(),
                 'result_attempts' => $resultAttempts,
+                'failure_result_attempts' => $failureResultAttempts,
                 'workflow_completed' => $completed,
+                'failure_workflow_failed' => $failureObserved,
                 'agent_loop_steps' => [
                     'discover' => 'tools/list plus list_workflows',
-                    'change' => 'caller selects the no-credential simple workflow and explicit business key',
-                    'run' => 'start_workflow',
-                    'diagnose' => 'diagnose_workflow root_cause plus remediation',
-                    'repair' => 'repair_workflow safe structured mutation or refusal',
-                    'verify' => 'get_workflow_result plus get_workflow_history',
+                    'change' => 'caller selects no-credential workflows with explicit business keys, including diagnostic_failure for the induced failure cell',
+                    'run' => 'start_workflow for simple and diagnostic_failure',
+                    'diagnose' => 'diagnose_workflow root_cause plus remediation for the induced failure run',
+                    'repair' => 'repair_workflow safe structured mutation or refusal for the induced failure run',
+                    'verify' => 'get_workflow_result plus get_workflow_history for completed and failed runs',
                 ],
+                'agent_loop_evidence' => $agentLoopEvidence,
                 'duration_ms' => $this->durationMs($started),
                 'body_tail' => $this->tail($body),
             ];
@@ -694,6 +828,266 @@ class Conformance extends Command
             ($this->surfaces['mcp_workflow_api']['status'] ?? null) === 'passed' ? '[pass]' : '[fail]',
             'mcp_workflow_api',
         ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function agentLoopEvidence(
+        string $url,
+        string $workflowId,
+        string $failureWorkflowId,
+        HttpResponse $tools,
+        HttpResponse $workflows,
+        HttpResponse $start,
+        ?HttpResponse $result,
+        HttpResponse $history,
+        HttpResponse $failureStart,
+        ?HttpResponse $failureResult,
+        HttpResponse $failureDiagnosis,
+        HttpResponse $failureRepair,
+        HttpResponse $failureHistory,
+        bool $completed,
+        bool $failureObserved,
+    ): array {
+        $toolNames = $this->toolNames($tools);
+        $workflowContent = $this->structuredContent($workflows);
+        $availableWorkflows = is_array($workflowContent['available_workflows'] ?? null)
+            ? $workflowContent['available_workflows']
+            : [];
+        $workflowKeys = $this->workflowKeys($availableWorkflows);
+        $startContent = $this->structuredContent($start);
+        $resultContent = $result instanceof HttpResponse ? $this->structuredContent($result) : [];
+        $historyContent = $this->structuredContent($history);
+        $failureStartContent = $this->structuredContent($failureStart);
+        $failureResultContent = $failureResult instanceof HttpResponse ? $this->structuredContent($failureResult) : [];
+        $failureDiagnosisContent = $this->structuredContent($failureDiagnosis);
+        $failureRepairContent = $this->structuredContent($failureRepair);
+        $failureHistoryContent = $this->structuredContent($failureHistory);
+        $diagnosticDefinition = $this->workflowDefinition($availableWorkflows, 'diagnostic_failure');
+
+        return [
+            'schema' => 'durable-workflow.v2.agent-operability.executable-loop',
+            'version' => 1,
+            'source' => 'sample-app-mcp-json-rpc',
+            'endpoint' => $url,
+            'discovery' => [
+                'tool_names' => $toolNames,
+                'available_workflow_keys' => $workflowKeys,
+                'selected_smoke_workflow' => 'simple',
+                'selected_failure_workflow' => 'diagnostic_failure',
+                'failure_workflow_requires' => is_array($diagnosticDefinition['requires'] ?? null)
+                    ? array_values($diagnosticDefinition['requires'])
+                    : null,
+                'failure_workflow_no_credentials' => ($diagnosticDefinition['requires'] ?? null) === [],
+                'workflow_id_kind' => $workflowContent['workflow_id_kind'] ?? null,
+                'run_id_kind' => $workflowContent['run_id_kind'] ?? null,
+            ],
+            'change' => [
+                'kind' => 'guarded_operating_choice',
+                'smoke_workflow' => 'simple',
+                'failure_workflow' => 'diagnostic_failure',
+                'business_keys' => [
+                    'smoke' => 'sample-app-conformance',
+                    'failure' => 'sample-app-conformance-failure',
+                ],
+                'failure_arguments' => ['agent-operability-induced-failure'],
+            ],
+            'run' => [
+                'smoke' => [
+                    'workflow_id' => $workflowId,
+                    'run_id' => $startContent['run_id'] ?? null,
+                    'start_status' => $start->status(),
+                    'result_status' => $result?->status(),
+                    'workflow_status' => $resultContent['status'] ?? null,
+                    'completed' => $completed,
+                    'output_seen' => ($resultContent['output'] ?? null) === 'workflow_activity_other',
+                ],
+                'failure' => [
+                    'workflow_id' => $failureWorkflowId,
+                    'run_id' => $failureStartContent['run_id'] ?? null,
+                    'start_status' => $failureStart->status(),
+                    'result_status' => $failureResult?->status(),
+                    'workflow_status' => $failureResultContent['status'] ?? null,
+                    'failed' => $failureObserved,
+                    'latest_failure_present' => ($failureResultContent['error'] ?? null) !== null,
+                ],
+            ],
+            'diagnose' => [
+                'failure' => [
+                    'status' => $failureDiagnosis->status(),
+                    'diagnosis' => $failureDiagnosisContent['diagnosis'] ?? null,
+                    'root_cause_schema' => $failureDiagnosisContent['root_cause']['schema'] ?? null,
+                    'root_cause_category' => $failureDiagnosisContent['root_cause']['category'] ?? null,
+                    'root_cause_actionable' => $failureDiagnosisContent['root_cause']['actionable'] ?? null,
+                    'latest_failure_category' => $failureDiagnosisContent['latest_failure']['category'] ?? null,
+                    'remediation_schema' => $failureDiagnosisContent['remediation']['schema'] ?? null,
+                    'remediation_classification' => $failureDiagnosisContent['remediation']['classification'] ?? null,
+                    'remediation_summary' => $failureDiagnosisContent['remediation']['summary'] ?? null,
+                    'automatic_repair_allowed' => $failureDiagnosisContent['remediation']['automatic_repair']['allowed'] ?? null,
+                    'next_action_codes' => $this->nextActionCodes($failureDiagnosisContent),
+                ],
+            ],
+            'repair' => [
+                'failure' => [
+                    'status' => $failureRepair->status(),
+                    'decision' => 'request_safe_repair_after_diagnosis',
+                    'accepted' => $failureRepairContent['accepted'] ?? null,
+                    'safe_mutation_schema' => $failureRepairContent['mutation']['schema'] ?? null,
+                    'safe_mutation_applied' => $failureRepairContent['mutation']['applied'] ?? null,
+                    'safe_mutation_reason' => $failureRepairContent['mutation']['reason'] ?? null,
+                    'command_outcome' => $failureRepairContent['command']['outcome'] ?? null,
+                    'remediation_schema' => $failureRepairContent['remediation']['schema'] ?? null,
+                    'remediation_classification' => $failureRepairContent['remediation']['classification'] ?? null,
+                    'next_action_codes' => $this->nextActionCodes($failureRepairContent),
+                ],
+            ],
+            'history' => [
+                'smoke' => [
+                    'status' => $history->status(),
+                    'event_count' => $historyContent['history_event_count'] ?? null,
+                    'returned_event_count' => $historyContent['returned_event_count'] ?? null,
+                    'completed_event_seen' => $this->historyContainsEvent($historyContent, 'WorkflowCompleted'),
+                ],
+                'failure' => [
+                    'status' => $failureHistory->status(),
+                    'event_count' => $failureHistoryContent['history_event_count'] ?? null,
+                    'returned_event_count' => $failureHistoryContent['returned_event_count'] ?? null,
+                    'failed_event_seen' => $this->historyContainsEvent($failureHistoryContent, 'WorkflowFailed')
+                        || $this->historyContainsEvent($failureHistoryContent, 'ActivityFailed'),
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function structuredContent(HttpResponse $response): array
+    {
+        $payload = $this->jsonPayload($response);
+        $result = is_array($payload['result'] ?? null) ? $payload['result'] : [];
+
+        if (is_array($result['structuredContent'] ?? null)) {
+            return $result['structuredContent'];
+        }
+
+        if (is_array($result['content'] ?? null)) {
+            foreach ($result['content'] as $item) {
+                if (! is_array($item) || ! is_string($item['text'] ?? null)) {
+                    continue;
+                }
+
+                try {
+                    $decoded = json_decode($item['text'], true, 512, JSON_THROW_ON_ERROR);
+                } catch (Throwable) {
+                    continue;
+                }
+
+                if (is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function jsonPayload(HttpResponse $response): array
+    {
+        try {
+            $payload = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return [];
+        }
+
+        return is_array($payload) ? $payload : [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function toolNames(HttpResponse $response): array
+    {
+        $payload = $this->jsonPayload($response);
+        $tools = $payload['result']['tools'] ?? null;
+
+        if (! is_array($tools)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $tool): ?string => is_array($tool) && is_string($tool['name'] ?? null) ? $tool['name'] : null,
+            $tools,
+        )));
+    }
+
+    /**
+     * @param array<int, mixed> $availableWorkflows
+     * @return list<string>
+     */
+    private function workflowKeys(array $availableWorkflows): array
+    {
+        return array_values(array_filter(array_map(
+            static fn (mixed $workflow): ?string => is_array($workflow) && is_string($workflow['key'] ?? null) ? $workflow['key'] : null,
+            $availableWorkflows,
+        )));
+    }
+
+    /**
+     * @param array<int, mixed> $availableWorkflows
+     * @return array<string, mixed>
+     */
+    private function workflowDefinition(array $availableWorkflows, string $key): array
+    {
+        foreach ($availableWorkflows as $workflow) {
+            if (is_array($workflow) && ($workflow['key'] ?? null) === $key) {
+                return $workflow;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $content
+     * @return list<string>
+     */
+    private function nextActionCodes(array $content): array
+    {
+        $actions = $content['next_actions'] ?? null;
+
+        if (! is_array($actions)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $action): ?string => is_array($action) && is_string($action['code'] ?? null) ? $action['code'] : null,
+            $actions,
+        )));
+    }
+
+    /**
+     * @param array<string, mixed> $content
+     */
+    private function historyContainsEvent(array $content, string $eventType): bool
+    {
+        $events = $content['events'] ?? null;
+
+        if (! is_array($events)) {
+            return false;
+        }
+
+        foreach ($events as $event) {
+            if (is_array($event) && ($event['event_type'] ?? null) === $eventType) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function runWaterlineManualObservationSurface(): void

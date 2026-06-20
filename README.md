@@ -198,6 +198,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
 | Run the polyglot conformance smoke (Python same-language, PHP→Python, Python→PHP) | `App\Workflows\Polyglot\PhpToPythonWorkflow` plus Python-authored workflows in `polyglot/` | `while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
+| Exercise machine-readable failure diagnosis and repair refusal | `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` | `/mcp/workflows` `start_workflow` with `workflow=diagnostic_failure` | `diagnostic_failure` |
 
 #### Migrating from Durable Workflow 1.x
 
@@ -421,6 +422,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 - `sandbox` → `App\Workflows\Sandbox\SandboxAgentWorkflow` (provisions, dispatches tool calls, snapshots, recovers, and cleans up an ephemeral agent sandbox via `App\Sandbox\SandboxProvider`; defaults to the local subprocess provider, set `SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
 - `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the current artifact tuple resolver and the `polyglot/` docker compose stack with the PHP and Python workers running; the stack smoke also exercises Python-authored workflows)
+- `diagnostic_failure` → `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` (no credentials; intentionally records a durable activity failure so MCP clients can prove `diagnose_workflow` and `repair_workflow` behavior)
 
 To add more workflows, update the config file:
 

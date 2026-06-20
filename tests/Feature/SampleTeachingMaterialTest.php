@@ -48,6 +48,7 @@ class SampleTeachingMaterialTest extends TestCase
             'app/Workflows/Prism/PrismWorkflow.php' => 'workflow loop is replay-safe',
             'app/Workflows/Ai/AiWorkflow.php' => 'durable agent pattern',
             'app/Workflows/Sandbox/SandboxAgentWorkflow.php' => 'durable sandbox orchestration pattern',
+            'app/Workflows/Diagnostics/DiagnosticFailureWorkflow.php' => 'Purpose-built no-credential workflow for agent diagnostic drills',
         ];
 
         foreach ($expectations as $path => $needle) {
@@ -159,7 +160,11 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('durable-workflow.v2.agent-remediation', $command);
         $this->assertStringContainsString('durable-workflow.v2.safe-mutation', $command);
         $this->assertStringContainsString('agent_loop_steps', $command);
+        $this->assertStringContainsString('agent_loop_evidence', $command);
+        $this->assertStringContainsString('diagnostic_failure', $command);
+        $this->assertStringContainsString('agent-operability-induced-failure', $command);
         $this->assertStringContainsString('workflow_completed', $command);
+        $this->assertStringContainsString('failure_workflow_failed', $command);
         $this->assertStringContainsString('runWaterlineManualObservationSurface', $command);
         $this->assertStringContainsString('waterline_manual_observation', $command);
         $this->assertStringContainsString('workflow:v2:history-export', $command);
