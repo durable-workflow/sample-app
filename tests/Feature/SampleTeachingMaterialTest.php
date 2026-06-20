@@ -79,6 +79,8 @@ class SampleTeachingMaterialTest extends TestCase
         $smokeScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke.sh');
         $smokeWorkflow = file_get_contents(__DIR__.'/../../.github/workflows/smoke.yml');
         $command = file_get_contents(__DIR__.'/../../app/Console/Commands/Conformance.php');
+        $dockerfile = file_get_contents(__DIR__.'/../../Dockerfile');
+        $compose = file_get_contents(__DIR__.'/../../docker-compose.yml');
         $aiCommand = file_get_contents(__DIR__.'/../../app/Console/Commands/Ai.php');
         $aiWorkflow = file_get_contents(__DIR__.'/../../app/Workflows/Ai/AiWorkflow.php');
         $travelAgentActivity = file_get_contents(__DIR__.'/../../app/Workflows/Ai/TravelAgentActivity.php');
@@ -89,34 +91,47 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertIsString($smokeScript);
         $this->assertIsString($smokeWorkflow);
         $this->assertIsString($command);
+        $this->assertIsString($dockerfile);
+        $this->assertIsString($compose);
         $this->assertIsString($aiCommand);
         $this->assertIsString($aiWorkflow);
         $this->assertIsString($travelAgentActivity);
 
         $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH', $readme);
+        $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
+        $this->assertStringContainsString('source-free containers can report the', $readme);
         $this->assertStringContainsString('Waterline/manual observation check', $readme);
         $this->assertStringContainsString('focused findings', $readme);
         $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
+        $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
         $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
         $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
         $this->assertStringContainsString('refresh_services_for_conformance_env', $script);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);
+        $this->assertStringContainsString('docker compose cp "app:${metadata_container_abs}" "$metadata_path"', $script);
+        $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH=%s', $script);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY', $smokeScript);
         $this->assertStringNotContainsString('has_conformance_key', $smokeScript);
         $this->assertStringNotContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE', $smokeScript);
         $this->assertStringContainsString('scripts/compose-conformance.sh', $smokeScript);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY: 1', $smokeWorkflow);
         $this->assertStringContainsString('git rev-parse HEAD', $script);
+        $this->assertStringContainsString('export SAMPLE_APP_COMMIT="$sample_app_commit"', $script);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT="${sample_app_commit}"', $script);
+        $this->assertStringContainsString('ARG SAMPLE_APP_COMMIT=', $dockerfile);
+        $this->assertStringContainsString('ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}', $dockerfile);
+        $this->assertStringContainsString('SAMPLE_APP_COMMIT: ${SAMPLE_APP_COMMIT:-}', $compose);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
         $this->assertMatchesRegularExpression(
             '/pinned_server_image="durableworkflow\/server:0\.2\.\d+"/',
@@ -161,6 +176,9 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('durable-workflow.v2.safe-mutation', $command);
         $this->assertStringContainsString('agent_loop_steps', $command);
         $this->assertStringContainsString('agent_loop_evidence', $command);
+        $this->assertStringContainsString('artifact_install_evidence', $command);
+        $this->assertStringContainsString('local_product_source_checkouts_used', $command);
+        $this->assertStringContainsString('sampleAppRevisionSource', $command);
         $this->assertStringContainsString('diagnostic_failure', $command);
         $this->assertStringContainsString('agent-operability-induced-failure', $command);
         $this->assertStringContainsString('workflow_completed', $command);

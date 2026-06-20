@@ -127,6 +127,7 @@ if [[ -z "${sample_app_commit}" ]]; then
     exit 1
   fi
 fi
+export SAMPLE_APP_COMMIT="$sample_app_commit"
 
 printf '\n==> resolving current published artifact tuple\n'
 resolve_artifacts
@@ -150,7 +151,12 @@ else
 fi
 
 app_url="${SAMPLE_APP_CONFORMANCE_URL:-http://app:8000}"
+metadata_path="${SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
+metadata_container_path="${SAMPLE_APP_CONFORMANCE_CONTAINER_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
+metadata_container_abs="/app/${metadata_container_path#/}"
+mkdir -p "$(dirname "$metadata_path")"
 
+set +e
 docker compose exec -T \
   -e SAMPLE_APP_COMMIT="${sample_app_commit}" \
   -e DURABLE_SERVER_IMAGE \
@@ -159,4 +165,15 @@ docker compose exec -T \
   -e DURABLE_WORKFLOW_PHP_SDK_VERSION \
   -e DURABLE_WORKFLOW_WATERLINE_VERSION \
   -e OPENAI_API_KEY \
-  app php artisan app:conformance --app-url="${app_url}" "${args[@]}"
+  app php artisan app:conformance --app-url="${app_url}" --output="${metadata_container_path}" "${args[@]}"
+status=$?
+set -e
+
+if docker compose cp "app:${metadata_container_abs}" "$metadata_path" >/dev/null; then
+  printf 'compose-conformance: sample-app metadata copied to %s\n' "$metadata_path"
+  printf 'compose-conformance: set DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH=%s for agent-operability validation\n' "$metadata_path"
+else
+  printf 'compose-conformance: unable to copy sample-app metadata from %s\n' "$metadata_container_abs" >&2
+fi
+
+exit "$status"

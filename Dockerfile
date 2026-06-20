@@ -17,6 +17,7 @@ ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
 ARG DURABLE_WORKFLOW_WATERLINE_PIN=
 ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=
 ARG DURABLE_WORKFLOW_WATERLINE_VERSION=
+ARG SAMPLE_APP_COMMIT=
 
 COPY composer.json composer.lock ./
 RUN set -eux; \
@@ -63,6 +64,9 @@ RUN npm run build
 
 # ── Production image ─────────────────────────────────────
 FROM base AS production
+
+ARG SAMPLE_APP_COMMIT=
+ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}
 
 COPY --from=vendor /app /app
 COPY --from=assets /usr/local/bin/node /usr/local/bin/node

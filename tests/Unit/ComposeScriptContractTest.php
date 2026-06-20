@@ -28,11 +28,19 @@ final class ComposeScriptContractTest extends TestCase
 
         $this->assertStringContainsString('restart_worker_after_schema_refresh()', $script);
         $this->assertStringContainsString('docker compose up -d --no-deps --force-recreate --wait worker', $script);
+        $this->assertStringContainsString('export SAMPLE_APP_COMMIT="$sample_app_commit"', $script);
+        $this->assertStringContainsString('metadata_path="${SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"', $script);
+        $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
+        $this->assertStringContainsString('docker compose cp "app:${metadata_container_abs}" "$metadata_path"', $script);
         $this->assertOrdered(
             $script,
+            'export SAMPLE_APP_COMMIT="$sample_app_commit"',
+            "printf '\\n==> resolving current published artifact tuple\\n'",
+            "\nrebuild_services_for_artifact_tuple\n",
             'docker compose exec -T app php artisan migrate:fresh --force',
             "\nrestart_worker_after_schema_refresh\n",
             'docker compose exec -T \\',
+            'docker compose cp "app:${metadata_container_abs}" "$metadata_path"',
         );
     }
 

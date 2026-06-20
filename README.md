@@ -165,7 +165,15 @@ committed sample-app fallback tuple instead. Set
 should use a previously captured public tuple manifest.
 The wrapper passes the host checkout SHA into the app container as
 `SAMPLE_APP_COMMIT`; set that variable explicitly when running from a source
-archive or another environment without Git metadata.
+archive or another environment without Git metadata. The same value is forwarded
+as a Docker build and runtime variable so source-free containers can report the
+sample-app revision without reading a local `.git` checkout.
+The wrapper also copies the JSON metadata back to
+`storage/app/sample-app-conformance-metadata.json`; set
+`SAMPLE_APP_CONFORMANCE_METADATA_PATH` to choose a different host-side path.
+Pass that file as `DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH` when validating
+the agent-operability executable-loop contract against the current artifact
+tuple.
 The wrapper uses `http://app:8000` inside the Compose network so browser
 activities running in the worker container can reach the app. Set
 `SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.

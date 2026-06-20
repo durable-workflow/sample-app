@@ -126,23 +126,34 @@ final class PolyglotComposeContractTest extends TestCase
                 '${DURABLE_WORKFLOW_WATERLINE_VERSION:-}',
                 $buildArgs['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null,
             );
+            $this->assertSame(
+                '${SAMPLE_APP_COMMIT:-}',
+                $buildArgs['SAMPLE_APP_COMMIT'] ?? null,
+            );
         }
 
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_PIN=\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_PIN=\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=\n", $dockerfile);
+        $this->assertStringContainsString("ARG SAMPLE_APP_COMMIT=\n", $dockerfile);
+        $this->assertStringContainsString('ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}', $dockerfile);
         $this->assertStringContainsString('if [ -n "$workflow_version" ] || [ -n "$waterline_version" ]; then', $dockerfile);
         $this->assertStringContainsString('composer require --no-update', $dockerfile);
         $this->assertStringContainsString('composer update durable-workflow/workflow durable-workflow/waterline', $dockerfile);
         $this->assertStringContainsString('composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction', $dockerfile);
         $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
         $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
+        $this->assertStringContainsString('export SAMPLE_APP_COMMIT="$sample_app_commit"', $script);
+        $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
+        $this->assertStringContainsString('docker compose cp "app:${metadata_container_abs}" "$metadata_path"', $script);
         $this->assertOrdered(
             $script,
+            'export SAMPLE_APP_COMMIT="$sample_app_commit"',
             "printf '\\n==> resolving current published artifact tuple\\n'",
             "\nrebuild_services_for_artifact_tuple\n",
             'app php artisan app:conformance',
+            'docker compose cp "app:${metadata_container_abs}" "$metadata_path"',
         );
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PHP_SDK_VERSION', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_WATERLINE_VERSION', $script);

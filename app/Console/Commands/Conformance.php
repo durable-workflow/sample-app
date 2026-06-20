@@ -850,6 +850,8 @@ class Conformance extends Command
         bool $completed,
         bool $failureObserved,
     ): array {
+        $artifactVersions = $this->artifactVersions();
+        $localProductSourceCheckoutsUsed = $this->localProductSourceCheckoutsUsed();
         $toolNames = $this->toolNames($tools);
         $workflowContent = $this->structuredContent($workflows);
         $availableWorkflows = is_array($workflowContent['available_workflows'] ?? null)
@@ -871,6 +873,8 @@ class Conformance extends Command
             'version' => 1,
             'source' => 'sample-app-mcp-json-rpc',
             'endpoint' => $url,
+            'artifactVersions' => $artifactVersions,
+            'local_product_source_checkouts_used' => $localProductSourceCheckoutsUsed,
             'discovery' => [
                 'tool_names' => $toolNames,
                 'available_workflow_keys' => $workflowKeys,
@@ -1178,6 +1182,9 @@ class Conformance extends Command
      */
     private function metadata(string $startedAt, string $baseUrl, bool $strict): array
     {
+        $artifactVersions = $this->artifactVersions();
+        $sampleAppRevisionSource = $this->sampleAppRevisionSource();
+        $localProductSourceCheckoutsUsed = $this->localProductSourceCheckoutsUsed();
         $failed = array_values(array_filter(
             array_keys($this->surfaces),
             fn (string $name): bool => ($this->surfaces[$name]['status'] ?? null) === 'failed',
@@ -1198,7 +1205,15 @@ class Conformance extends Command
             'started_at' => $startedAt,
             'completed_at' => gmdate('c'),
             'app_url' => $baseUrl,
-            'artifactVersions' => $this->artifactVersions(),
+            'artifactVersions' => $artifactVersions,
+            'local_product_source_checkouts_used' => $localProductSourceCheckoutsUsed,
+            'artifact_install_evidence' => [
+                'source' => $localProductSourceCheckoutsUsed ? 'local-checkout-runtime' : 'published-artifact-runtime',
+                'local_product_source_checkouts_used' => $localProductSourceCheckoutsUsed,
+                'sample_app_revision' => $artifactVersions['sample-app'] ?? null,
+                'sample_app_revision_source' => $sampleAppRevisionSource,
+                'dependency_resolution' => 'published packages and images',
+            ],
             'active_payload_codec' => $this->activePayloadCodec(),
             'surfaces' => $this->surfaces,
             'summary' => [
@@ -1357,6 +1372,20 @@ class Conformance extends Command
         $sha = trim($process->getOutput());
 
         return $sha === '' ? null : $sha;
+    }
+
+    private function sampleAppRevisionSource(): string
+    {
+        if ($this->envString('SAMPLE_APP_COMMIT') !== null) {
+            return 'SAMPLE_APP_COMMIT';
+        }
+
+        return $this->gitSha() === null ? 'unresolved' : 'git';
+    }
+
+    private function localProductSourceCheckoutsUsed(): bool
+    {
+        return $this->sampleAppRevisionSource() === 'git';
     }
 
     private function baseUrl(): string
