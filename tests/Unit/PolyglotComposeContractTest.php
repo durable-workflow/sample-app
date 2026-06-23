@@ -373,11 +373,11 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-', $smokeShell);
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.220',
+            '2.0.0-alpha.221',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            'd1904fad398049f19858bccd00b2403843e7646c',
+            'c25d03c0f44c987a79a5a0e4ecda55cb80cff660',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
@@ -579,20 +579,35 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
     }
 
+    public function test_polyglot_artifact_resolver_keeps_default_current_tuple_at_committed_floor(): void
+    {
+        $assignments = $this->resolveArtifactAssignments([
+            'DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL' => 'file://'.$this->repoPath('tests/Fixtures/lagging-artifact-tuple.json'),
+            'DURABLE_WORKFLOW_WATERLINE_CATALOG_URL' => 'file://'.$this->repoPath('tests/Fixtures/lagging-waterline-catalog.json'),
+        ], false);
+
+        $this->assertSame('durableworkflow/server:0.2.489', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.489', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('0.1.82', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame('0.4.90', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.221', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.111', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+    }
+
     public function test_polyglot_artifact_resolver_keeps_pinned_tuple_explicit(): void
     {
         $assignments = $this->resolveArtifactAssignments([
             'DURABLE_WORKFLOW_ARTIFACT_SOURCE' => 'pinned',
         ]);
 
-        $this->assertSame('durableworkflow/server:0.2.488', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.488', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.489', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.489', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.82', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.82', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.90', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.220', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.221', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/workflow:2.0.0-alpha.220',
+            'durable-workflow/workflow:2.0.0-alpha.221',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame('2.0.0-alpha.111', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);

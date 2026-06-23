@@ -1,0 +1,12 @@
+{
+  "packages": {
+    "durable-workflow/waterline": [
+      {
+        "version": "2.0.0-alpha.110"
+      },
+      {
+        "version": "2.0.0-alpha.109"
+      }
+    ]
+  }
+}

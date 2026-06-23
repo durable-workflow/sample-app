@@ -154,9 +154,10 @@ workspace-level dotenv files without printing credential values. Set
 By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which resolves the current published
 conformance tuple from the public docs release-audit manifest, advances routine
-Waterline prereleases from the public Waterline package catalog, emits it as
-shell assignments, and preserves explicit overrides. The wrapper rebuilds the
-app and worker containers with the resolved Composer pins before running the
+Waterline prereleases from the public Waterline package catalog, keeps the
+committed fallback tuple as the minimum resolved artifact set, emits the result
+as shell assignments, and preserves explicit overrides. The wrapper rebuilds
+the app and worker containers with the resolved Composer pins before running the
 harness, so the recorded PHP SDK and Waterline versions come from installed
 packages rather than the committed fallback lock. Set
 `DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned` for a reproducible run against the

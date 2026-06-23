@@ -1,0 +1,12 @@
+{
+  "schema": "durable-workflow.sample-app.synthetic-artifact-tuple",
+  "schemaVersion": 1,
+  "description": "Synthetic parser fixture for sample-app tests; these versions are lower than the committed fallback tuple.",
+  "artifacts": {
+    "cli": "0.1.81",
+    "sdk-python": "0.4.89",
+    "server": "0.2.488",
+    "waterline": "2.0.0-alpha.110",
+    "workflow": "2.0.0-alpha.220"
+  }
+}

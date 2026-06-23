@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.488"
+pinned_server_image="durableworkflow/server:0.2.489"
 pinned_cli_version="0.1.82"
 pinned_python_sdk_version="0.4.90"
-pinned_workflow_version="2.0.0-alpha.220"
+pinned_workflow_version="2.0.0-alpha.221"
 pinned_waterline_version="2.0.0-alpha.111"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
@@ -257,12 +257,63 @@ is_newer_prerelease() {
     || (( candidate_rank == current_rank && candidate_ordinal > current_ordinal ))
 }
 
+is_newer_stable_version() {
+  local candidate="$1"
+  local current="$2"
+  local candidate_major
+  local candidate_minor
+  local candidate_patch
+  local current_major
+  local current_minor
+  local current_patch
+
+  if ! [[ "$candidate" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    return 1
+  fi
+  candidate_major="${BASH_REMATCH[1]}"
+  candidate_minor="${BASH_REMATCH[2]}"
+  candidate_patch="${BASH_REMATCH[3]}"
+
+  if ! [[ "$current" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    return 0
+  fi
+  current_major="${BASH_REMATCH[1]}"
+  current_minor="${BASH_REMATCH[2]}"
+  current_patch="${BASH_REMATCH[3]}"
+
+  (( candidate_major > current_major )) \
+    || (( candidate_major == current_major && candidate_minor > current_minor )) \
+    || (( candidate_major == current_major && candidate_minor == current_minor && candidate_patch > current_patch ))
+}
+
 advance_waterline_from_public_catalog() {
   local latest_waterline_version
 
   latest_waterline_version="$(latest_waterline_prerelease_version)"
   if is_newer_prerelease "$latest_waterline_version" "$current_waterline_version"; then
     current_waterline_version="$latest_waterline_version"
+  fi
+}
+
+apply_committed_tuple_floor() {
+  local pinned_server_version
+
+  pinned_server_version="$(semantic_version_from_text "$pinned_server_image")"
+
+  if is_newer_stable_version "$pinned_server_version" "$current_server_version"; then
+    current_server_version="$pinned_server_version"
+  fi
+  if is_newer_stable_version "$pinned_cli_version" "$current_cli_version"; then
+    current_cli_version="$pinned_cli_version"
+  fi
+  if is_newer_stable_version "$pinned_python_sdk_version" "$current_python_sdk_version"; then
+    current_python_sdk_version="$pinned_python_sdk_version"
+  fi
+  if is_newer_prerelease "$pinned_workflow_version" "$current_workflow_version"; then
+    current_workflow_version="$pinned_workflow_version"
+  fi
+  if is_newer_prerelease "$pinned_waterline_version" "$current_waterline_version"; then
+    current_waterline_version="$pinned_waterline_version"
   fi
 }
 
@@ -306,6 +357,7 @@ elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL:-}" ]]; then
 else
   load_artifact_tuple_url "$current_artifact_tuple_url"
   advance_waterline_from_public_catalog
+  apply_committed_tuple_floor
 fi
 
 server_image="${DURABLE_SERVER_IMAGE:-}"
