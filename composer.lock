@@ -567,16 +567,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-alpha.224",
+            "version": "2.0.0-alpha.225",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "bde8783ebfbff06d48aaf8ee66976bfb7780c3ee"
+                "reference": "e9f9e9a475e27b6ae4daffd84b385b8bf811d4b3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/bde8783ebfbff06d48aaf8ee66976bfb7780c3ee",
-                "reference": "bde8783ebfbff06d48aaf8ee66976bfb7780c3ee",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/e9f9e9a475e27b6ae4daffd84b385b8bf811d4b3",
+                "reference": "e9f9e9a475e27b6ae4daffd84b385b8bf811d4b3",
                 "shasum": ""
             },
             "require": {
@@ -623,9 +623,9 @@
             "description": "Durable workflow engine that allows users to write long running persistent distributed workflows (orchestrations) in PHP powered by Laravel queues.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.224"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.225"
             },
-            "time": "2026-06-25T02:43:13+00:00"
+            "time": "2026-06-29T05:15:40+00:00"
         },
         {
             "name": "egulias/email-validator",
