@@ -105,6 +105,7 @@ final class PolyglotComposeContractTest extends TestCase
         $compose = Yaml::parseFile($this->repoPath('docker-compose.yml'));
         $services = $compose['services'] ?? [];
         $dockerfile = (string) file_get_contents($this->repoPath('Dockerfile'));
+        $installScript = (string) file_get_contents($this->repoPath('scripts/install-composer-artifacts.sh'));
         $script = (string) file_get_contents($this->repoPath('scripts/compose-conformance.sh'));
 
         foreach (['app', 'worker', 'seed'] as $serviceName) {
@@ -138,10 +139,48 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=\n", $dockerfile);
         $this->assertStringContainsString("ARG SAMPLE_APP_COMMIT=\n", $dockerfile);
         $this->assertStringContainsString('ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}', $dockerfile);
-        $this->assertStringContainsString('if [ -n "$workflow_version" ] || [ -n "$waterline_version" ]; then', $dockerfile);
-        $this->assertStringContainsString('composer require --no-update', $dockerfile);
-        $this->assertStringContainsString('composer update durable-workflow/workflow durable-workflow/waterline', $dockerfile);
-        $this->assertStringContainsString('composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction', $dockerfile);
+        $this->assertStringContainsString(
+            'COPY scripts/install-composer-artifacts.sh /usr/local/bin/install-composer-artifacts',
+            $dockerfile,
+        );
+        $this->assertStringContainsString('RUN bash /usr/local/bin/install-composer-artifacts', $dockerfile);
+        $this->assertStringContainsString('artifact_constraint_from_pin', $installScript);
+        $this->assertStringContainsString('locked_package_version durable-workflow/workflow', $installScript);
+        $this->assertStringContainsString('locked_package_version durable-workflow/waterline', $installScript);
+        $this->assertStringContainsString('composer install "${install_flags[@]}"', $installScript);
+        $this->assertStringContainsString('composer require --no-update', $installScript);
+        $this->assertStringContainsString('composer update durable-workflow/workflow durable-workflow/waterline', $installScript);
+        $this->assertStringContainsString(
+            <<<'SH'
+composer update durable-workflow/workflow durable-workflow/waterline \
+  "${update_flags[@]}"
+SH,
+            $installScript,
+        );
+        $this->assertStringContainsString(
+            <<<'SH'
+update_flags=(
+  --with-dependencies
+  --no-dev
+  --no-scripts
+  --no-autoloader
+  --prefer-dist
+  --no-interaction
+)
+SH,
+            $installScript,
+        );
+        $this->assertStringContainsString(
+            <<<'SH'
+if [[ "$locked_workflow_version" == "$workflow_constraint" && "$locked_waterline_version" == "$waterline_constraint" ]]; then
+  composer install "${install_flags[@]}"
+  exit 0
+fi
+
+composer require --no-update
+SH,
+            $installScript,
+        );
         $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
         $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
         $this->assertStringContainsString('export SAMPLE_APP_COMMIT="$sample_app_commit"', $script);
@@ -322,12 +361,11 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_PIN=\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION\n", $phpDockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION\n", $phpDockerfile);
-        $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_PHP_SDK_PIN" ]; then', $phpDockerfile);
-        $this->assertStringContainsString('if [ -n "$DURABLE_WORKFLOW_WATERLINE_PIN" ]; then', $phpDockerfile);
-        $this->assertStringContainsString('test -n "$workflow_version"', $phpDockerfile);
-        $this->assertStringContainsString('test -n "$waterline_version"', $phpDockerfile);
-        $this->assertStringContainsString('composer require --no-update', $phpDockerfile);
-        $this->assertStringContainsString('composer update durable-workflow/workflow durable-workflow/waterline', $phpDockerfile);
+        $this->assertStringContainsString(
+            'COPY scripts/install-composer-artifacts.sh /usr/local/bin/install-composer-artifacts',
+            $phpDockerfile,
+        );
+        $this->assertStringContainsString('RUN bash /usr/local/bin/install-composer-artifacts', $phpDockerfile);
         $this->assertStringNotContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=0.1.', $dockerfile);
         $this->assertStringNotContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.', $dockerfile);
         $this->assertStringNotContainsString('ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION=0.4.', $pythonWorkflowDockerfile);
