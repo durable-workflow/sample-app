@@ -132,6 +132,7 @@ final class PolyglotWorkerReplayTest extends TestCase
             'http://server:8080/api/worker/query-tasks/poll',
             $requests[1]['url'] ?? null,
         );
+        $this->assertSame(0, $requests[1]['body']['timeout_seconds'] ?? null);
         $this->assertSame(
             'http://server:8080/api/worker/heartbeat',
             $requests[2]['url'] ?? null,

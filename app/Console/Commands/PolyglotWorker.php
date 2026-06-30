@@ -46,6 +46,8 @@ use Workflow\V2\Support\WorkerProtocolVersion;
  */
 class PolyglotWorker extends Command
 {
+    private const QUERY_TASK_PROBE_TIMEOUT_SECONDS = 0;
+
     protected $signature = 'app:polyglot-worker
         {--mode=workflow : Worker mode: workflow or activity}
         {--server-url= : Standalone Durable Workflow server URL (defaults to DURABLE_WORKFLOW_SERVER_URL)}
@@ -153,7 +155,11 @@ class PolyglotWorker extends Command
         $consecutiveIdle = 0;
 
         while (true) {
-            $queryTask = $client->pollQueryTask($workerId, $taskQueue, 1);
+            $queryTask = $client->pollQueryTask(
+                $workerId,
+                $taskQueue,
+                self::QUERY_TASK_PROBE_TIMEOUT_SECONDS,
+            );
 
             if ($queryTask !== null) {
                 $consecutiveIdle = 0;

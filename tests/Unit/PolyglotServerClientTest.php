@@ -40,6 +40,30 @@ class PolyglotServerClientTest extends TestCase
         ], $requestBody);
     }
 
+    public function test_poll_query_task_can_send_immediate_protocol_probe(): void
+    {
+        $http = new HttpFactory();
+        $requestPath = null;
+        $requestBody = null;
+
+        $http->fake(function (Request $request) use ($http, &$requestPath, &$requestBody) {
+            $requestPath = $request->url();
+            $requestBody = $request->data();
+
+            return $http->response(['task' => null]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+
+        $this->assertNull($client->pollQueryTask('php-worker', 'polyglot-php-to-python', 0));
+        $this->assertSame('http://server:8080/api/worker/query-tasks/poll', $requestPath);
+        $this->assertSame([
+            'worker_id' => 'php-worker',
+            'task_queue' => 'polyglot-php-to-python',
+            'timeout_seconds' => 0,
+        ], $requestBody);
+    }
+
     public function test_poll_workflow_task_treats_http_timeout_as_empty_poll(): void
     {
         $http = new HttpFactory();

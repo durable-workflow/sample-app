@@ -237,10 +237,12 @@ final class ServerClient
     private function pollTask(string $path, string $workerId, string $taskQueue, int $timeoutSeconds): ?array
     {
         $pollTimeoutSeconds = WorkerProtocolVersion::clampLongPollTimeout($timeoutSeconds);
-        $requestTimeoutSeconds = max(
-            $pollTimeoutSeconds,
-            WorkerProtocolVersion::DEFAULT_LONG_POLL_TIMEOUT,
-        ) + 5;
+        $requestTimeoutSeconds = $pollTimeoutSeconds === 0
+            ? 1
+            : max(
+                $pollTimeoutSeconds,
+                WorkerProtocolVersion::DEFAULT_LONG_POLL_TIMEOUT,
+            ) + 5;
 
         try {
             $response = $this->workerPost($path, [
