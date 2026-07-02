@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.530"
-pinned_cli_version="0.1.82"
-pinned_python_sdk_version="0.4.92"
-pinned_workflow_version="2.0.0-alpha.241"
-pinned_waterline_version="2.0.0-alpha.112"
+pinned_server_image="durableworkflow/server:0.2.544"
+pinned_cli_version="0.1.84"
+pinned_python_sdk_version="0.4.93"
+pinned_workflow_version="2.0.0-alpha.242"
+pinned_waterline_version="2.0.0-alpha.113"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
 
