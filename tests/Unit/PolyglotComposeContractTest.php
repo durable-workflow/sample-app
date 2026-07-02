@@ -420,11 +420,11 @@ SH,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.111',
+            '2.0.0-alpha.112',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            '8a8c99317b587af53d915e32f4297a8471760c85',
+            'c3cfd68205e4cbb43d633c404c2e29251b088110',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -517,7 +517,7 @@ SH,
         );
 
         $this->assertSame([
-            '/app.js' => '/app.js?id=d95683391b9c8255a7c26e1499e658ae',
+            '/app.js' => '/app.js?id=fc63813198009f036388c35cf49ada40',
             '/app-dark.css' => '/app-dark.css?id=a84f0f42b0d872355eb4eca96e5be831',
             '/app.css' => '/app.css?id=f87a5bb3ecda2dceae68cca620f0cd5e',
             '/img/favicon.png' => '/img/favicon.png?id=7c006241b093796d6abfa3049df93a59',
@@ -525,7 +525,7 @@ SH,
         ], $manifest);
 
         foreach ([
-            'public/vendor/waterline/app.js' => '230956519528535d9cca45888ae5c6b60eed7f6ec84d496e9cf2a40705d72143',
+            'public/vendor/waterline/app.js' => 'd09de30cf22397d4f4a282946166a5bbd236ff41aa8aecdf0a9d313385bdef7a',
             'public/vendor/waterline/app-dark.css' => '3ab900036ac2eaa4fd4e6ca29147cc387463a1d2d5897319b95ffc0037ad5990',
             'public/vendor/waterline/app.css' => '75ea859e81f5df8749c0721fc56b4b769bd593a1ba3c71d46290db71660ebe85',
         ] as $path => $expectedHash) {
@@ -629,7 +629,7 @@ SH,
         $this->assertSame('0.1.82', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.92', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.241', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.111', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.112', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
 
     public function test_polyglot_artifact_resolver_keeps_pinned_tuple_explicit(): void
@@ -648,9 +648,9 @@ SH,
             'durable-workflow/workflow:2.0.0-alpha.241',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
-        $this->assertSame('2.0.0-alpha.111', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.112', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/waterline:2.0.0-alpha.111',
+            'durable-workflow/waterline:2.0.0-alpha.112',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
     }
