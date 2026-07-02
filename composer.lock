@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-alpha.114",
+            "version": "2.0.0-alpha.116",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "d90c172baff0f2371f2b58778553f1679b4ef89b"
+                "reference": "c8901f84afd45bfbc3e9752234dafb60b2a46325"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/d90c172baff0f2371f2b58778553f1679b4ef89b",
-                "reference": "d90c172baff0f2371f2b58778553f1679b4ef89b",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/c8901f84afd45bfbc3e9752234dafb60b2a46325",
+                "reference": "c8901f84afd45bfbc3e9752234dafb60b2a46325",
                 "shasum": ""
             },
             "require": {
@@ -561,9 +561,9 @@
             "description": "An elegant UI for monitoring Laravel Workflows.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.114"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.116"
             },
-            "time": "2026-07-02T16:59:31+00:00"
+            "time": "2026-07-02T21:01:41+00:00"
         },
         {
             "name": "durable-workflow/workflow",
