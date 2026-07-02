@@ -237,19 +237,12 @@ final class ServerClient
     private function pollTask(string $path, string $workerId, string $taskQueue, int $timeoutSeconds): ?array
     {
         $pollTimeoutSeconds = WorkerProtocolVersion::clampLongPollTimeout($timeoutSeconds);
-        $requestTimeoutSeconds = $pollTimeoutSeconds === 0
-            ? 1
-            : max(
-                $pollTimeoutSeconds,
-                WorkerProtocolVersion::DEFAULT_LONG_POLL_TIMEOUT,
-            ) + 5;
-
         try {
             $response = $this->workerPost($path, [
                 'worker_id' => $workerId,
                 'task_queue' => $taskQueue,
                 'timeout_seconds' => $pollTimeoutSeconds,
-            ], requestTimeoutSeconds: $requestTimeoutSeconds);
+            ], requestTimeoutSeconds: $this->requestTimeoutForPoll($pollTimeoutSeconds));
         } catch (ConnectionException $exception) {
             if ($this->isHttpTimeout($exception)) {
                 return null;
@@ -265,6 +258,11 @@ final class ServerClient
         $task = $response['task'] ?? null;
 
         return is_array($task) ? $task : null;
+    }
+
+    private function requestTimeoutForPoll(int $pollTimeoutSeconds): int
+    {
+        return $pollTimeoutSeconds === 0 ? 1 : $pollTimeoutSeconds + 5;
     }
 
     /**

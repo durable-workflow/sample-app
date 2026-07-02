@@ -9,6 +9,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use RuntimeException;
 
 class PolyglotServerClientTest extends TestCase
@@ -62,6 +63,19 @@ class PolyglotServerClientTest extends TestCase
             'task_queue' => 'polyglot-php-to-python',
             'timeout_seconds' => 0,
         ], $requestBody);
+    }
+
+    public function test_poll_request_timeout_tracks_the_requested_poll_window(): void
+    {
+        $client = new ServerClient(new HttpFactory(), 'http://server:8080', 'test-token', 'default');
+        $method = new ReflectionMethod($client, 'requestTimeoutForPoll');
+        $method->setAccessible(true);
+
+        $this->assertSame(1, $method->invoke($client, 0));
+        $this->assertSame(6, $method->invoke($client, 1));
+        $this->assertSame(10, $method->invoke($client, 5));
+        $this->assertSame(35, $method->invoke($client, 30));
+        $this->assertSame(65, $method->invoke($client, 60));
     }
 
     public function test_poll_workflow_task_treats_http_timeout_as_empty_poll(): void

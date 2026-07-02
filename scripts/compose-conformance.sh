@@ -1,11 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+compose_diagnostics() {
+  local context="$1"
+  local lines="${SAMPLE_APP_DIAGNOSTIC_LOG_LINES:-160}"
+
+  printf '\ncompose-conformance: diagnostics after %s\n' "$context" >&2
+  docker compose ps >&2 || true
+  docker compose logs --no-color --timestamps --tail="$lines" app worker mysql redis >&2 || true
+}
+
+run_step() {
+  local name="$1"
+  local timeout_seconds="$2"
+  shift 2
+
+  printf '\n==> %s\n' "$name"
+
+  set +e
+  timeout "${timeout_seconds}s" "$@"
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    if [[ "$status" -eq 124 ]]; then
+      printf 'compose-conformance: %s timed out after %ss\n' "$name" "$timeout_seconds" >&2
+    else
+      printf 'compose-conformance: %s exited with status %d\n' "$name" "$status" >&2
+    fi
+
+    compose_diagnostics "$name"
+
+    return "$status"
+  fi
+}
+
 wait_for_db() {
   local attempt
+  local probe_timeout_seconds="${SAMPLE_APP_DB_PROBE_TIMEOUT_SECONDS:-10}"
 
   for attempt in $(seq 1 60); do
-    if docker compose exec -T app php -r '
+    if timeout "${probe_timeout_seconds}s" docker compose exec -T app php -r '
       $dsn = sprintf(
         "mysql:host=%s;port=%s;dbname=%s",
         getenv("DB_HOST") ?: "mysql",
@@ -30,7 +65,7 @@ wait_for_db() {
   done
 
   printf 'compose-conformance: database never became reachable from app within 120s\n' >&2
-  docker compose ps >&2 || true
+  compose_diagnostics "database readiness"
   return 1
 }
 
@@ -102,18 +137,24 @@ refresh_services_for_conformance_env() {
     return 0
   fi
 
-  printf '\n==> refreshing app and worker containers with conformance credentials\n'
-  docker compose up -d --no-deps --force-recreate --wait app worker
+  run_step \
+    "refreshing app and worker containers with conformance credentials" \
+    "${SAMPLE_APP_SERVICE_REFRESH_TIMEOUT_SECONDS:-300}" \
+    docker compose up -d --no-deps --force-recreate --wait app worker
 }
 
 rebuild_services_for_artifact_tuple() {
-  printf '\n==> rebuilding app and worker containers with resolved artifact tuple\n'
-  docker compose up -d --build --wait app worker
+  run_step \
+    "rebuilding app and worker containers with resolved artifact tuple" \
+    "${SAMPLE_APP_SERVICE_REBUILD_TIMEOUT_SECONDS:-600}" \
+    docker compose up -d --build --wait app worker
 }
 
 restart_worker_after_schema_refresh() {
-  printf '\n==> restarting worker after schema refresh\n'
-  docker compose up -d --no-deps --force-recreate --wait worker
+  run_step \
+    "restarting worker after schema refresh" \
+    "${SAMPLE_APP_WORKER_RESTART_TIMEOUT_SECONDS:-180}" \
+    docker compose up -d --no-deps --force-recreate --wait worker
 }
 
 load_conformance_env
@@ -138,8 +179,10 @@ refresh_services_for_conformance_env
 printf '\n==> waiting for database to accept app connections\n'
 wait_for_db
 
-printf '\n==> fresh database migrations\n'
-docker compose exec -T app php artisan migrate:fresh --force
+run_step \
+  "fresh database migrations" \
+  "${SAMPLE_APP_MIGRATION_TIMEOUT_SECONDS:-180}" \
+  docker compose exec -T app php artisan migrate:fresh --force
 restart_worker_after_schema_refresh
 
 printf '\n==> full sample-app conformance\n'
@@ -157,7 +200,7 @@ metadata_container_abs="/app/${metadata_container_path#/}"
 mkdir -p "$(dirname "$metadata_path")"
 
 set +e
-docker compose exec -T \
+timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -T \
   -e SAMPLE_APP_COMMIT="${sample_app_commit}" \
   -e DURABLE_SERVER_IMAGE \
   -e DURABLE_WORKFLOW_CLI_VERSION \
@@ -169,7 +212,17 @@ docker compose exec -T \
 status=$?
 set -e
 
-if docker compose cp "app:${metadata_container_abs}" "$metadata_path" >/dev/null; then
+if [[ "$status" -ne 0 ]]; then
+  if [[ "$status" -eq 124 ]]; then
+    printf 'compose-conformance: full sample-app conformance timed out after %ss\n' "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}" >&2
+  else
+    printf 'compose-conformance: full sample-app conformance exited with status %d\n' "$status" >&2
+  fi
+
+  compose_diagnostics "full sample-app conformance"
+fi
+
+if timeout "${SAMPLE_APP_METADATA_COPY_TIMEOUT_SECONDS:-60}s" docker compose cp "app:${metadata_container_abs}" "$metadata_path" >/dev/null; then
   printf 'compose-conformance: sample-app metadata copied to %s\n' "$metadata_path"
   printf 'compose-conformance: set DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH=%s for agent-operability validation\n' "$metadata_path"
 else

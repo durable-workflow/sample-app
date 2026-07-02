@@ -140,6 +140,47 @@ final class PolyglotWorkerReplayTest extends TestCase
         $this->assertSame('php-workflow-worker', $requests[2]['body']['worker_id'] ?? null);
     }
 
+    public function test_query_capable_workflow_worker_slices_workflow_polls_between_query_probes(): void
+    {
+        $http = new HttpFactory();
+        $requests = [];
+
+        $http->fake(function (Request $request) use ($http, &$requests) {
+            $requests[] = [
+                'url' => $request->url(),
+                'body' => $request->data(),
+            ];
+
+            return $http->response(['task' => null, 'acknowledged' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $worker = new PolyglotWorker();
+        $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
+
+        $method = new ReflectionMethod($worker, 'runWorkflowWorker');
+        $method->setAccessible(true);
+        $status = $method->invoke(
+            $worker,
+            $client,
+            'php-workflow-worker',
+            'polyglot-php-to-python',
+            1,
+            30,
+        );
+
+        $this->assertSame(0, $status);
+
+        $queryPollIndex = $this->firstRequestIndex($requests, 'http://server:8080/api/worker/query-tasks/poll');
+        $workflowPollIndex = $this->firstRequestIndex($requests, 'http://server:8080/api/worker/workflow-tasks/poll');
+
+        $this->assertNotNull($queryPollIndex);
+        $this->assertNotNull($workflowPollIndex);
+        $this->assertLessThan($workflowPollIndex, $queryPollIndex);
+        $this->assertSame(0, $requests[$queryPollIndex]['body']['timeout_seconds'] ?? null);
+        $this->assertSame(1, $requests[$workflowPollIndex]['body']['timeout_seconds'] ?? null);
+    }
+
     public function test_workflow_worker_keeps_polling_queries_after_heartbeat_timeout(): void
     {
         $http = new HttpFactory();
@@ -216,6 +257,118 @@ final class PolyglotWorkerReplayTest extends TestCase
         $this->assertNotFalse($heartbeatIndex);
         $this->assertNotFalse($queryCompleteIndex);
         $this->assertGreaterThan($heartbeatIndex, $queryCompleteIndex);
+    }
+
+    public function test_query_worker_answers_repeated_php_signal_state_queries_without_workflow_polls(): void
+    {
+        $http = new HttpFactory();
+        $requests = [];
+        $queryPolls = 0;
+        $request = ['workflow_runtime' => 'php'];
+        $firstSignal = ['source' => 'dw CLI', 'target_runtime' => 'php'];
+
+        $http->fake(function (Request $requestObject) use ($http, &$requests, &$queryPolls, $request, $firstSignal) {
+            $url = $requestObject->url();
+            $requests[] = [
+                'url' => $url,
+                'body' => $requestObject->data(),
+            ];
+
+            if (str_ends_with($url, '/api/worker/query-tasks/poll')) {
+                $queryPolls++;
+
+                if ($queryPolls === 1) {
+                    return $http->response([
+                        'task' => [
+                            'query_task_id' => 'query-first-wait',
+                            'query_task_attempt' => 1,
+                            'workflow_type' => 'polyglot.php.signal-query',
+                            'workflow_id' => 'php-signal-query-responsive',
+                            'run_id' => 'run-php-signal-query-responsive',
+                            'query_name' => 'state',
+                            'workflow_arguments' => Avro::envelope([$request]),
+                            'history_events' => [],
+                        ],
+                    ]);
+                }
+
+                if ($queryPolls <= 3) {
+                    return $http->response([
+                        'task' => [
+                            'query_task_id' => 'query-second-wait-'.$queryPolls,
+                            'query_task_attempt' => 1,
+                            'workflow_type' => 'polyglot.php.signal-query',
+                            'workflow_id' => 'php-signal-query-responsive',
+                            'run_id' => 'run-php-signal-query-responsive',
+                            'query_name' => 'state',
+                            'workflow_arguments' => Avro::envelope([$request]),
+                            'history_events' => [
+                                [
+                                    'event_type' => 'SignalReceived',
+                                    'payload' => [
+                                        'signal_name' => 'polyglot-signal',
+                                        'arguments' => Avro::envelope([$firstSignal]),
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ]);
+                }
+
+                return $http->response(['task' => null]);
+            }
+
+            return $http->response(['ok' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $worker = new PolyglotWorker();
+        $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
+
+        $method = new ReflectionMethod($worker, 'runQueryWorker');
+        $method->setAccessible(true);
+        $status = $method->invoke(
+            $worker,
+            $client,
+            'php-query-worker',
+            'polyglot-php-to-python',
+            1,
+            1,
+        );
+
+        $this->assertSame(0, $status);
+        $this->assertSame('http://server:8080/api/worker/register', $requests[0]['url'] ?? null);
+        $this->assertSame(
+            [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
+            $requests[0]['body']['capabilities'] ?? null,
+        );
+        $this->assertContains(
+            'polyglot.php.signal-query',
+            $requests[0]['body']['supported_workflow_types'] ?? [],
+        );
+        $this->assertNotContains(
+            'polyglot.php-to-python.PhpToPythonWorkflow',
+            $requests[0]['body']['supported_workflow_types'] ?? [],
+        );
+
+        $urls = array_column($requests, 'url');
+        $this->assertNotContains('http://server:8080/api/worker/workflow-tasks/poll', $urls);
+
+        $results = [];
+        foreach ($requests as $requestRecord) {
+            if (str_contains($requestRecord['url'], '/api/worker/query-tasks/')
+                && str_ends_with($requestRecord['url'], '/complete')) {
+                $results[] = $requestRecord['body']['result'] ?? null;
+            }
+        }
+
+        $this->assertCount(3, $results);
+        $this->assertSame('waiting', $results[0]['stage'] ?? null);
+        $this->assertSame(0, $results[0]['signal_count'] ?? null);
+        $this->assertSame('signaled', $results[1]['stage'] ?? null);
+        $this->assertSame(1, $results[1]['signal_count'] ?? null);
+        $this->assertSame([$firstSignal], $results[1]['signals'] ?? null);
+        $this->assertSame($results[1], $results[2]);
     }
 
     public function test_activity_worker_registration_advertises_installed_workflow_sdk(): void
@@ -822,5 +975,19 @@ final class PolyglotWorkerReplayTest extends TestCase
         );
 
         return $requests[0]['body'];
+    }
+
+    /**
+     * @param list<array{url: string, body: array<string, mixed>}> $requests
+     */
+    private function firstRequestIndex(array $requests, string $url): ?int
+    {
+        foreach ($requests as $index => $request) {
+            if ($request['url'] === $url) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 }

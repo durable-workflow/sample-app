@@ -34,6 +34,9 @@ The PHP-authored scenario is the wire-level cross-language test:
 - `python-activity-worker` is a Python container that registers
   `polyglot.php-to-python.reverse` and `polyglot.php-to-python.tally`
   on the same task queue.
+- `php-query-worker` is a PHP query-only worker on the same queue. It
+  answers server-routed `state` queries for the PHP signal/query workflow
+  while the workflow worker is parked in a pull-style signal wait.
 - Each run schedules a real activity dispatch — workflow code is in
   PHP, activity code is in Python — so the Avro envelope crosses the
   language boundary on the wire, not just inside one process.
@@ -140,7 +143,7 @@ while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve
 cd polyglot
 docker compose up -d --build --wait \
   server python-activity-worker php-same-workflow-worker php-same-activity-worker \
-  php-workflow-worker php-activity-worker python-workflow-worker waterline
+  php-workflow-worker php-query-worker php-activity-worker python-workflow-worker waterline
 docker compose run --rm --build smoke
 docker compose down -v
 ```

@@ -48,10 +48,10 @@ jobs:
         working-directory: polyglot
         run: |
           docker compose up -d --build --wait \
-            server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-activity-worker python-workflow-worker
+            server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-query-worker php-activity-worker python-workflow-worker
           docker compose up -d --build --wait waterline
 
-      - name: Wait for PHP worker to register on the polyglot queue
+      - name: Wait for PHP workflow/query workers to register on the polyglot queue
         working-directory: polyglot
         run: |
           # docker compose --wait considers a service healthy as soon as the
@@ -59,14 +59,24 @@ jobs:
           # then needs another moment to call registerWorker on the server.
           # Poll the log for the registration line so this step does not race.
           for attempt in $(seq 1 60); do
+            workflow_registered=0
+            query_registered=0
+
             if docker compose logs php-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
-              echo "PHP worker registered (after ${attempt}s)"
+              workflow_registered=1
+            fi
+            if docker compose logs php-query-worker 2>/dev/null | grep -qF "polyglot php query worker registered"; then
+              query_registered=1
+            fi
+
+            if [ "$workflow_registered" -eq 1 ] && [ "$query_registered" -eq 1 ]; then
+              echo "PHP workflow/query workers registered (after ${attempt}s)"
               exit 0
             fi
             sleep 1
           done
-          echo "::error::PHP worker did not log polyglot registration within 60s"
-          docker compose logs --tail=200 php-workflow-worker
+          echo "::error::PHP workflow/query workers did not log polyglot registration within 60s"
+          docker compose logs --tail=200 php-workflow-worker php-query-worker
           exit 1
 
       - name: Wait for PHP same-language workers to register

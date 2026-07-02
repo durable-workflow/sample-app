@@ -297,6 +297,7 @@ async def wait_for_worker(
     runtime: str,
     workflow_type: str | None = None,
     activity_type: str | None = None,
+    worker_id: str | None = None,
     timeout_seconds: float = 90.0,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
@@ -312,6 +313,8 @@ async def wait_for_worker(
                 continue
 
             for worker in getattr(roster, "workers", []) or []:
+                if worker_id is not None and getattr(worker, "worker_id", None) != worker_id:
+                    continue
                 if getattr(worker, "runtime", None) != runtime:
                     continue
                 if runtime == "php":
@@ -335,8 +338,9 @@ async def wait_for_worker(
             await asyncio.sleep(1)
 
     detail = f": {last_error}" if last_error is not None else ""
+    identity = f" worker_id={worker_id!r}" if worker_id is not None else ""
     raise RuntimeError(
-        f"no {runtime} worker registered on task queue {task_queue!r} "
+        f"no {runtime}{identity} worker registered on task queue {task_queue!r} "
         f"within {timeout_seconds:.0f}s{detail}"
     )
 
@@ -726,7 +730,18 @@ async def run_typed_errors() -> dict[str, Any]:
 
 async def run_signal_query() -> dict[str, Any]:
     await wait_for_worker(task_queue=PY_QUEUE, runtime="python", workflow_type="polyglot.python.signal-query")
-    await wait_for_worker(task_queue=PHP2PY_QUEUE, runtime="php", workflow_type="polyglot.php.signal-query")
+    await wait_for_worker(
+        task_queue=PHP2PY_QUEUE,
+        runtime="php",
+        workflow_type="polyglot.php.signal-query",
+        worker_id="php-workflow-worker",
+    )
+    await wait_for_worker(
+        task_queue=PHP2PY_QUEUE,
+        runtime="php",
+        workflow_type="polyglot.php.signal-query",
+        worker_id="php-query-worker",
+    )
 
     cases = [
         ("python_signal_query", "polyglot.python.signal-query", PY_QUEUE, "python"),
@@ -748,9 +763,29 @@ async def run_signal_query() -> dict[str, Any]:
             lambda value: isinstance(value, dict) and value.get("stage") == "waiting",
         )
         durable_wait = wait_for_signal_wait_open(wid, SIGNAL_NAME)
+        before_repeat = retry_query_until(
+            wid,
+            "state",
+            lambda value: (
+                isinstance(value, dict)
+                and value.get("stage") == "waiting"
+                and value.get("signal_count") == 0
+                and value.get("signals") == []
+            ),
+        )
         signal_payload = {"source": "dw CLI", "target_runtime": runtime, "note": "signal/query parity"}
         sent = cli_signal(wid, SIGNAL_NAME, [signal_payload])
         after_signal_query = retry_query_until(
+            wid,
+            "state",
+            lambda value: (
+                isinstance(value, dict)
+                and value.get("stage") == "signaled"
+                and value.get("signal_count") == 1
+                and value.get("signals") == [signal_payload]
+            ),
+        )
+        after_signal_repeat = retry_query_until(
             wid,
             "state",
             lambda value: (
@@ -785,7 +820,9 @@ async def run_signal_query() -> dict[str, Any]:
             },
             "signal_response": sent,
             "completion_signal_response": completion_signal,
+            "query_before_signal_repeat": before_repeat,
             "result": result,
+            "query_after_signal_repeat": after_signal_repeat,
         })
 
     return {

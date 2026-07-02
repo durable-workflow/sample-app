@@ -102,6 +102,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH', $readme);
         $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=1', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json', $readme);
         $this->assertStringContainsString('API documentation check', $readme);
@@ -123,7 +124,9 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH=%s', $script);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY', $smokeScript);
         $this->assertStringNotContainsString('has_conformance_key', $smokeScript);
-        $this->assertStringNotContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE', $smokeScript);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE', $smokeScript);
+        $this->assertStringContainsString('compose-smoke: all deterministic sample workflows passed', $smokeScript);
+        $this->assertStringContainsString('compose_diagnostics()', $smokeScript);
         $this->assertStringContainsString('scripts/compose-conformance.sh', $smokeScript);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY: 1', $smokeWorkflow);
         $this->assertStringContainsString('git rev-parse HEAD', $script);

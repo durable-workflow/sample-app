@@ -83,6 +83,7 @@ final class PolyglotComposeContractTest extends TestCase
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'php-query-worker',
             'php-activity-worker',
             'waterline',
         ] as $serviceName) {
@@ -254,6 +255,7 @@ SH,
 
         foreach ([
             'php-workflow-worker',
+            'php-query-worker',
             'php-activity-worker',
             'php-same-workflow-worker',
             'php-same-activity-worker',
@@ -313,6 +315,7 @@ SH,
 
         $this->assertStringContainsString('docker compose up -d --build --wait', $bringUpRun);
         $this->assertStringContainsString('docker compose up -d --build --wait waterline', $bringUpRun);
+        $this->assertStringContainsString('php-query-worker', $bringUpRun);
         $this->assertNotFalse($waitLineIndex);
         $this->assertArrayHasKey($waitLineIndex + 1, $bringUpLines);
         $this->assertStringNotContainsString('waterline', $bringUpLines[$waitLineIndex + 1]);
@@ -486,6 +489,7 @@ SH,
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'php-query-worker',
             'php-activity-worker',
             'waterline',
         ] as $serviceName) {

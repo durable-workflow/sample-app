@@ -47,9 +47,11 @@ use Workflow\V2\Support\WorkerProtocolVersion;
 class PolyglotWorker extends Command
 {
     private const QUERY_TASK_PROBE_TIMEOUT_SECONDS = 0;
+    private const QUERY_AWARE_WORKFLOW_POLL_TIMEOUT_SECONDS = 1;
+    private const READY_QUERY_DRAIN_ATTEMPTS = 10;
 
     protected $signature = 'app:polyglot-worker
-        {--mode=workflow : Worker mode: workflow or activity}
+        {--mode=workflow : Worker mode: workflow, activity, or query}
         {--server-url= : Standalone Durable Workflow server URL (defaults to DURABLE_WORKFLOW_SERVER_URL)}
         {--token= : Worker bearer token (defaults to DURABLE_WORKFLOW_AUTH_TOKEN)}
         {--namespace=default : Server namespace}
@@ -79,6 +81,11 @@ class PolyglotWorker extends Command
         'polyglot.python-to-php.typed-error',
     ];
 
+    /** @var list<string> */
+    private const QUERY_WORKFLOW_TYPES = [
+        'polyglot.php.signal-query',
+    ];
+
     public function handle(HttpFactory $http): int
     {
         $mode = (string) $this->option('mode');
@@ -91,8 +98,8 @@ class PolyglotWorker extends Command
         $idleIterations = max(0, (int) $this->option('idle-iterations'));
         $pollTimeout = max(1, (int) $this->option('poll-timeout'));
 
-        if (! in_array($mode, ['workflow', 'activity'], true)) {
-            $this->error('Unsupported --mode value. Expected workflow or activity.');
+        if (! in_array($mode, ['workflow', 'activity', 'query'], true)) {
+            $this->error('Unsupported --mode value. Expected workflow, activity, or query.');
 
             return self::FAILURE;
         }
@@ -107,6 +114,10 @@ class PolyglotWorker extends Command
 
         if ($mode === 'activity') {
             return $this->runActivityWorker($client, $workerId, $taskQueue, $idleIterations, $pollTimeout);
+        }
+
+        if ($mode === 'query') {
+            return $this->runQueryWorker($client, $workerId, $taskQueue, $idleIterations, $pollTimeout);
         }
 
         return $this->runWorkflowWorker($client, $workerId, $taskQueue, $idleIterations, $pollTimeout);
@@ -153,6 +164,9 @@ class PolyglotWorker extends Command
         ));
 
         $consecutiveIdle = 0;
+        // Query-capable workers must not sit in a long workflow poll while a
+        // CLI query request is waiting for a query task to be claimed.
+        $workflowPollTimeout = min($pollTimeout, self::QUERY_AWARE_WORKFLOW_POLL_TIMEOUT_SECONDS);
 
         while (true) {
             $queryTask = $client->pollQueryTask(
@@ -164,28 +178,7 @@ class PolyglotWorker extends Command
             if ($queryTask !== null) {
                 $consecutiveIdle = 0;
 
-                try {
-                    $this->processQueryTask($client, $workerId, $queryTask);
-                } catch (Throwable $exception) {
-                    $this->error('polyglot php worker query processing failed: '.$exception->getMessage());
-
-                    $queryTaskId = (string) ($queryTask['query_task_id'] ?? '');
-                    $attempt = (int) ($queryTask['query_task_attempt'] ?? 1);
-
-                    if ($queryTaskId !== '') {
-                        try {
-                            $client->failQueryTask(
-                                $queryTaskId,
-                                $workerId,
-                                $attempt,
-                                $exception->getMessage(),
-                                failureType: $exception::class,
-                            );
-                        } catch (Throwable $reportError) {
-                            $this->error('failed to report query failure: '.$reportError->getMessage());
-                        }
-                    }
-                }
+                $this->processClaimedQueryTask($client, $workerId, $queryTask);
 
                 $client->heartbeatWorker($workerId);
 
@@ -194,7 +187,7 @@ class PolyglotWorker extends Command
 
             $client->heartbeatWorker($workerId);
 
-            $task = $client->pollWorkflowTask($workerId, $taskQueue, $pollTimeout);
+            $task = $client->pollWorkflowTask($workerId, $taskQueue, $workflowPollTimeout);
 
             if ($task === null) {
                 $consecutiveIdle++;
@@ -230,7 +223,60 @@ class PolyglotWorker extends Command
                         $this->error('failed to report task failure: '.$reportError->getMessage());
                     }
                 }
+
+                continue;
             }
+
+            try {
+                $this->drainReadyQueryTasks($client, $workerId, $taskQueue, self::READY_QUERY_DRAIN_ATTEMPTS);
+            } catch (Throwable $exception) {
+                $this->error('polyglot php worker query drain failed: '.$exception->getMessage());
+            }
+        }
+    }
+
+    private function runQueryWorker(
+        ServerClient $client,
+        string $workerId,
+        string $taskQueue,
+        int $idleIterations,
+        int $pollTimeout,
+    ): int {
+        $client->registerWorker(
+            workerId: $workerId,
+            taskQueue: $taskQueue,
+            supportedWorkflowTypes: self::QUERY_WORKFLOW_TYPES,
+            capabilities: [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
+            sdkVersion: $this->phpSdkVersion(),
+        );
+
+        $this->info(sprintf(
+            'polyglot php query worker registered: id=%s queue=%s types=[%s]',
+            $workerId,
+            $taskQueue,
+            implode(',', self::QUERY_WORKFLOW_TYPES),
+        ));
+
+        $consecutiveIdle = 0;
+
+        while (true) {
+            $client->heartbeatWorker($workerId);
+
+            $queryTask = $client->pollQueryTask($workerId, $taskQueue, $pollTimeout);
+
+            if ($queryTask === null) {
+                $consecutiveIdle++;
+                if ($idleIterations > 0 && $consecutiveIdle >= $idleIterations) {
+                    $this->line(sprintf('polyglot php query worker exiting after %d idle polls', $consecutiveIdle));
+
+                    return self::SUCCESS;
+                }
+
+                continue;
+            }
+
+            $consecutiveIdle = 0;
+            $this->processClaimedQueryTask($client, $workerId, $queryTask);
         }
     }
 
@@ -527,6 +573,58 @@ class PolyglotWorker extends Command
         ]);
 
         $this->line(sprintf('polyglot php worker answered query %s for workflow %s', $queryName, $workflowId));
+    }
+
+    /**
+     * @param array<string, mixed> $queryTask
+     */
+    private function processClaimedQueryTask(ServerClient $client, string $workerId, array $queryTask): void
+    {
+        try {
+            $this->processQueryTask($client, $workerId, $queryTask);
+        } catch (Throwable $exception) {
+            $this->error('polyglot php worker query processing failed: '.$exception->getMessage());
+
+            $queryTaskId = (string) ($queryTask['query_task_id'] ?? '');
+            $attempt = (int) ($queryTask['query_task_attempt'] ?? 1);
+
+            if ($queryTaskId === '') {
+                return;
+            }
+
+            try {
+                $client->failQueryTask(
+                    $queryTaskId,
+                    $workerId,
+                    $attempt,
+                    $exception->getMessage(),
+                    failureType: $exception::class,
+                );
+            } catch (Throwable $reportError) {
+                $this->error('failed to report query failure: '.$reportError->getMessage());
+            }
+        }
+    }
+
+    private function drainReadyQueryTasks(
+        ServerClient $client,
+        string $workerId,
+        string $taskQueue,
+        int $attempts,
+    ): void {
+        for ($attempt = 0; $attempt < max(1, $attempts); $attempt++) {
+            $queryTask = $client->pollQueryTask(
+                $workerId,
+                $taskQueue,
+                self::QUERY_TASK_PROBE_TIMEOUT_SECONDS,
+            );
+
+            if ($queryTask === null) {
+                continue;
+            }
+
+            $this->processClaimedQueryTask($client, $workerId, $queryTask);
+        }
     }
 
     /**
