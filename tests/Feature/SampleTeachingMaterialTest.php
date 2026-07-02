@@ -143,7 +143,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_CATALOG_URL', $artifactResolver);
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
-        $this->assertStringContainsString('pinned_cli_version="0.1.84"', $artifactResolver);
+        $this->assertStringContainsString('pinned_cli_version="0.1.85"', $artifactResolver);
         $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_python_sdk_version="0\.4\.\d+"/', $artifactResolver);
         $this->assertStringNotContainsString('latest_pypi_version durable-workflow', $artifactResolver);
