@@ -102,7 +102,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH', $readme);
         $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH', $readme);
         $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=1', $readme);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0', $readme);
+        $this->assertStringContainsString('does not accidentally record deterministic smoke as', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned', $readme);
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json', $readme);
         $this->assertStringContainsString('API documentation check', $readme);

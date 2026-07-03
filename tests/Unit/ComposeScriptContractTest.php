@@ -19,9 +19,9 @@ final class ComposeScriptContractTest extends TestCase
         $this->assertStringContainsString('compose-smoke: all deterministic sample workflows passed', $script);
         $this->assertStringContainsString('restart_worker_after_schema_refresh()', $script);
         $this->assertStringContainsString('docker compose up -d --no-deps --force-recreate --wait worker', $script);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-0', $script);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1', $script);
         $this->assertStringContainsString(
-            'if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-0}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then',
+            'if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then',
             $script,
         );
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800', $script);

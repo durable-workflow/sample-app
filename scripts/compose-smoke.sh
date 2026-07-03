@@ -131,7 +131,7 @@ run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
 run_sample "microservice workflow" "app:microservice" "workflow_activity_other"
 run_sample "webhook workflow" "app:webhook" "Hello world"
 
-if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-0}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
+if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
   printf '\n==> full sample-app conformance surface\n'
   set +e
   timeout "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800}s" scripts/compose-conformance.sh

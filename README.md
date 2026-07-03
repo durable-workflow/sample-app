@@ -180,13 +180,16 @@ activities running in the worker container can reach the app. Set
 `SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.
 The wrapper runs strict by default; set `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1`
 for local exploratory runs that should return zero while naming skipped surfaces.
-`scripts/compose-smoke.sh` is the bounded deterministic preflight: it runs the
-deterministic samples and exits after printing the blocked step, container
-status, and recent app/worker logs on failure. Set `SAMPLE_APP_SMOKE_ONLY=1`
-when a caller wants to make that intent explicit. To chain the broader public
-sample-app surface after the deterministic preflight, set
-`SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=1`; otherwise run
-`scripts/compose-conformance.sh --strict` directly.
+`scripts/compose-smoke.sh` starts with the bounded deterministic preflight: it
+runs the deterministic samples and exits after printing the blocked step,
+container status, and recent app/worker logs on failure. By default, a passing
+preflight continues into the broader public sample-app conformance surface so a
+release/conformance caller does not accidentally record deterministic smoke as
+full coverage. Set `SAMPLE_APP_SMOKE_ONLY=1` when a caller intentionally wants
+only the deterministic path. Set `SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0` to
+disable the chained full surface for exploratory local runs, or run
+`scripts/compose-conformance.sh --strict` directly when the deterministic
+preflight is not needed.
 
 Tear the stack down with `docker compose down -v --remove-orphans` when
 finished. The deterministic Docker path is exercised on every push through the
