@@ -262,7 +262,15 @@ final class ServerClient
 
     private function requestTimeoutForPoll(int $pollTimeoutSeconds): int
     {
-        return $pollTimeoutSeconds === 0 ? 1 : $pollTimeoutSeconds + 5;
+        if ($pollTimeoutSeconds === 0) {
+            return 1;
+        }
+
+        // Keep the client-side timeout comfortably above the server-held
+        // long-poll window. Under loaded conformance runs, request handling can
+        // overrun the nominal poll timeout; if the HTTP client gives up first,
+        // the server can still lease a task to a worker that never receives it.
+        return $pollTimeoutSeconds + 15;
     }
 
     /**

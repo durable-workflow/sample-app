@@ -72,10 +72,10 @@ class PolyglotServerClientTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertSame(1, $method->invoke($client, 0));
-        $this->assertSame(6, $method->invoke($client, 1));
-        $this->assertSame(10, $method->invoke($client, 5));
-        $this->assertSame(35, $method->invoke($client, 30));
-        $this->assertSame(65, $method->invoke($client, 60));
+        $this->assertSame(16, $method->invoke($client, 1));
+        $this->assertSame(20, $method->invoke($client, 5));
+        $this->assertSame(45, $method->invoke($client, 30));
+        $this->assertSame(75, $method->invoke($client, 60));
     }
 
     public function test_poll_workflow_task_treats_http_timeout_as_empty_poll(): void
