@@ -34,11 +34,10 @@ class PolyglotServerClientTest extends TestCase
         $task = $client->pollWorkflowTask('php-worker', 'polyglot-php-to-python', 120);
 
         $this->assertSame('task-1', $task['task_id'] ?? null);
-        $this->assertSame([
-            'worker_id' => 'php-worker',
-            'task_queue' => 'polyglot-php-to-python',
-            'timeout_seconds' => 60,
-        ], $requestBody);
+        $this->assertSame('php-worker', $requestBody['worker_id'] ?? null);
+        $this->assertSame('polyglot-php-to-python', $requestBody['task_queue'] ?? null);
+        $this->assertMatchesRegularExpression('/^polyglot-poll-[0-9a-f]{32}$/', $requestBody['poll_request_id'] ?? '');
+        $this->assertSame(60, $requestBody['timeout_seconds'] ?? null);
     }
 
     public function test_poll_query_task_can_send_immediate_protocol_probe(): void
@@ -58,11 +57,35 @@ class PolyglotServerClientTest extends TestCase
 
         $this->assertNull($client->pollQueryTask('php-worker', 'polyglot-php-to-python', 0));
         $this->assertSame('http://server:8080/api/worker/query-tasks/poll', $requestPath);
-        $this->assertSame([
-            'worker_id' => 'php-worker',
-            'task_queue' => 'polyglot-php-to-python',
-            'timeout_seconds' => 0,
-        ], $requestBody);
+        $this->assertSame('php-worker', $requestBody['worker_id'] ?? null);
+        $this->assertSame('polyglot-php-to-python', $requestBody['task_queue'] ?? null);
+        $this->assertMatchesRegularExpression('/^polyglot-poll-[0-9a-f]{32}$/', $requestBody['poll_request_id'] ?? '');
+        $this->assertSame(0, $requestBody['timeout_seconds'] ?? null);
+    }
+
+    public function test_query_poll_reuses_poll_request_id_after_http_timeout(): void
+    {
+        $http = new HttpFactory();
+        $attempt = 0;
+        $requestBodies = [];
+
+        $http->fake(function (Request $request) use ($http, &$attempt, &$requestBodies) {
+            $attempt++;
+            $requestBodies[] = $request->data();
+
+            if ($attempt === 1) {
+                throw new ConnectionException('cURL error 28: Operation timed out');
+            }
+
+            return $http->response(['task' => null]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+
+        $this->assertNull($client->pollQueryTask('php-query-worker', 'polyglot-php-to-python', 5));
+        $this->assertNull($client->pollQueryTask('php-query-worker', 'polyglot-php-to-python', 5));
+        $this->assertCount(2, $requestBodies);
+        $this->assertSame($requestBodies[0]['poll_request_id'] ?? null, $requestBodies[1]['poll_request_id'] ?? null);
     }
 
     public function test_poll_request_timeout_tracks_the_requested_poll_window(): void
@@ -127,11 +150,10 @@ class PolyglotServerClientTest extends TestCase
 
         $this->assertSame('http://server:8080/api/worker/activity-tasks/poll', $requestPath);
         $this->assertSame('activity-task-1', $task['task_id'] ?? null);
-        $this->assertSame([
-            'worker_id' => 'php-activity-worker',
-            'task_queue' => 'polyglot-python-to-php',
-            'timeout_seconds' => 60,
-        ], $requestBody);
+        $this->assertSame('php-activity-worker', $requestBody['worker_id'] ?? null);
+        $this->assertSame('polyglot-python-to-php', $requestBody['task_queue'] ?? null);
+        $this->assertMatchesRegularExpression('/^polyglot-poll-[0-9a-f]{32}$/', $requestBody['poll_request_id'] ?? '');
+        $this->assertSame(60, $requestBody['timeout_seconds'] ?? null);
     }
 
     public function test_complete_activity_task_sends_avro_result_envelope(): void
@@ -193,5 +215,27 @@ class PolyglotServerClientTest extends TestCase
                 'type' => RuntimeException::class,
             ],
         ], $requestBody);
+    }
+
+    public function test_complete_query_task_requires_completed_worker_outcome(): void
+    {
+        $http = new HttpFactory();
+
+        $http->fake(fn (Request $request) => $http->response([
+            'outcome' => 'rejected',
+            'reason' => 'query_task_timed_out',
+        ]));
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('rejected complete query task');
+
+        $client->completeQueryTask(
+            'query-task-1',
+            'php-query-worker',
+            1,
+            ['stage' => 'waiting'],
+        );
     }
 }

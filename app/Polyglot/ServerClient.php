@@ -30,6 +30,13 @@ final class ServerClient
 
     private readonly string $protocolVersion;
 
+    private readonly int $processStartedAt;
+
+    /**
+     * @var array<string, string>
+     */
+    private array $pollRequestIds = [];
+
     public function __construct(
         private readonly HttpFactory $http,
         private readonly string $baseUrl,
@@ -38,6 +45,7 @@ final class ServerClient
         ?string $protocolVersion = null,
     ) {
         $this->protocolVersion = $protocolVersion ?? WorkerProtocolVersion::VERSION;
+        $this->processStartedAt = time();
     }
 
     /**
@@ -63,6 +71,7 @@ final class ServerClient
             'supported_workflow_types' => $supportedWorkflowTypes,
             'supported_activity_types' => $supportedActivityTypes,
             'capabilities' => $capabilities,
+            'process_metrics' => $this->processMetrics(),
         ]);
     }
 
@@ -74,6 +83,7 @@ final class ServerClient
         try {
             return $this->workerPost('/api/worker/heartbeat', [
                 'worker_id' => $workerId,
+                'process_metrics' => $this->processMetrics(),
             ], requestTimeoutSeconds: self::HEARTBEAT_TIMEOUT_SECONDS);
         } catch (ConnectionException $exception) {
             if ($this->isHttpTimeout($exception)) {
@@ -199,12 +209,14 @@ final class ServerClient
         int $queryTaskAttempt,
         mixed $result,
     ): void {
-        $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/complete", [
+        $response = $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/complete", [
             'lease_owner' => $leaseOwner,
             'query_task_attempt' => $queryTaskAttempt,
             'result' => $result,
             'result_envelope' => Avro::envelope($result),
         ]);
+
+        $this->ensureWorkerOutcome($response, 'completed', 'complete query task', $queryTaskId);
     }
 
     public function failQueryTask(
@@ -224,11 +236,13 @@ final class ServerClient
             $failure['type'] = $failureType;
         }
 
-        $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/fail", [
+        $response = $this->workerPost("/api/worker/query-tasks/{$queryTaskId}/fail", [
             'lease_owner' => $leaseOwner,
             'query_task_attempt' => $queryTaskAttempt,
             'failure' => $failure,
         ]);
+
+        $this->ensureWorkerOutcome($response, 'failed', 'fail query task', $queryTaskId);
     }
 
     /**
@@ -237,10 +251,16 @@ final class ServerClient
     private function pollTask(string $path, string $workerId, string $taskQueue, int $timeoutSeconds): ?array
     {
         $pollTimeoutSeconds = WorkerProtocolVersion::clampLongPollTimeout($timeoutSeconds);
+        $pollRequestKey = $this->pollRequestKey($path, $workerId, $taskQueue);
+        $pollRequestId = $this->pollRequestIds[$pollRequestKey]
+            ?? 'polyglot-poll-'.bin2hex(random_bytes(16));
+        $this->pollRequestIds[$pollRequestKey] = $pollRequestId;
+
         try {
             $response = $this->workerPost($path, [
                 'worker_id' => $workerId,
                 'task_queue' => $taskQueue,
+                'poll_request_id' => $pollRequestId,
                 'timeout_seconds' => $pollTimeoutSeconds,
             ], requestTimeoutSeconds: $this->requestTimeoutForPoll($pollTimeoutSeconds));
         } catch (ConnectionException $exception) {
@@ -248,8 +268,12 @@ final class ServerClient
                 return null;
             }
 
+            unset($this->pollRequestIds[$pollRequestKey]);
+
             throw $exception;
         }
+
+        unset($this->pollRequestIds[$pollRequestKey]);
 
         if ($response === null) {
             return null;
@@ -271,6 +295,44 @@ final class ServerClient
         // overrun the nominal poll timeout; if the HTTP client gives up first,
         // the server can still lease a task to a worker that never receives it.
         return $pollTimeoutSeconds + 15;
+    }
+
+    /**
+     * @return array<string, int|string>
+     */
+    private function processMetrics(): array
+    {
+        return [
+            'process_id' => getmypid() ?: 0,
+            'host' => gethostname() ?: 'unknown',
+            'process_started_at' => (string) $this->processStartedAt,
+        ];
+    }
+
+    private function pollRequestKey(string $path, string $workerId, string $taskQueue): string
+    {
+        return implode('|', [$path, $workerId, $taskQueue]);
+    }
+
+    /**
+     * @param array<string, mixed>|null $response
+     */
+    private function ensureWorkerOutcome(
+        ?array $response,
+        string $expectedOutcome,
+        string $operation,
+        string $taskId,
+    ): void {
+        if (($response['outcome'] ?? null) === $expectedOutcome) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Durable Workflow server rejected %s for %s: %s',
+            $operation,
+            $taskId,
+            json_encode($response, JSON_UNESCAPED_SLASHES) ?: 'empty response',
+        ));
     }
 
     /**

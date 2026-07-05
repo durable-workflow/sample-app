@@ -87,6 +87,9 @@ final class PolyglotWorkerReplayTest extends TestCase
             $requests[0]['url'],
         );
         $this->assertSame('php-query-worker', $requests[0]['body']['worker_id'] ?? null);
+        $this->assertSame(getmypid(), $requests[0]['body']['process_metrics']['process_id'] ?? null);
+        $this->assertIsString($requests[0]['body']['process_metrics']['host'] ?? null);
+        $this->assertIsString($requests[0]['body']['process_metrics']['process_started_at'] ?? null);
     }
 
     public function test_workflow_worker_polls_query_tasks_before_heartbeat_after_registration(): void
@@ -128,11 +131,16 @@ final class PolyglotWorkerReplayTest extends TestCase
             [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
             $requests[0]['body']['capabilities'] ?? null,
         );
+        $this->assertSame(getmypid(), $requests[0]['body']['process_metrics']['process_id'] ?? null);
         $this->assertSame(
             'http://server:8080/api/worker/query-tasks/poll',
             $requests[1]['url'] ?? null,
         );
         $this->assertSame(0, $requests[1]['body']['timeout_seconds'] ?? null);
+        $this->assertMatchesRegularExpression(
+            '/^polyglot-poll-[0-9a-f]{32}$/',
+            $requests[1]['body']['poll_request_id'] ?? '',
+        );
         $this->assertSame(
             'http://server:8080/api/worker/heartbeat',
             $requests[2]['url'] ?? null,
@@ -178,6 +186,10 @@ final class PolyglotWorkerReplayTest extends TestCase
         $this->assertNotNull($workflowPollIndex);
         $this->assertLessThan($workflowPollIndex, $queryPollIndex);
         $this->assertSame(0, $requests[$queryPollIndex]['body']['timeout_seconds'] ?? null);
+        $this->assertMatchesRegularExpression(
+            '/^polyglot-poll-[0-9a-f]{32}$/',
+            $requests[$queryPollIndex]['body']['poll_request_id'] ?? '',
+        );
         $this->assertSame(1, $requests[$workflowPollIndex]['body']['timeout_seconds'] ?? null);
     }
 
@@ -224,6 +236,11 @@ final class PolyglotWorkerReplayTest extends TestCase
                 }
 
                 return $http->response(['task' => null]);
+            }
+
+            if (str_contains($url, '/api/worker/query-tasks/')
+                && str_ends_with($url, '/complete')) {
+                return $http->response(['outcome' => 'completed']);
             }
 
             return $http->response(['task' => null, 'ok' => true]);
@@ -316,6 +333,11 @@ final class PolyglotWorkerReplayTest extends TestCase
                 }
 
                 return $http->response(['task' => null]);
+            }
+
+            if (str_contains($url, '/api/worker/query-tasks/')
+                && str_ends_with($url, '/complete')) {
+                return $http->response(['outcome' => 'completed']);
             }
 
             return $http->response(['ok' => true]);
@@ -957,7 +979,7 @@ final class PolyglotWorkerReplayTest extends TestCase
                 'body' => $request->data(),
             ];
 
-            return $http->response(['ok' => true]);
+            return $http->response(['outcome' => 'completed']);
         });
 
         $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
