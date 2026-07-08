@@ -414,11 +414,11 @@ SH,
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-', $smokeShell);
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.250',
+            '2.0.0-alpha.251',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            'cdb59bc5e27401be6749c893b28636a24b1f6530',
+            '402e63077360d9de31c8e70faa82780137942902',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
@@ -632,7 +632,7 @@ SH,
         $this->assertSame('0.2.592', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.86', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.95', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.250', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.251', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.121', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
 
@@ -647,9 +647,9 @@ SH,
         $this->assertSame('0.1.86', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.86', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.95', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.250', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.251', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/workflow:2.0.0-alpha.250',
+            'durable-workflow/workflow:2.0.0-alpha.251',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame('2.0.0-alpha.121', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
