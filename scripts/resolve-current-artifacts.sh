@@ -4,7 +4,7 @@ set -euo pipefail
 pinned_server_image="durableworkflow/server:0.2.592"
 pinned_cli_version="0.1.86"
 pinned_python_sdk_version="0.4.95"
-pinned_workflow_version="2.0.0-alpha.256"
+pinned_workflow_version="2.0.0-alpha.257"
 pinned_waterline_version="2.0.0-alpha.122"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
