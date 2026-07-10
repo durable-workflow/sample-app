@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.592"
+pinned_server_image="durableworkflow/server:0.2.627"
 pinned_cli_version="0.1.86"
-pinned_python_sdk_version="0.4.95"
-pinned_workflow_version="2.0.0-alpha.259"
-pinned_waterline_version="2.0.0-alpha.128"
+pinned_python_sdk_version="0.4.98"
+pinned_workflow_version="2.0.0-alpha.260"
+pinned_waterline_version="2.0.0-alpha.129"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
 
@@ -97,27 +97,28 @@ process.stdin.on("end", () => {
     throw new Error(`${label} must expose artifact_versions or artifacts`);
   }
 
-  const requirements = {
+  const officialRequirements = {
     server: /^0\.2\.\d+$/,
     cli: /^0\.1\.\d+$/,
     "sdk-python": /^0\.4\.\d+$/,
+    "sdk-rust": /^0\.1\.\d+$/,
     workflow: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
     waterline: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
   };
-  const keys = Object.keys(requirements);
-  const unknown = Object.keys(artifacts).filter(key => !requirements[key]).sort();
+  const emittedArtifacts = ["server", "cli", "sdk-python", "workflow", "waterline"];
+  const unknown = Object.keys(artifacts).filter(key => !officialRequirements[key]).sort();
   if (unknown.length > 0) {
     throw new Error(`${label} contains unknown artifact keys: ${unknown.join(", ")}`);
   }
 
-  for (const key of keys) {
+  for (const [key, requirement] of Object.entries(officialRequirements)) {
     const version = artifacts[key];
-    if (typeof version !== "string" || version.trim() !== version || !requirements[key].test(version)) {
+    if (typeof version !== "string" || version.trim() !== version || !requirement.test(version)) {
       throw new Error(`${label} artifact ${key} has unsupported version ${JSON.stringify(version)}`);
     }
   }
 
-  process.stdout.write(keys.map(key => `${key}=${artifacts[key]}`).join("\n") + "\n");
+  process.stdout.write(emittedArtifacts.map(key => `${key}=${artifacts[key]}`).join("\n") + "\n");
 });
 ' "$label"
 }
