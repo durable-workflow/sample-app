@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace App\Polyglot;
 
+use Apache\Avro\Datum\AvroIOBinaryDecoder;
+use Apache\Avro\Datum\AvroIOBinaryEncoder;
+use Apache\Avro\Datum\AvroIODatumReader;
+use Apache\Avro\Datum\AvroIODatumWriter;
+use Apache\Avro\IO\AvroStringIO;
+use Apache\Avro\Schema\AvroSchema;
 use RuntimeException;
+use Workflow\Serializers\Avro as WorkflowAvro;
 
 /**
- * Minimal Avro generic-wrapper codec for the polyglot worker.
+ * Avro generic-wrapper adapter for the polyglot worker.
  *
  * The Durable Workflow server uses an Avro generic-wrapper format on the
  * wire when `payload_codec` is `"avro"`. The wire layout is:
@@ -15,14 +22,17 @@ use RuntimeException;
  *     base64( 0x00 || avro_binary( record{ json: string, version: int } ) )
  *
  * The wrapper carries a single JSON document; class identity is not on
- * the wire. This encoder/decoder implements just that shape — it does not
- * cover typed-schema payloads (`0x01`) or any other Avro schema.
+ * the wire. Apache Avro encodes and decodes the record datum while this
+ * adapter preserves the worker-facing helper API and `0x00` framing. It
+ * does not cover typed-schema payloads (`0x01`) or any other Avro schema.
  */
 final class Avro
 {
     private const PREFIX_GENERIC_WRAPPER = "\x00";
 
     private const WRAPPER_VERSION = 1;
+
+    private static ?AvroSchema $wrapperSchema = null;
 
     /**
      * Encode a JSON-serializable value as a base64 Avro generic-wrapper blob.
@@ -35,11 +45,18 @@ final class Avro
             throw new RuntimeException('failed to JSON-encode value for Avro: '.json_last_error_msg());
         }
 
-        return base64_encode(
-            self::PREFIX_GENERIC_WRAPPER
-                .self::encodeAvroString($json)
-                .self::encodeAvroLong(self::WRAPPER_VERSION)
-        );
+        return self::withApacheAvro(static function () use ($json): string {
+            $io = new AvroStringIO();
+            $io->write(self::PREFIX_GENERIC_WRAPPER);
+
+            $writer = new AvroIODatumWriter(self::wrapperSchema());
+            $writer->write([
+                'json' => $json,
+                'version' => self::WRAPPER_VERSION,
+            ], new AvroIOBinaryEncoder($io));
+
+            return base64_encode($io->string());
+        });
     }
 
     /**
@@ -62,9 +79,28 @@ final class Avro
             ));
         }
 
-        $offset = 1;
-        $json = self::readAvroString($raw, $offset);
-        $version = self::readAvroLong($raw, $offset);
+        $record = self::withApacheAvro(static function () use ($raw): array {
+            $reader = new AvroIODatumReader(self::wrapperSchema());
+            $decoder = new AvroIOBinaryDecoder(new AvroStringIO(substr($raw, 1)));
+            $record = $reader->read($decoder);
+
+            if (! is_array($record)) {
+                throw new RuntimeException('Avro generic wrapper did not decode to a record.');
+            }
+
+            return $record;
+        });
+
+        $json = $record['json'] ?? null;
+        $version = $record['version'] ?? null;
+
+        if (! is_string($json)) {
+            throw new RuntimeException('Avro generic wrapper is missing its `json` field.');
+        }
+
+        if (! is_int($version)) {
+            throw new RuntimeException('Avro generic wrapper is missing its integer `version` field.');
+        }
 
         if ($version !== self::WRAPPER_VERSION) {
             throw new RuntimeException(sprintf(
@@ -123,74 +159,27 @@ final class Avro
         return self::decode($blob);
     }
 
-    private static function encodeAvroString(string $value): string
+    private static function wrapperSchema(): AvroSchema
     {
-        return self::encodeAvroLong(strlen($value)).$value;
+        if (self::$wrapperSchema === null) {
+            self::$wrapperSchema = WorkflowAvro::parseSchema(WorkflowAvro::wrapperSchemaJson());
+        }
+
+        return self::$wrapperSchema;
     }
 
     /**
-     * Avro `long` (and `int`) values use zigzag-encoded varints.
-     *
-     * Zigzag(n) is `(n << 1) ^ (n >> 63)` and is always non-negative, so
-     * the varint emit loop only needs an arithmetic right shift.
+     * Apache Avro 1.12 still emits PHP 8.4 deprecations from internal casts.
+     * Keep those dependency warnings out of the long-running worker process.
      */
-    private static function encodeAvroLong(int $value): string
+    private static function withApacheAvro(callable $operation): mixed
     {
-        $zz = ($value << 1) ^ ($value >> 63);
+        set_error_handler(static fn (): bool => true, E_DEPRECATED);
 
-        $out = '';
-        while (($zz & ~0x7F) !== 0) {
-            $out .= chr(($zz & 0x7F) | 0x80);
-            $zz >>= 7;
+        try {
+            return $operation();
+        } finally {
+            restore_error_handler();
         }
-
-        return $out.chr($zz & 0x7F);
-    }
-
-    private static function readAvroString(string $raw, int &$offset): string
-    {
-        $length = self::readAvroLong($raw, $offset);
-
-        if ($length < 0) {
-            throw new RuntimeException('Avro string length is negative after zigzag decode.');
-        }
-
-        if ($offset + $length > strlen($raw)) {
-            throw new RuntimeException('Avro string runs past payload end.');
-        }
-
-        $value = substr($raw, $offset, $length);
-        $offset += $length;
-
-        return $value;
-    }
-
-    private static function readAvroLong(string $raw, int &$offset): int
-    {
-        $shift = 0;
-        $result = 0;
-
-        while (true) {
-            if ($offset >= strlen($raw)) {
-                throw new RuntimeException('Avro varint runs past payload end.');
-            }
-
-            $byte = ord($raw[$offset]);
-            $offset++;
-            $result |= ($byte & 0x7F) << $shift;
-
-            if (($byte & 0x80) === 0) {
-                break;
-            }
-
-            $shift += 7;
-
-            if ($shift >= 64) {
-                throw new RuntimeException('Avro varint exceeds 64-bit length.');
-            }
-        }
-
-        // Zigzag decode: (n >> 1) ^ -(n & 1)
-        return ($result >> 1) ^ -($result & 1);
     }
 }
