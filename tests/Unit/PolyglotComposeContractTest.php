@@ -423,11 +423,11 @@ SH,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.125',
+            '2.0.0-alpha.128',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            'f616b98cbfef69d73f5c9c16cf8fe1a2f67e0e18',
+            'e150d7c90961563b3ddbe4d99cb7c47d1fb28d23',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
 
@@ -633,7 +633,7 @@ SH,
         $this->assertSame('0.1.86', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.95', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.259', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.125', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.128', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
 
     public function test_polyglot_artifact_resolver_keeps_pinned_tuple_explicit(): void
@@ -652,9 +652,9 @@ SH,
             'durable-workflow/workflow:2.0.0-alpha.259',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
-        $this->assertSame('2.0.0-alpha.125', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.128', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/waterline:2.0.0-alpha.125',
+            'durable-workflow/waterline:2.0.0-alpha.128',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
     }
