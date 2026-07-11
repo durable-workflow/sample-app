@@ -8,7 +8,7 @@ on:
 
 jobs:
   smoke:
-    name: polyglot smoke (Python/PHP)
+    name: polyglot smoke (PHP/Python/Rust)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -48,7 +48,7 @@ jobs:
         working-directory: polyglot
         run: |
           docker compose up -d --build --wait \
-            server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-query-worker php-activity-worker python-workflow-worker
+            server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-to-rust-workflow-worker php-query-worker php-activity-worker python-workflow-worker rust-workflow-worker rust-activity-worker
           docker compose up -d --build --wait waterline
 
       - name: Wait for PHP workflow/query workers to register on the polyglot queue
@@ -117,6 +117,34 @@ jobs:
           done
           echo "::error::PHP activity worker did not log polyglot registration within 60s"
           docker compose logs --tail=200 php-activity-worker
+          exit 1
+
+      - name: Wait for Rust and PHP-to-Rust workers to register
+        working-directory: polyglot
+        run: |
+          for attempt in $(seq 1 90); do
+            rust_workflow_registered=0
+            rust_activity_registered=0
+            php_to_rust_registered=0
+
+            if docker compose logs rust-workflow-worker 2>/dev/null | grep -qF "polyglot rust workflow worker starting"; then
+              rust_workflow_registered=1
+            fi
+            if docker compose logs rust-activity-worker 2>/dev/null | grep -qF "polyglot rust activity worker starting"; then
+              rust_activity_registered=1
+            fi
+            if docker compose logs php-to-rust-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
+              php_to_rust_registered=1
+            fi
+
+            if [ "$rust_workflow_registered" -eq 1 ] && [ "$rust_activity_registered" -eq 1 ] && [ "$php_to_rust_registered" -eq 1 ]; then
+              echo "Rust workflow/activity workers and PHP-to-Rust workflow worker registered (after ${attempt}s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Rust polyglot workers did not all register within 90s"
+          docker compose logs --tail=200 rust-workflow-worker rust-activity-worker php-to-rust-workflow-worker
           exit 1
 
       - name: Run polyglot smoke

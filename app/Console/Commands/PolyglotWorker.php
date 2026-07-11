@@ -13,6 +13,8 @@ use App\Workflows\Polyglot\PhpSameLanguageWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypedErrorWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypeRoundtripWorkflow;
+use App\Workflows\Polyglot\PhpToRustTypeRoundtripWorkflow;
+use App\Workflows\Polyglot\PhpToRustWorkflow;
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -68,6 +70,8 @@ class PolyglotWorker extends Command
         'polyglot.php-to-python.PhpToPythonWorkflow' => PhpToPythonWorkflow::class,
         'polyglot.php-to-python.type-roundtrip' => PhpToPythonTypeRoundtripWorkflow::class,
         'polyglot.php-to-python.typed-error' => PhpToPythonTypedErrorWorkflow::class,
+        'polyglot.php-to-rust.greeter' => PhpToRustWorkflow::class,
+        'polyglot.php-to-rust.type-roundtrip' => PhpToRustTypeRoundtripWorkflow::class,
         'polyglot.php.signal-query' => PhpSignalQueryWorkflow::class,
     ];
 
@@ -78,6 +82,7 @@ class PolyglotWorker extends Command
         'polyglot.python-to-php.marker',
         'polyglot.python-to-php.describe',
         'polyglot.python-to-php.echo',
+        'polyglot.rust-to-php.echo',
         'polyglot.python-to-php.typed-error',
     ];
 
@@ -522,6 +527,7 @@ class PolyglotWorker extends Command
             'polyglot.python-to-php.marker' => $this->phpRuntimeMarker('polyglot.python-to-php.marker', ...$arguments),
             'polyglot.python-to-php.describe' => $this->describePhpRuntime('polyglot.python-to-php.describe', ...$arguments),
             'polyglot.python-to-php.echo' => $this->echoPhpValue(...$arguments),
+            'polyglot.rust-to-php.echo' => $this->echoPhpValue(...$arguments),
             default => throw new RuntimeException(sprintf(
                 'no PHP-authored activity registered for type %s',
                 $activityType,
@@ -672,6 +678,13 @@ class PolyglotWorker extends Command
         return [
             'runtime' => 'php',
             'value' => $value,
+            'codec' => [
+                'codec' => 'avro',
+                'implementation' => 'Apache Avro',
+                'package' => 'apache/avro',
+                'version' => InstalledVersions::getPrettyVersion('apache/avro')
+                    ?? InstalledVersions::getVersion('apache/avro'),
+            ],
         ];
     }
 

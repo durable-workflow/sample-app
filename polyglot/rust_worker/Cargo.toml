@@ -1,0 +1,10 @@
+[package]
+name = "durable-workflow-polyglot-rust-worker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+apache-avro = "=0.21.0"
+durable-workflow = ">=0.1,<0.2"
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "signal"] }

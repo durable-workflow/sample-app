@@ -73,6 +73,10 @@ PHP_QUEUE = os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")
 PHP2PY_QUEUE = os.environ.get("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python")
 PY2PHP_QUEUE = os.environ.get("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php")
 SIGNAL_NAME = "polyglot-signal"
+RUST_QUEUE = os.environ.get("POLYGLOT_RUST_TASK_QUEUE", "polyglot-rust")
+TO_RUST_QUEUE = os.environ.get("POLYGLOT_TO_RUST_TASK_QUEUE", "polyglot-to-rust")
+RUST_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_RUST_AVRO_VERSION")
+PYTHON_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_PYTHON_AVRO_VERSION")
 
 
 class DwCommandError(RuntimeError):
@@ -132,6 +136,13 @@ def installed_python_sdk_version() -> str | None:
         return None
 
 
+def installed_distribution_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 def php_artifact_probe_url() -> str:
     return ARTIFACT_PROBE_URL
 
@@ -160,6 +171,34 @@ def php_artifact_versions(probe: dict[str, Any] | None) -> dict[str, str | None]
         versions[key] = semantic_version_from_text(raw_version if isinstance(raw_version, str) else None)
 
     return versions
+
+
+def official_avro_packages(probe: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    artifacts = probe.get("artifacts") if isinstance(probe, dict) else None
+    php_avro = artifacts.get("apache-avro-php") if isinstance(artifacts, dict) else None
+    php_version = php_avro.get("version") if isinstance(php_avro, dict) else None
+    return {
+        "php": {
+            "package": "apache/avro",
+            "channel": "Packagist",
+            "version": semantic_version_from_text(php_version if isinstance(php_version, str) else None),
+            "official": True,
+        },
+        "python": {
+            "package": "avro",
+            "channel": "PyPI",
+            "version": installed_distribution_version("avro"),
+            "required_version": PYTHON_AVRO_VERSION,
+            "official": True,
+        },
+        "rust": {
+            "package": "apache-avro",
+            "channel": "crates.io",
+            "version": RUST_AVRO_VERSION,
+            "required_version": RUST_AVRO_VERSION,
+            "official": True,
+        },
+    }
 
 
 def php_waterline_assets(probe: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -235,6 +274,7 @@ def artifact_metadata(
     versions: dict[str, str | None] | None = None,
     php_probe: dict[str, Any] | None = None,
     php_probe_error: str | None = None,
+    rust_exercised: bool = False,
 ) -> dict[str, Any]:
     versions = versions or resolved_artifact_versions()
     probe = {
@@ -270,8 +310,10 @@ def artifact_metadata(
             "artifact": "durable-workflow",
             "pin": f"cargo add durable-workflow@{versions.get('sdk-rust') or 'unknown'} --exact",
             "version": versions.get("sdk-rust"),
-            "version_source": "artifact_tuple_metadata",
-            "exercised": False,
+            "version_source": "rust_worker_registration" if rust_exercised else "artifact_tuple_metadata",
+            "install_channel": "crates.io",
+            "exercised": rust_exercised,
+            "execution_evidence": "runtime_matrix" if rust_exercised else None,
         },
         "sdk_php_workflow": {
             "artifact": "durable-workflow/workflow",
@@ -334,6 +376,16 @@ async def wait_for_worker(
                         last_error = RuntimeError(
                             "PHP worker advertised workflow SDK "
                             f"{sdk_version!r}; expected durable-workflow/workflow:{expected}"
+                        )
+                        continue
+                if runtime == "rust":
+                    sdk_version = getattr(worker, "sdk_version", None)
+                    actual = semantic_version_from_text(sdk_version if isinstance(sdk_version, str) else None)
+                    expected = REQUIRED_ARTIFACT_VERSIONS["sdk-rust"]
+                    if actual != expected:
+                        last_error = RuntimeError(
+                            "Rust worker advertised SDK "
+                            f"{sdk_version!r}; expected durable-workflow crates.io release {expected}"
                         )
                         continue
                 workflows = getattr(worker, "supported_workflow_types", None) or []
@@ -581,6 +633,66 @@ async def four_corner_cli_scenarios() -> list[dict[str, Any]]:
                 {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.python-to-php.marker"},
             ],
         },
+        {
+            "scenario": "rust_same_language",
+            "workflow_language": "rust",
+            "activity_language": "rust",
+            "workflow_type": "polyglot.rust.greeter",
+            "task_queue": RUST_QUEUE,
+            "input": [{"name": "Ferris", "locale": "en"}],
+            "workers": [
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust.greeter"},
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.rust.echo"},
+            ],
+        },
+        {
+            "scenario": "rust_to_python",
+            "workflow_language": "rust",
+            "activity_language": "python",
+            "workflow_type": "polyglot.rust-to-python.greeter",
+            "task_queue": RUST_QUEUE,
+            "input": [{"name": "Guido", "locale": "en"}],
+            "workers": [
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-python.greeter"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.rust-to-python.echo"},
+            ],
+        },
+        {
+            "scenario": "rust_to_php",
+            "workflow_language": "rust",
+            "activity_language": "php",
+            "workflow_type": "polyglot.rust-to-php.greeter",
+            "task_queue": RUST_QUEUE,
+            "input": [{"name": "Rasmus", "locale": "en", "source": "rust"}],
+            "workers": [
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-php.greeter"},
+                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.rust-to-php.echo"},
+            ],
+        },
+        {
+            "scenario": "python_to_rust",
+            "workflow_language": "python",
+            "activity_language": "rust",
+            "workflow_type": "polyglot.python-to-rust.greeter",
+            "task_queue": PY_QUEUE,
+            "input": [{"name": "Graydon", "locale": "en"}],
+            "workers": [
+                {"task_queue": PY_QUEUE, "runtime": "python", "workflow_type": "polyglot.python-to-rust.greeter"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.python-to-rust.echo"},
+            ],
+        },
+        {
+            "scenario": "php_to_rust",
+            "workflow_language": "php",
+            "activity_language": "rust",
+            "workflow_type": "polyglot.php-to-rust.greeter",
+            "task_queue": TO_RUST_QUEUE,
+            "input": [{"name": "Ferris", "locale": "en", "source": "php"}],
+            "workers": [
+                {"task_queue": TO_RUST_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-rust.greeter", "worker_id": "php-to-rust-workflow-worker"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.php-to-rust.echo"},
+            ],
+        },
     ]
 
     results: list[dict[str, Any]] = []
@@ -622,6 +734,8 @@ def assert_runtime(result: dict[str, Any], workflow_language: str, activity_lang
         raise RuntimeError(f"{scenario}: activity runtime mismatch: {result}")
     if workflow_language == activity_language == "php" and result.get("activity_runtime") != "php":
         raise RuntimeError(f"{scenario}: PHP same-language activity runtime mismatch: {result}")
+    if workflow_language == activity_language == "rust" and result.get("activity_runtime") != "rust":
+        raise RuntimeError(f"{scenario}: Rust same-language activity runtime mismatch: {result}")
 
 
 def type_matrix_payload() -> dict[str, Any]:
@@ -643,21 +757,83 @@ def type_matrix_payload() -> dict[str, Any]:
 
 async def run_type_matrix() -> dict[str, Any]:
     payload = type_matrix_payload()
-    await wait_for_worker(task_queue=PHP2PY_QUEUE, runtime="php", workflow_type="polyglot.php-to-python.type-roundtrip")
-    await wait_for_worker(task_queue=PHP2PY_QUEUE, runtime="python", activity_type="polyglot.php-to-python.echo")
-    await wait_for_worker(task_queue=PY_QUEUE, runtime="python", workflow_type="polyglot.python-to-php.type-roundtrip")
-    await wait_for_worker(task_queue=PY2PHP_QUEUE, runtime="php", activity_type="polyglot.python-to-php.echo")
-
     directions = [
-        ("php_to_python", "polyglot.php-to-python.type-roundtrip", PHP2PY_QUEUE),
-        ("python_to_php", "polyglot.python-to-php.type-roundtrip", PY_QUEUE),
+        {
+            "direction": "php_to_python",
+            "workflow_type": "polyglot.php-to-python.type-roundtrip",
+            "task_queue": PHP2PY_QUEUE,
+            "workflow_runtime": "php",
+            "activity_runtime": "python",
+            "workers": [
+                {"task_queue": PHP2PY_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-python.type-roundtrip"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.php-to-python.echo"},
+            ],
+        },
+        {
+            "direction": "python_to_php",
+            "workflow_type": "polyglot.python-to-php.type-roundtrip",
+            "task_queue": PY_QUEUE,
+            "workflow_runtime": "python",
+            "activity_runtime": "php",
+            "workers": [
+                {"task_queue": PY_QUEUE, "runtime": "python", "workflow_type": "polyglot.python-to-php.type-roundtrip"},
+                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.python-to-php.echo"},
+            ],
+        },
+        {
+            "direction": "rust_to_python",
+            "workflow_type": "polyglot.rust-to-python.type-roundtrip",
+            "task_queue": RUST_QUEUE,
+            "workflow_runtime": "rust",
+            "activity_runtime": "python",
+            "workers": [
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-python.type-roundtrip"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.rust-to-python.echo"},
+            ],
+        },
+        {
+            "direction": "python_to_rust",
+            "workflow_type": "polyglot.python-to-rust.type-roundtrip",
+            "task_queue": PY_QUEUE,
+            "workflow_runtime": "python",
+            "activity_runtime": "rust",
+            "workers": [
+                {"task_queue": PY_QUEUE, "runtime": "python", "workflow_type": "polyglot.python-to-rust.type-roundtrip"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.python-to-rust.echo"},
+            ],
+        },
+        {
+            "direction": "rust_to_php",
+            "workflow_type": "polyglot.rust-to-php.type-roundtrip",
+            "task_queue": RUST_QUEUE,
+            "workflow_runtime": "rust",
+            "activity_runtime": "php",
+            "workers": [
+                {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-php.type-roundtrip"},
+                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.rust-to-php.echo"},
+            ],
+        },
+        {
+            "direction": "php_to_rust",
+            "workflow_type": "polyglot.php-to-rust.type-roundtrip",
+            "task_queue": TO_RUST_QUEUE,
+            "workflow_runtime": "php",
+            "activity_runtime": "rust",
+            "workers": [
+                {"task_queue": TO_RUST_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-rust.type-roundtrip", "worker_id": "php-to-rust-workflow-worker"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.php-to-rust.echo"},
+            ],
+        },
     ]
     runs = []
-    for direction, workflow_type, task_queue in directions:
+    for spec in directions:
+        for worker in spec["workers"]:
+            await wait_for_worker(**worker)
+        direction = spec["direction"]
         wid = workflow_id(f"polyglot-types-{direction}")
         describe = cli_start(
-            workflow_type=workflow_type,
-            task_queue=task_queue,
+            workflow_type=spec["workflow_type"],
+            task_queue=spec["task_queue"],
             workflow_id_value=wid,
             input_args=[payload],
             wait=True,
@@ -666,18 +842,41 @@ async def run_type_matrix() -> dict[str, Any]:
         echo = assert_dict(result.get("echo"), f"type_matrix.{direction}.echo")
         if echo.get("value") != payload:
             raise RuntimeError(f"type_matrix.{direction}: value changed: {echo}")
+        assert_runtime(
+            result,
+            spec["workflow_runtime"],
+            spec["activity_runtime"],
+            f"type_matrix.{direction}",
+        )
+        codec = assert_dict(echo.get("codec"), f"type_matrix.{direction}.codec")
+        expected_package = official_avro_package_name(spec["activity_runtime"])
+        if codec.get("codec") != "avro" or codec.get("package") != expected_package:
+            raise RuntimeError(f"type_matrix.{direction}: official Avro observation missing: {codec}")
         runs.append({
             "direction": direction,
             "workflow_id": wid,
             "run_id": describe.get("run_id"),
-            "workflow_type": workflow_type,
+            "workflow_type": spec["workflow_type"],
+            "workflow_runtime": spec["workflow_runtime"],
+            "activity_runtime": spec["activity_runtime"],
+            "codec_observation": codec,
+            "typed_observations": [
+                {
+                    "case": name,
+                    "input_type": json_type_name(value),
+                    "output_type": json_type_name(echo["value"][name]),
+                    "equal": echo["value"][name] == value,
+                }
+                for name, value in payload.items()
+            ],
             "status": "passed",
         })
 
     return {
         "surface": "type_matrix",
         "status": "passed",
-        "codec_scope": "JSON-native values carried in the published Avro generic wrapper",
+        "codec_scope": "JSON-native values carried in the published Avro generic wrapper by official Apache Avro packages",
+        "direction_count": len(runs),
         "cases": sorted(payload.keys()),
         "binary": {
             "status": "covered_as_base64_string",
@@ -685,6 +884,32 @@ async def run_type_matrix() -> dict[str, Any]:
         },
         "runs": runs,
     }
+
+
+def official_avro_package_name(runtime: str) -> str:
+    return {
+        "php": "apache/avro",
+        "python": "avro",
+        "rust": "apache-avro",
+    }[runtime]
+
+
+def json_type_name(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
 
 
 async def run_typed_errors() -> dict[str, Any]:
@@ -751,10 +976,17 @@ async def run_signal_query() -> dict[str, Any]:
         workflow_type="polyglot.php.signal-query",
         worker_id="php-query-worker",
     )
+    await wait_for_worker(
+        task_queue=RUST_QUEUE,
+        runtime="rust",
+        workflow_type="polyglot.rust.signal-query",
+        worker_id="rust-workflow-worker",
+    )
 
     cases = [
         ("python_signal_query", "polyglot.python.signal-query", PY_QUEUE, "python"),
         ("php_signal_query", "polyglot.php.signal-query", PHP2PY_QUEUE, "php"),
+        ("rust_signal_query", "polyglot.rust.signal-query", RUST_QUEUE, "rust"),
     ]
     runs = []
     for name, workflow_type, task_queue, runtime in cases:
@@ -915,17 +1147,33 @@ def compare_waterline(cli_runs: list[dict[str, Any]]) -> dict[str, Any]:
         summary = summarize_waterline_detail(detail)
         if not summary["event_types"]:
             raise RuntimeError(f"Waterline event typing summary empty for {run['scenario']}: {detail}")
+        expected_rust_activity_worker = {
+            "rust_same_language": "rust-workflow-worker",
+            "python_to_rust": "rust-activity-worker",
+            "php_to_rust": "rust-activity-worker",
+        }.get(run["scenario"])
+        if (
+            expected_rust_activity_worker is not None
+            and expected_rust_activity_worker not in summary["activity_worker_ids"]
+        ):
+            raise RuntimeError(
+                f"Waterline did not attribute {run['scenario']} activity to "
+                f"{expected_rust_activity_worker}: {summary}"
+            )
         details[run["scenario"]] = summary
         shapes[run["scenario"]] = sorted(detail.keys())
 
     health = fetch_waterline("/api/v2/health")
     worker_summary = summarize_waterline_workers(health)
-    if "php" not in worker_summary["runtimes"] or "python" not in worker_summary["runtimes"]:
-        raise RuntimeError(f"Waterline health did not attribute both runtimes: {worker_summary}")
+    required_runtimes = {"php", "python", "rust"}
+    if not required_runtimes.issubset(set(worker_summary["runtimes"])):
+        raise RuntimeError(f"Waterline health did not attribute PHP, Python, and Rust runtimes: {worker_summary}")
+    required_rust_workers = {"rust-workflow-worker", "rust-activity-worker"}
+    if not required_rust_workers.issubset(set(worker_summary["worker_ids"])):
+        raise RuntimeError(f"Waterline health did not attribute both Rust workers: {worker_summary}")
 
-    mixed_shapes = [shapes["php_to_python"], shapes["python_to_php"]]
-    same_shapes = [shapes["php_same_language"], shapes["python_same_language"]]
-    if any(shape != same_shapes[0] for shape in mixed_shapes + same_shapes[1:]):
+    reference_shape = shapes["php_same_language"]
+    if any(shape != reference_shape for shape in shapes.values()):
         raise RuntimeError(f"Waterline run-detail shape drifted across polyglot runs: {shapes}")
 
     return {
@@ -953,12 +1201,22 @@ def summarize_waterline_detail(detail: dict[str, Any]) -> dict[str, Any]:
     raw_activities = detail.get("activities")
     activities = raw_activities if isinstance(raw_activities, list) else []
     activity_queues: set[str] = set()
+    activity_worker_ids: set[str] = set()
     for row in activities:
         if not isinstance(row, dict):
             continue
         queue = row.get("queue")
         if isinstance(queue, str):
             activity_queues.add(queue)
+        lease_owner = row.get("lease_owner")
+        if isinstance(lease_owner, str):
+            activity_worker_ids.add(lease_owner)
+        for attempt in row.get("attempts") or []:
+            if not isinstance(attempt, dict):
+                continue
+            lease_owner = attempt.get("lease_owner")
+            if isinstance(lease_owner, str):
+                activity_worker_ids.add(lease_owner)
     return {
         "workflow_type": detail.get("workflow_type"),
         "payload_rendering": {
@@ -968,6 +1226,7 @@ def summarize_waterline_detail(detail: dict[str, Any]) -> dict[str, Any]:
         "event_types": sorted(event_types),
         "activity_count": len(activities),
         "activity_queues": sorted(activity_queues),
+        "activity_worker_ids": sorted(activity_worker_ids),
     }
 
 
@@ -976,6 +1235,7 @@ def summarize_waterline_workers(health: dict[str, Any]) -> dict[str, Any]:
     runtimes: set[str] = set()
     queues: set[str] = set()
     worker_ids: set[str] = set()
+    attributed: list[dict[str, Any]] = []
     for item in registrations:
         if not isinstance(item, dict):
             continue
@@ -988,20 +1248,37 @@ def summarize_waterline_workers(health: dict[str, Any]) -> dict[str, Any]:
             queues.add(queue)
         if isinstance(worker_id_value, str):
             worker_ids.add(worker_id_value)
+        attributed.append({
+            "worker_id": worker_id_value,
+            "runtime": runtime,
+            "sdk_version": item.get("sdk_version"),
+            "task_queue": queue,
+        })
     return {
         "runtimes": sorted(runtimes),
         "task_queues": sorted(queues),
         "worker_ids": sorted(worker_ids),
+        "registrations": sorted(attributed, key=lambda item: str(item.get("worker_id"))),
     }
 
 
 async def run_all() -> int:
     php_probe, php_probe_error = fetch_php_artifact_probe()
     artifact_versions = resolved_artifact_versions(php_probe)
+    avro_packages = official_avro_packages(php_probe)
+    missing_avro_packages = {
+        runtime: package
+        for runtime, package in avro_packages.items()
+        if package.get("version") is None
+        or (
+            package.get("required_version") is not None
+            and package.get("version") != package.get("required_version")
+        )
+    }
     stale_artifacts, missing_artifacts = artifact_version_findings(artifact_versions)
     stale_assets = waterline_asset_findings(php_probe)
 
-    if stale_artifacts or missing_artifacts or stale_assets:
+    if stale_artifacts or missing_artifacts or stale_assets or missing_avro_packages:
         surfaces = {
             "artifact_versions": {
                 "surface": "artifact_versions",
@@ -1012,11 +1289,13 @@ async def run_all() -> int:
                 "stale": stale_artifacts,
                 "missing": missing_artifacts,
                 "stale_assets": stale_assets,
+                "official_avro_packages": avro_packages,
+                "missing_avro_packages": missing_avro_packages,
             },
         }
         metadata = {
             "schema": "durable-workflow.sample-app.polyglot-conformance.run",
-            "version": 2,
+            "version": 3,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "artifactVersions": artifact_versions,
             "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
@@ -1026,6 +1305,7 @@ async def run_all() -> int:
                 "error": php_probe_error,
             },
             "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
+            "publishedDependencies": {"officialApacheAvro": avro_packages},
             "surfaces": surfaces,
             "summary": {
                 "status": "artifact_blocked",
@@ -1037,6 +1317,7 @@ async def run_all() -> int:
                 "missing_artifacts": missing_artifacts,
                 "waterline_assets_current": False,
                 "stale_assets": stale_assets,
+                "missing_avro_packages": missing_avro_packages,
                 "artifact_probe_error": php_probe_error,
             },
         }
@@ -1053,11 +1334,33 @@ async def run_all() -> int:
     try:
         cli_runs = await four_corner_cli_scenarios()
         surfaces["cli_start_result"] = {"status": "passed", "runs": cli_runs}
-        surfaces["four_corners"] = {"status": "passed", "runs": [run["scenario"] for run in cli_runs]}
+        surfaces["four_corners"] = {"status": "passed", "runs": [run["scenario"] for run in cli_runs[:4]]}
+        surfaces["runtime_matrix"] = {
+            "status": "passed",
+            "languages": ["php", "python", "rust"],
+            "executed_runtimes": sorted({
+                runtime
+                for run in cli_runs
+                for runtime in (run["workflow_language"], run["activity_language"])
+            }),
+            "rust_execution": True,
+            "cells": [
+                {
+                    "scenario": run["scenario"],
+                    "workflow_runtime": run["workflow_language"],
+                    "activity_runtime": run["activity_language"],
+                    "workflow_id": run["workflow_id"],
+                    "run_id": run["run_id"],
+                    "status": run["status"],
+                }
+                for run in cli_runs
+            ],
+        }
     except Exception as exc:  # noqa: BLE001
         failed = True
         surfaces["cli_start_result"] = {"status": "failed", "error": str(exc)}
         surfaces["four_corners"] = {"status": "failed", "error": str(exc)}
+        surfaces["runtime_matrix"] = {"status": "failed", "error": str(exc), "rust_execution": False}
         print(json.dumps(surfaces["cli_start_result"], indent=2, sort_keys=True), flush=True)
 
     print("\n==> polyglot conformance: type round-trip matrix", flush=True)
@@ -1104,7 +1407,7 @@ async def run_all() -> int:
     summary_status = "failed" if failed else "passed"
     metadata = {
         "schema": "durable-workflow.sample-app.polyglot-conformance.run",
-        "version": 2,
+        "version": 3,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "artifactVersions": artifact_versions,
         "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
@@ -1113,7 +1416,13 @@ async def run_all() -> int:
             "payload": php_probe,
             "error": php_probe_error,
         },
-        "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
+        "artifacts": artifact_metadata(
+            artifact_versions,
+            php_probe,
+            php_probe_error,
+            rust_exercised=(surfaces.get("runtime_matrix", {}).get("status") == "passed"),
+        ),
+        "publishedDependencies": {"officialApacheAvro": avro_packages},
         "surfaces": surfaces,
         "summary": {
             "status": summary_status,
@@ -1124,6 +1433,7 @@ async def run_all() -> int:
             ],
             "artifact_versions_current": True,
             "waterline_assets_current": True,
+            "rust_executed": surfaces.get("runtime_matrix", {}).get("rust_execution") is True,
         },
     }
 

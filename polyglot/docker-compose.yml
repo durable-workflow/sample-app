@@ -30,6 +30,13 @@
 #       PHP runtime still passes the same standalone worker-plane routing
 #       path used by the cross-language examples.
 #
+#   - rust-workflow-worker + rust-activity-worker / Rust matrix
+#       The released crates.io SDK executes Rust-authored workflows and
+#       activities for Rust-to-Rust, Rust-to-PHP, Rust-to-Python,
+#       PHP-to-Rust, and Python-to-Rust cells. The Rust worker image is
+#       built only from published crates and verifies the official
+#       apache-avro crate before registering.
+#
 # The repository-root `docker-compose.yml` is intentionally left as the
 # single-language Laravel sample. Bring this stack up only when
 # exercising polyglot.
@@ -59,7 +66,9 @@ x-artifact-defaults:
   server-image: &durable-server-image "${DURABLE_SERVER_IMAGE:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   cli-version: &durable-cli-version "${DURABLE_WORKFLOW_CLI_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   python-sdk-version: &durable-python-sdk-version "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
+  python-avro-version: &durable-python-avro-version "${DURABLE_WORKFLOW_PYTHON_AVRO_VERSION:-1.12.1}"
   rust-sdk-version: &durable-rust-sdk-version "${DURABLE_WORKFLOW_RUST_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
+  rust-avro-version: &durable-rust-avro-version "${DURABLE_WORKFLOW_RUST_AVRO_VERSION:-0.21.0}"
   php-sdk-pin: &durable-php-sdk-pin "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
   php-sdk-version: &durable-php-sdk-version "${DURABLE_WORKFLOW_PHP_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   waterline-pin: &durable-waterline-pin "${DURABLE_WORKFLOW_WATERLINE_PIN:-}"
@@ -123,6 +132,7 @@ services:
       context: ./python_workflow
       args:
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -130,6 +140,7 @@ services:
       DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS: "5"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
     depends_on:
       server:
         condition: service_healthy
@@ -141,6 +152,7 @@ services:
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -208,6 +220,25 @@ services:
         condition: service_healthy
     command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-php-to-python", "--worker-id=php-workflow-worker", "--poll-timeout=5"]
 
+  php-to-rust-workflow-worker:
+    build:
+      context: ..
+      dockerfile: polyglot/php_worker/Dockerfile
+      args:
+        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
+        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
+        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
+        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-to-rust", "--worker-id=php-to-rust-workflow-worker", "--poll-timeout=5"]
+
   php-query-worker:
     build:
       context: ..
@@ -245,6 +276,44 @@ services:
       server:
         condition: service_healthy
     command: ["php", "artisan", "app:polyglot-worker", "--mode=activity", "--task-queue=polyglot-python-to-php", "--poll-timeout=5"]
+
+  rust-workflow-worker:
+    build:
+      context: ./rust_worker
+      args:
+        DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+        APACHE_AVRO_RUST_VERSION: *durable-rust-avro-version
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+      APACHE_AVRO_RUST_VERSION: *durable-rust-avro-version
+      POLYGLOT_RUST_MODE: workflow
+      POLYGLOT_RUST_TASK_QUEUE: polyglot-rust
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+      POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
+    depends_on:
+      server:
+        condition: service_healthy
+
+  rust-activity-worker:
+    build:
+      context: ./rust_worker
+      args:
+        DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+        APACHE_AVRO_RUST_VERSION: *durable-rust-avro-version
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+      APACHE_AVRO_RUST_VERSION: *durable-rust-avro-version
+      POLYGLOT_RUST_MODE: activity
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
+    depends_on:
+      server:
+        condition: service_healthy
 
   waterline:
     build:
@@ -298,6 +367,7 @@ services:
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -306,7 +376,9 @@ services:
       DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
       DURABLE_WORKFLOW_CLI_PIN: "${DURABLE_WORKFLOW_CLI_PIN:-}"
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+      DURABLE_WORKFLOW_PYTHON_AVRO_VERSION: *durable-python-avro-version
       DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+      DURABLE_WORKFLOW_RUST_AVRO_VERSION: *durable-rust-avro-version
       DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
       DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
       DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
@@ -317,6 +389,8 @@ services:
       POLYGLOT_PHP_TASK_QUEUE: polyglot-php
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
+      POLYGLOT_RUST_TASK_QUEUE: polyglot-rust
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
     depends_on:
       server:
         condition: service_healthy
@@ -328,11 +402,17 @@ services:
         condition: service_started
       php-workflow-worker:
         condition: service_started
+      php-to-rust-workflow-worker:
+        condition: service_started
       php-query-worker:
         condition: service_started
       php-activity-worker:
         condition: service_started
       python-workflow-worker:
+        condition: service_started
+      rust-workflow-worker:
+        condition: service_started
+      rust-activity-worker:
         condition: service_started
       waterline:
         condition: service_healthy

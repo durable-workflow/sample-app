@@ -30,6 +30,7 @@ from durable_workflow.errors import ActivityFailed
 
 TASK_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
 PHP_ACTIVITY_TASK_QUEUE = os.environ.get("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php")
+RUST_ACTIVITY_TASK_QUEUE = os.environ.get("POLYGLOT_TO_RUST_TASK_QUEUE", "polyglot-to-rust")
 POLL_TIMEOUT_SECONDS = float(os.environ.get("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "90"))
 POLYGLOT_SIGNAL_NAME = "polyglot-signal"
 POLYGLOT_SIGNAL_CONDITION_KEY = f"polyglot.signal.{POLYGLOT_SIGNAL_NAME}"
@@ -132,6 +133,38 @@ class PythonToPhpTypedErrorWorkflow:
             "activity_runtime": "php",
             "request": request,
             "failure": None,
+        }
+
+
+@workflow.defn(name="polyglot.python-to-rust.greeter")
+class PythonToRustGreeterWorkflow:
+    def run(self, ctx, request):  # type: ignore[no-untyped-def]
+        echo = yield ctx.schedule_activity(
+            "polyglot.python-to-rust.echo",
+            [request],
+            queue=RUST_ACTIVITY_TASK_QUEUE,
+        )
+        return {
+            "workflow_runtime": "python",
+            "activity_runtime": echo.get("runtime") if isinstance(echo, dict) else None,
+            "request": request,
+            "echo": echo,
+        }
+
+
+@workflow.defn(name="polyglot.python-to-rust.type-roundtrip")
+class PythonToRustTypeRoundtripWorkflow:
+    def run(self, ctx, payload):  # type: ignore[no-untyped-def]
+        echo = yield ctx.schedule_activity(
+            "polyglot.python-to-rust.echo",
+            [payload],
+            queue=RUST_ACTIVITY_TASK_QUEUE,
+        )
+        return {
+            "workflow_runtime": "python",
+            "activity_runtime": echo.get("runtime") if isinstance(echo, dict) else None,
+            "input": payload,
+            "echo": echo,
         }
 
 
@@ -254,6 +287,8 @@ async def main() -> int:
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,
                 PythonToPhpTypedErrorWorkflow,
+                PythonToRustGreeterWorkflow,
+                PythonToRustTypeRoundtripWorkflow,
                 PythonSignalQueryWorkflow,
             ],
             activities=[greet, summarise],
@@ -262,7 +297,7 @@ async def main() -> int:
             shutdown_timeout=10.0,
         )
         log.info(
-            "polyglot python workflow worker starting: id=%s queue=%s types=[polyglot.python.greeter,polyglot.python-to-php.greeter,polyglot.python-to-php.type-roundtrip,polyglot.python-to-php.typed-error,polyglot.python.signal-query]",
+            "polyglot python workflow worker starting: id=%s queue=%s types=[polyglot.python.greeter,polyglot.python-to-php.greeter,polyglot.python-to-php.type-roundtrip,polyglot.python-to-php.typed-error,polyglot.python-to-rust.greeter,polyglot.python-to-rust.type-roundtrip,polyglot.python.signal-query]",
             worker_id,
             TASK_QUEUE,
         )

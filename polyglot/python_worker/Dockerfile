@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 ARG DURABLE_WORKFLOW_CLI_VERSION
 ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION
+ARG APACHE_AVRO_PYTHON_VERSION=1.12.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,7 +23,9 @@ RUN set -eux; \
     && rm /tmp/dw-install.sh \
     && dw --version
 
-RUN pip install --no-cache-dir "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
+RUN pip install --no-cache-dir \
+    "avro==${APACHE_AVRO_PYTHON_VERSION}" \
+    "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
 
 COPY activities.py ./activities.py
 # Bake the polyglot smoke scripts into the image so the smoke service does

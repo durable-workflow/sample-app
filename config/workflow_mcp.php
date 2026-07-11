@@ -117,7 +117,7 @@ return [
         ],
         'polyglot_php_to_python' => [
             'class' => PhpToPythonWorkflow::class,
-            'description' => 'PHP-authored workflow that schedules Python activities; the polyglot compose smoke also exercises Python-authored workflows.',
+            'description' => 'Published-artifact polyglot smoke covering the complete PHP, Python, and Rust workflow/activity runtime matrix.',
             'pattern' => 'cross-language activity dispatch',
             'command' => 'while IFS= read -r assignment; do export "$assignment"; done '
                 .'< <(scripts/resolve-current-artifacts.sh); '

@@ -144,8 +144,10 @@ the live model-backed AI surface. The travel-agent success and failure-injection
 checks reuse one deterministic booking plan so the run proves signals, durable
 assistant messages, booking activities, and compensation without spending extra
 model calls on each failure variant.
-The Rust SDK version is recorded as release-cohort metadata; the sample-app and
-polyglot harnesses do not claim to exercise a Rust worker.
+The polyglot harness builds the exact released Rust SDK from crates.io and
+executes Rust-authored workflows and activities across the PHP, Python, and
+Rust runtime matrix. Its report distinguishes registered Rust execution from
+the release-cohort version pin.
 Without AI credentials, `--strict` keeps the run non-passing and names the live
 Prism surface as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key
 lives in a dotenv file outside the repository; the wrapper also checks local
@@ -215,7 +217,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `App\Workflows\Sandbox\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
-| Run the polyglot conformance smoke (Python same-language, PHP→Python, Python→PHP) | `App\Workflows\Polyglot\PhpToPythonWorkflow` plus Python-authored workflows in `polyglot/` | `while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
+| Run the polyglot conformance smoke (complete PHP/Python/Rust runtime matrix) | PHP-authored workflows plus the Python and Rust workers in `polyglot/` | `while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
 | Exercise machine-readable failure diagnosis and repair refusal | `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` | `/mcp/workflows` `start_workflow` with `workflow=diagnostic_failure` | `diagnostic_failure` |
 
 #### Migrating from Durable Workflow 1.x
@@ -328,8 +330,8 @@ See [docs/sandbox-orchestration.md](docs/sandbox-orchestration.md) for the full 
 The repository ships a runnable polyglot demonstration in
 [`polyglot/`](polyglot/). It brings up the standalone Durable Workflow
 server with real PHP workers (Laravel + Composer-installed
-`durable-workflow/workflow`) and Python workers side by side. Three
-scenarios run end to end:
+`durable-workflow/workflow`), Python workers, and crates.io-installed Rust
+workers side by side. Nine workflow/activity runtime cells run end to end:
 
 - a Python-authored workflow on its own Python image, and
 - a PHP-authored workflow (`App\Workflows\Polyglot\PhpToPythonWorkflow`)
@@ -337,8 +339,10 @@ scenarios run end to end:
   Python worker on a shared task queue, and
 - a Python-authored workflow that schedules `polyglot.python-to-php.*`
   activities handled by a distinct PHP activity worker.
+- Rust-authored workflows and activities run same-language, Rust-to-PHP,
+  Rust-to-Python, PHP-to-Rust, and Python-to-Rust cells.
 
-The two cross-language scenarios are the wire-level tests: the workflow
+The cross-language scenarios are wire-level tests: the workflow
 runtime and activity runtime register separately, and each scheduled
 activity crosses the language boundary on the wire — not just inside
 one process. The smoke runs in CI on every pull request via

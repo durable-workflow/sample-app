@@ -77,6 +77,10 @@ final class PolyglotComposeContractTest extends TestCase
         ] as $serviceName) {
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
             $this->assertSame($resolvedPythonVersion, $buildArgs['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+            $this->assertSame(
+                '${DURABLE_WORKFLOW_PYTHON_AVRO_VERSION:-1.12.1}',
+                $buildArgs['APACHE_AVRO_PYTHON_VERSION'] ?? null,
+            );
         }
 
         foreach (['python-activity-worker', 'smoke'] as $serviceName) {
@@ -88,6 +92,7 @@ final class PolyglotComposeContractTest extends TestCase
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
             'waterline',
@@ -95,6 +100,12 @@ final class PolyglotComposeContractTest extends TestCase
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
             $this->assertSame($resolvedWorkflowVersion, $buildArgs['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
             $this->assertSame($resolvedWaterlineVersion, $buildArgs['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        }
+
+        foreach (['rust-workflow-worker', 'rust-activity-worker'] as $serviceName) {
+            $buildArgs = $services[$serviceName]['build']['args'] ?? [];
+            $this->assertSame($resolvedRustVersion, $buildArgs['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
+            $this->assertSame('${DURABLE_WORKFLOW_RUST_AVRO_VERSION:-0.21.0}', $buildArgs['APACHE_AVRO_RUST_VERSION'] ?? null);
         }
 
         $smokeShell = (string) file_get_contents($this->repoPath('polyglot/python_worker/scripts/smoke.sh'));
@@ -265,6 +276,7 @@ SH,
 
         foreach ([
             'php-workflow-worker',
+            'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
             'php-same-workflow-worker',
@@ -361,6 +373,7 @@ SH,
 
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_CLI_VERSION\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION\n", $dockerfile);
+        $this->assertStringContainsString('ARG APACHE_AVRO_PYTHON_VERSION=1.12.1', $dockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_CLI_VERSION"', $dockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"', $dockerfile);
         $this->assertStringContainsString('https://durable-workflow.com/install.sh', $dockerfile);
@@ -370,6 +383,7 @@ SH,
             $dockerfile,
         );
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION\n", $pythonWorkflowDockerfile);
+        $this->assertStringContainsString('ARG APACHE_AVRO_PYTHON_VERSION=1.12.1', $pythonWorkflowDockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"', $pythonWorkflowDockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
@@ -540,6 +554,7 @@ SH,
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
             'waterline',
@@ -761,13 +776,21 @@ SH,
             'polyglot.php.signal-query',
             'polyglot.python-to-php.type-roundtrip',
             'polyglot.php-to-python.type-roundtrip',
+            'polyglot.rust.signal-query',
+            'polyglot.rust-to-python.type-roundtrip',
+            'polyglot.python-to-rust.type-roundtrip',
+            'polyglot.rust-to-php.type-roundtrip',
+            'polyglot.php-to-rust.type-roundtrip',
             'polyglot.python-to-php.typed-error',
             'polyglot.php-to-python.typed-error',
             'REQUIRED_ARTIFACT_VERSIONS',
             '"sdk-rust": required_env_version("DURABLE_WORKFLOW_RUST_SDK_VERSION")',
-            '"version_source": "artifact_tuple_metadata"',
-            '"exercised": False',
+            '"version_source": "rust_worker_registration"',
+            '"exercised": rust_exercised',
+            '"execution_evidence": "runtime_matrix" if rust_exercised else None',
             'cargo add durable-workflow@',
+            '"rust_execution": True',
+            '"publishedDependencies": {"officialApacheAvro": avro_packages}',
             '"artifactVersions": artifact_versions',
             '"requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS',
             '"artifactProbe":',
@@ -793,6 +816,7 @@ SH,
         $this->assertStringNotContainsString('"blocked_surfaces": blocked_surfaces', $smoke);
         $this->assertStringContainsString('こんにちは', $smoke);
         $this->assertStringContainsString('binary_base64', $smoke);
+        $this->assertStringNotContainsString('"exercised": False', $smoke);
 
         $pythonWorkflow = (string) file_get_contents($this->repoPath('polyglot/python_workflow/workflow.py'));
         $this->assertStringContainsString('POLYGLOT_SIGNAL_CONDITION_KEY = f"polyglot.signal.{POLYGLOT_SIGNAL_NAME}"', $pythonWorkflow);
@@ -821,6 +845,8 @@ SH,
         $this->assertStringContainsString('InstalledVersions::getPrettyVersion($package)', $routes);
         $this->assertStringContainsString("'durable-workflow/workflow'", $routes);
         $this->assertStringContainsString("'durable-workflow/waterline'", $routes);
+        $this->assertStringContainsString("'apache-avro-php'", $routes);
+        $this->assertStringContainsString("'apache/avro'", $routes);
         $this->assertStringContainsString("'assets' => [", $routes);
         $this->assertStringContainsString("'waterline' => [", $routes);
         $this->assertStringContainsString("public_path('vendor/waterline/mix-manifest.json')", $routes);
@@ -876,6 +902,30 @@ SH,
             '"status": "blocked"',
             $smoke,
         );
+    }
+
+    public function test_polyglot_rust_services_execute_the_published_crate(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $services = $compose['services'] ?? [];
+        $cargo = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.toml'));
+        $dockerfile = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Dockerfile'));
+        $worker = (string) file_get_contents($this->repoPath('polyglot/rust_worker/src/main.rs'));
+
+        $this->assertArrayHasKey('rust-workflow-worker', $services);
+        $this->assertArrayHasKey('rust-activity-worker', $services);
+        $this->assertSame('workflow', $services['rust-workflow-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
+        $this->assertSame('activity', $services['rust-activity-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
+        $this->assertStringContainsString('durable-workflow = ">=0.1,<0.2"', $cargo);
+        $this->assertStringContainsString('apache-avro = "=0.21.0"', $cargo);
+        $this->assertStringContainsString('cargo update -p durable-workflow --precise', $dockerfile);
+        $this->assertStringNotContainsString('path =', $cargo);
+        $this->assertStringContainsString('polyglot.rust.greeter', $worker);
+        $this->assertStringContainsString('polyglot.rust-to-python.greeter', $worker);
+        $this->assertStringContainsString('polyglot.rust-to-php.greeter', $worker);
+        $this->assertStringContainsString('polyglot.php-to-rust.echo', $worker);
+        $this->assertStringContainsString('polyglot.python-to-rust.echo', $worker);
+        $this->assertStringContainsString('verify_official_avro_runtime', $worker);
     }
 
     public function test_waterline_config_exposes_v2_engine_source_and_namespace(): void

@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION
+ARG APACHE_AVRO_PYTHON_VERSION=1.12.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -10,7 +11,9 @@ WORKDIR /app
 
 RUN set -eux; \
     test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"; \
-    pip install --no-cache-dir "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
+    pip install --no-cache-dir \
+        "avro==${APACHE_AVRO_PYTHON_VERSION}" \
+        "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
 
 COPY workflow.py ./workflow.py
 

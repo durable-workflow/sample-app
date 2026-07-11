@@ -61,6 +61,10 @@ Route::get('/polyglot/conformance/artifacts', function () {
                 'artifact' => 'durable-workflow/waterline',
                 'version' => $version('durable-workflow/waterline'),
             ],
+            'apache-avro-php' => [
+                'artifact' => 'apache/avro',
+                'version' => $version('apache/avro'),
+            ],
         ],
         'assets' => [
             'waterline' => [

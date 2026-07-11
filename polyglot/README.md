@@ -2,7 +2,7 @@
 
 This directory is the runnable polyglot demonstration that ships with the
 sample app. It proves the Durable Workflow control plane is language-neutral
-by running a conformance smoke around four runtime scenarios against one
+by running a conformance smoke around a complete three-language runtime matrix against one
 standalone server, with real workers in different languages registered on
 coordinated task queues. The smoke drives workflow start, signal, query, and
 result retrieval through the published `dw` CLI and checks the same run through
@@ -15,7 +15,7 @@ smoke — so the simple Laravel-only path stays simple.
 
 ## What it exercises
 
-Four scenarios run end to end:
+Nine workflow/activity runtime cells run end to end:
 
 | Scenario | Workflow language | Activity language | Source |
 | --- | --- | --- | --- |
@@ -23,6 +23,11 @@ Four scenarios run end to end:
 | PHP authoring | PHP (`durable-workflow/workflow`) | PHP | `app/Workflows/Polyglot/PhpSameLanguageWorkflow.php` + `app/Console/Commands/PolyglotWorker.php` |
 | Cross-language activity | PHP (`durable-workflow/workflow`) | Python | `app/Workflows/Polyglot/PhpToPythonWorkflow.php` + `python_worker/activities.py` |
 | Reverse cross-language activity | Python (`sdk-python`) | PHP (`durable-workflow/workflow`) | `python_workflow/workflow.py` + `app/Console/Commands/PolyglotWorker.php` |
+| Rust authoring | Rust (`sdk-rust`) | Rust | `rust_worker/src/main.rs` |
+| Rust to Python | Rust (`sdk-rust`) | Python | `rust_worker/src/main.rs` + `python_worker/activities.py` |
+| Rust to PHP | Rust (`sdk-rust`) | PHP (`durable-workflow/workflow`) | `rust_worker/src/main.rs` + `app/Console/Commands/PolyglotWorker.php` |
+| Python to Rust | Python (`sdk-python`) | Rust (`sdk-rust`) | `python_workflow/workflow.py` + `rust_worker/src/main.rs` |
+| PHP to Rust | PHP (`durable-workflow/workflow`) | Rust (`sdk-rust`) | `app/Workflows/Polyglot/PhpToRustWorkflow.php` + `rust_worker/src/main.rs` |
 
 The PHP-authored scenario is the wire-level cross-language test:
 
@@ -74,13 +79,13 @@ test:
 - The smoke asserts that the Python workflow result includes the PHP
   runtime marker returned by those activities.
 
-The smoke also exercises the conformance surfaces that sit around those four
-runtime scenarios:
+The smoke also exercises the conformance surfaces around the original cells
+and the five Rust cells:
 
 - workflow start and result retrieval through the published `dw` CLI;
-- signal and query handling through the published `dw` CLI for PHP-authored
-  and Python-authored workflows;
-- bidirectional type round-trips for strings with non-ASCII text, ints, floats,
+- signal and query handling through the published `dw` CLI for PHP-authored,
+  Python-authored, and Rust-authored workflows;
+- six-direction type round-trips for strings with non-ASCII text, ints, floats,
   booleans, nulls, mixed lists, nested maps, timestamps, and binary values
   represented by the published JSON-native codec as explicit base64 objects;
 - typed activity error round-trips from Python activity to PHP workflow and PHP
@@ -88,9 +93,23 @@ runtime scenarios:
 - Waterline event typing, payload rendering, and worker attribution for
   same-language and mixed-language runs.
 
+The Rust image resolves the exact current `durable-workflow` release from
+crates.io and contains no path or Git dependency. Its workflow worker executes
+Rust-authored same-language and outbound PHP/Python paths; its activity worker
+executes inbound PHP/Python paths. The harness verifies the advertised SDK
+version before accepting a cell, so a version pin without an executed Rust
+worker cannot pass.
+
+All six cross-language type directions use the platform Avro envelope. PHP
+uses `apache/avro` from Packagist, Python uses `avro` from PyPI, and Rust uses
+`apache-avro` from crates.io. Each echo activity reports its official package
+and version, and the machine-readable output records input/output JSON types
+and equality for every value in every direction.
+
 The smoke emits a run metadata JSON document after all required surfaces run.
 That document includes exact public artifact pins for the server image, CLI,
-Python SDK, PHP SDK, and Waterline, plus pass/fail status per surface.
+Python SDK, Rust SDK, PHP SDK, and Waterline, the Apache Avro dependency
+versions, plus pass/fail status per surface.
 
 The codec contract that determines which payload values cross the
 language boundary cleanly is documented in the workflow package:
@@ -114,6 +133,11 @@ polyglot/
 │       ├── python_workflow_smoke.py    Python-authoring smoke driver
 │       ├── php_to_python_smoke.py      PHP→Python smoke driver
 │       └── python_to_php_smoke.py      Python→PHP smoke driver
+├── rust_worker/
+│   ├── Cargo.toml                      crates.io-only worker dependencies
+│   ├── Cargo.lock                      reproducible dependency graph
+│   ├── Dockerfile                      exact released SDK build
+│   └── src/main.rs                     Rust workflows, activities, signal/query
 ├── php_worker/
 │   └── Dockerfile                      Real PHP image (Laravel + durable-workflow PHP SDK)
 └── README.md                           this file
@@ -143,7 +167,8 @@ while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve
 cd polyglot
 docker compose up -d --build --wait \
   server python-activity-worker php-same-workflow-worker php-same-activity-worker \
-  php-workflow-worker php-query-worker php-activity-worker python-workflow-worker waterline
+  php-workflow-worker php-to-rust-workflow-worker php-query-worker php-activity-worker \
+  python-workflow-worker rust-workflow-worker rust-activity-worker waterline
 docker compose run --rm --build smoke
 docker compose down -v
 ```
@@ -151,14 +176,14 @@ docker compose down -v
 The `smoke` service runs `/app/scripts/smoke.sh` (baked in from
 `python_worker/scripts/smoke.sh`), which:
 
-1. waits for the Python and PHP workers to register on their coordinated
+1. waits for the Python, PHP, and Rust workers to register on their coordinated
    task queues;
-2. uses `dw workflow:start --wait --json` to run the Python-authored,
-   PHP-authored, PHP-to-Python, and Python-to-PHP workflow scenarios;
+2. uses `dw workflow:start --wait --json` to run every cell in the PHP,
+   Python, and Rust workflow/activity matrix;
 3. uses `dw workflow:start`, `dw workflow:query`, `dw workflow:signal`, and
    `dw workflow:describe` to verify signal/query parity through the published
-   CLI for both Python-authored and PHP-authored workflows;
-4. runs the bidirectional type round-trip and typed-error matrices through the
+   CLI for Python-authored, PHP-authored, and Rust-authored workflows;
+4. runs the six-direction type round-trip and typed-error matrices through the
    same published CLI entrypoint;
 5. reads Waterline JSON endpoints for the mixed-language and same-language
    runs and compares event typing, payload rendering, and worker attribution;
@@ -177,6 +202,8 @@ Removing `php-activity-worker` fails the matching Python-to-PHP check
 with "no php worker registered on task queue".
 Removing `python-workflow-worker` fails the matching "no Python worker
 registered on task queue" check on the symmetric side.
+Removing either Rust worker fails the corresponding runtime-registration check;
+the report cannot mark the Rust SDK exercised from tuple metadata alone.
 
 ## CI
 

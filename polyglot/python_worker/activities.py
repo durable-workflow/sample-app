@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.metadata
 import logging
 import os
 import socket
@@ -52,6 +53,25 @@ def echo_value(value: dict[str, Any]) -> dict[str, Any]:
     return {
         "runtime": "python",
         "value": value,
+        "codec": _avro_observation(),
+    }
+
+
+@activity.defn(name="polyglot.rust-to-python.echo")
+def echo_rust_value(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runtime": "python",
+        "value": value,
+        "codec": _avro_observation(),
+    }
+
+
+def _avro_observation() -> dict[str, str]:
+    return {
+        "codec": "avro",
+        "implementation": "Apache Avro",
+        "package": "avro",
+        "version": importlib.metadata.version("avro"),
     }
 
 
@@ -182,7 +202,7 @@ async def main() -> int:
             client,
             task_queue=TASK_QUEUE,
             workflows=[],
-            activities=[reverse_string, tally, echo_value],
+            activities=[reverse_string, tally, echo_value, echo_rust_value],
             poll_timeout=POLL_TIMEOUT_SECONDS,
             shutdown_timeout=10.0,
         )
