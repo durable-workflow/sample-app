@@ -37,6 +37,7 @@ final class PolyglotComposeContractTest extends TestCase
         $resolvedServerImage = $this->requiredResolvedEnv('DURABLE_SERVER_IMAGE');
         $resolvedCliVersion = $this->requiredResolvedEnv('DURABLE_WORKFLOW_CLI_VERSION');
         $resolvedPythonVersion = $this->requiredResolvedEnv('DURABLE_WORKFLOW_PYTHON_SDK_VERSION');
+        $resolvedRustVersion = $this->requiredResolvedEnv('DURABLE_WORKFLOW_RUST_SDK_VERSION');
         $resolvedWorkflowVersion = $this->requiredResolvedEnv('DURABLE_WORKFLOW_PHP_SDK_VERSION');
         $resolvedWaterlineVersion = $this->requiredResolvedEnv('DURABLE_WORKFLOW_WATERLINE_VERSION');
 
@@ -55,6 +56,10 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertSame(
             $resolvedPythonVersion,
             $services['smoke']['environment']['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null,
+        );
+        $this->assertSame(
+            $resolvedRustVersion,
+            $services['smoke']['environment']['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null,
         );
         $this->assertSame(
             $resolvedWorkflowVersion,
@@ -140,6 +145,11 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_WATERLINE_VERSION=\n", $dockerfile);
         $this->assertStringContainsString("ARG SAMPLE_APP_COMMIT=\n", $dockerfile);
         $this->assertStringContainsString('ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}', $dockerfile);
+        $this->assertSame(
+            '${DURABLE_WORKFLOW_RUST_SDK_VERSION:-}',
+            $services['app']['environment']['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null,
+        );
+        $this->assertStringContainsString('-e DURABLE_WORKFLOW_RUST_SDK_VERSION', $script);
         $this->assertStringContainsString(
             'COPY scripts/install-composer-artifacts.sh /usr/local/bin/install-composer-artifacts',
             $dockerfile,
@@ -396,6 +406,7 @@ SH,
         );
         $this->assertStringContainsString('require_artifact_env DURABLE_WORKFLOW_CLI_VERSION', $smokeShell);
         $this->assertStringContainsString('require_artifact_env DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $smokeShell);
+        $this->assertStringContainsString('require_artifact_env DURABLE_WORKFLOW_RUST_SDK_VERSION', $smokeShell);
         $this->assertStringContainsString('require_artifact_env DURABLE_WORKFLOW_PHP_SDK_VERSION', $smokeShell);
         $this->assertStringContainsString('require_artifact_env DURABLE_WORKFLOW_WATERLINE_VERSION', $smokeShell);
         $this->assertStringContainsString('DURABLE_WORKFLOW_PHP_SDK_PIN:=}', $smokeShell);
@@ -505,6 +516,10 @@ SH,
             $services['smoke']['environment']['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null,
         );
         $this->assertSame(
+            $this->requiredResolvedEnv('DURABLE_WORKFLOW_RUST_SDK_VERSION'),
+            $services['smoke']['environment']['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null,
+        );
+        $this->assertSame(
             '${DURABLE_WORKFLOW_PHP_SDK_PIN:-}',
             $services['smoke']['environment']['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
@@ -588,6 +603,7 @@ SH,
         $assignments = $this->resolveArtifactAssignments([
             'DURABLE_SERVER_IMAGE' => 'ghcr.io/example/server:9.9.9',
             'DURABLE_WORKFLOW_CLI_PIN' => 'example/cli:9.9.8',
+            'DURABLE_WORKFLOW_RUST_SDK_VERSION' => '9.9.7',
             'DURABLE_WORKFLOW_PHP_SDK_PIN' => 'durable-workflow/workflow:2.0.0-alpha.777',
             'DURABLE_WORKFLOW_WATERLINE_PIN' => 'durable-workflow/waterline:2.0.0-alpha.778',
         ]);
@@ -596,6 +612,7 @@ SH,
         $this->assertSame('9.9.9', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('example/cli:9.9.8', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('9.9.8', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame('9.9.7', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
         $this->assertSame(
             'durable-workflow/workflow:2.0.0-alpha.777',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
@@ -618,7 +635,7 @@ SH,
         $this->assertSame('dw==0.1.64', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
     }
 
-    public function test_polyglot_artifact_resolver_loads_complete_official_tuple_without_unused_assignment(): void
+    public function test_polyglot_artifact_resolver_loads_complete_official_tuple(): void
     {
         $assignments = $this->resolveArtifactAssignments();
 
@@ -627,6 +644,7 @@ SH,
         $this->assertSame('0.1.902', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.902', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.903', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.904', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.904', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
             'durable-workflow/workflow:2.0.0-alpha.904',
@@ -637,10 +655,6 @@ SH,
             'durable-workflow/waterline:2.0.0-alpha.905',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
-        $this->assertSame([], array_filter(
-            array_keys($assignments),
-            static fn (string $name): bool => str_contains($name, 'RUST'),
-        ));
     }
 
     public function test_polyglot_artifact_resolver_rejects_genuinely_unknown_tuple_key(): void
@@ -674,6 +688,7 @@ SH,
         $this->assertSame('durableworkflow/server:0.2.901', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
         $this->assertSame('0.1.902', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.903', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.904', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.904', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.906', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
@@ -688,10 +703,11 @@ SH,
             'DURABLE_WORKFLOW_WATERLINE_CATALOG_URL' => 'file://'.$this->repoPath('tests/Fixtures/lagging-waterline-catalog.json'),
         ], false);
 
-        $this->assertSame('durableworkflow/server:0.2.627', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.627', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.630', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.630', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.86', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.98', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.3', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.264', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.129', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
@@ -702,11 +718,12 @@ SH,
             'DURABLE_WORKFLOW_ARTIFACT_SOURCE' => 'pinned',
         ]);
 
-        $this->assertSame('durableworkflow/server:0.2.627', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.627', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.630', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.630', $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame('0.1.86', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('dw==0.1.86', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.98', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.3', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.264', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
             'durable-workflow/workflow:2.0.0-alpha.264',
@@ -747,6 +764,10 @@ SH,
             'polyglot.python-to-php.typed-error',
             'polyglot.php-to-python.typed-error',
             'REQUIRED_ARTIFACT_VERSIONS',
+            '"sdk-rust": required_env_version("DURABLE_WORKFLOW_RUST_SDK_VERSION")',
+            '"version_source": "artifact_tuple_metadata"',
+            '"exercised": False',
+            'cargo add durable-workflow@',
             '"artifactVersions": artifact_versions',
             '"requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS',
             '"artifactProbe":',

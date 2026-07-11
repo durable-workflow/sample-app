@@ -59,6 +59,7 @@ x-artifact-defaults:
   server-image: &durable-server-image "${DURABLE_SERVER_IMAGE:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   cli-version: &durable-cli-version "${DURABLE_WORKFLOW_CLI_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   python-sdk-version: &durable-python-sdk-version "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
+  rust-sdk-version: &durable-rust-sdk-version "${DURABLE_WORKFLOW_RUST_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   php-sdk-pin: &durable-php-sdk-pin "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
   php-sdk-version: &durable-php-sdk-version "${DURABLE_WORKFLOW_PHP_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   waterline-pin: &durable-waterline-pin "${DURABLE_WORKFLOW_WATERLINE_PIN:-}"
@@ -305,6 +306,7 @@ services:
       DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
       DURABLE_WORKFLOW_CLI_PIN: "${DURABLE_WORKFLOW_CLI_PIN:-}"
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+      DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
       DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
       DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
       DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin

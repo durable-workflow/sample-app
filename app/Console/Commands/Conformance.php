@@ -1316,6 +1316,7 @@ class Conformance extends Command
             'server' => $this->versionFromEnvImage('DURABLE_SERVER_IMAGE'),
             'cli' => $this->envString('DURABLE_WORKFLOW_CLI_VERSION'),
             'sdk-python' => $this->envString('DURABLE_WORKFLOW_PYTHON_SDK_VERSION'),
+            'sdk-rust' => $this->envString('DURABLE_WORKFLOW_RUST_SDK_VERSION'),
             'workflow' => $this->installedVersion('durable-workflow/workflow'),
             'waterline' => $this->installedVersion('durable-workflow/waterline'),
             'sample-app' => $this->envString('SAMPLE_APP_COMMIT') ?? $this->gitSha(),

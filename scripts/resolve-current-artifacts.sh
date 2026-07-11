@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.627"
+pinned_server_image="durableworkflow/server:0.2.630"
 pinned_cli_version="0.1.86"
 pinned_python_sdk_version="0.4.98"
+pinned_rust_sdk_version="0.1.3"
 pinned_workflow_version="2.0.0-alpha.264"
 pinned_waterline_version="2.0.0-alpha.129"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
@@ -105,7 +106,7 @@ process.stdin.on("end", () => {
     workflow: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
     waterline: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
   };
-  const emittedArtifacts = ["server", "cli", "sdk-python", "workflow", "waterline"];
+  const emittedArtifacts = ["server", "cli", "sdk-python", "sdk-rust", "workflow", "waterline"];
   const unknown = Object.keys(artifacts).filter(key => !officialRequirements[key]).sort();
   if (unknown.length > 0) {
     throw new Error(`${label} contains unknown artifact keys: ${unknown.join(", ")}`);
@@ -138,6 +139,9 @@ load_artifact_tuple_assignments() {
         ;;
       sdk-python)
         current_python_sdk_version="$version"
+        ;;
+      sdk-rust)
+        current_rust_sdk_version="$version"
         ;;
       workflow)
         current_workflow_version="$version"
@@ -310,6 +314,9 @@ apply_committed_tuple_floor() {
   if is_newer_stable_version "$pinned_python_sdk_version" "$current_python_sdk_version"; then
     current_python_sdk_version="$pinned_python_sdk_version"
   fi
+  if is_newer_stable_version "$pinned_rust_sdk_version" "$current_rust_sdk_version"; then
+    current_rust_sdk_version="$pinned_rust_sdk_version"
+  fi
   if is_newer_prerelease "$pinned_workflow_version" "$current_workflow_version"; then
     current_workflow_version="$pinned_workflow_version"
   fi
@@ -342,6 +349,7 @@ normalize_cli_pin() {
 current_server_version=""
 current_cli_version=""
 current_python_sdk_version=""
+current_rust_sdk_version=""
 current_workflow_version=""
 current_waterline_version=""
 
@@ -349,6 +357,7 @@ if [[ "$artifact_source" == "pinned" ]]; then
   current_server_version="$(semantic_version_from_text "$pinned_server_image")"
   current_cli_version="$pinned_cli_version"
   current_python_sdk_version="$pinned_python_sdk_version"
+  current_rust_sdk_version="$pinned_rust_sdk_version"
   current_workflow_version="$pinned_workflow_version"
   current_waterline_version="$pinned_waterline_version"
 elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE:-}" ]]; then
@@ -380,6 +389,7 @@ fi
 cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 
 python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$current_python_sdk_version}"
+rust_sdk_version="${DURABLE_WORKFLOW_RUST_SDK_VERSION:-$current_rust_sdk_version}"
 
 workflow_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
 if [[ -n "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}" ]]; then
@@ -408,7 +418,7 @@ if [[ -z "$waterline_pin" ]]; then
 fi
 
 for name in \
-  server_image server_version cli_version cli_pin python_sdk_version workflow_version workflow_pin waterline_version waterline_pin
+  server_image server_version cli_version cli_pin python_sdk_version rust_sdk_version workflow_version workflow_pin waterline_version waterline_pin
 do
   if [[ -z "${!name:-}" ]]; then
     printf 'resolve-current-artifacts: failed to resolve %s from %s artifact source\n' "$name" "$artifact_source" >&2
@@ -421,6 +431,7 @@ emit_assignment DURABLE_SERVER_VERSION "$server_version"
 emit_assignment DURABLE_WORKFLOW_CLI_VERSION "$cli_version"
 emit_assignment DURABLE_WORKFLOW_CLI_PIN "$cli_pin"
 emit_assignment DURABLE_WORKFLOW_PYTHON_SDK_VERSION "$python_sdk_version"
+emit_assignment DURABLE_WORKFLOW_RUST_SDK_VERSION "$rust_sdk_version"
 emit_assignment DURABLE_WORKFLOW_PHP_SDK_VERSION "$workflow_version"
 emit_assignment DURABLE_WORKFLOW_PHP_SDK_PIN "$workflow_pin"
 emit_assignment DURABLE_WORKFLOW_WATERLINE_VERSION "$waterline_version"

@@ -57,6 +57,7 @@ REQUIRED_ARTIFACT_VERSIONS = {
     "server": semantic_version_from_text(SERVER_PIN) or required_env_version("DURABLE_SERVER_VERSION"),
     "cli": required_env_version("DURABLE_WORKFLOW_CLI_VERSION"),
     "sdk-python": required_env_version("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"),
+    "sdk-rust": required_env_version("DURABLE_WORKFLOW_RUST_SDK_VERSION"),
     "workflow": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
         or required_env_version("DURABLE_WORKFLOW_PHP_SDK_VERSION")
@@ -177,6 +178,7 @@ def resolved_artifact_versions(php_probe: dict[str, Any] | None = None) -> dict[
         "server": semantic_version_from_text(SERVER_PIN),
         "cli": detect_dw_version(),
         "sdk-python": installed_python_sdk_version(),
+        "sdk-rust": REQUIRED_ARTIFACT_VERSIONS["sdk-rust"],
         "workflow": php_versions.get("workflow"),
         "waterline": php_versions.get("waterline"),
     }
@@ -263,6 +265,13 @@ def artifact_metadata(
             "pin": f"durable-workflow=={versions.get('sdk-python') or 'unknown'}",
             "version": versions.get("sdk-python"),
             "exercised": True,
+        },
+        "sdk_rust": {
+            "artifact": "durable-workflow",
+            "pin": f"cargo add durable-workflow@{versions.get('sdk-rust') or 'unknown'} --exact",
+            "version": versions.get("sdk-rust"),
+            "version_source": "artifact_tuple_metadata",
+            "exercised": False,
         },
         "sdk_php_workflow": {
             "artifact": "durable-workflow/workflow",

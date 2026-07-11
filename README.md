@@ -144,13 +144,16 @@ the live model-backed AI surface. The travel-agent success and failure-injection
 checks reuse one deterministic booking plan so the run proves signals, durable
 assistant messages, booking activities, and compensation without spending extra
 model calls on each failure variant.
+The Rust SDK version is recorded as release-cohort metadata; the sample-app and
+polyglot harnesses do not claim to exercise a Rust worker.
 Without AI credentials, `--strict` keeps the run non-passing and names the live
 Prism surface as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key
 lives in a dotenv file outside the repository; the wrapper also checks local
 workspace-level dotenv files without printing credential values. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`,
-`DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_PHP_SDK_VERSION`, and
-`DURABLE_WORKFLOW_WATERLINE_VERSION` to override the published artifact set.
+`DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_RUST_SDK_VERSION`,
+`DURABLE_WORKFLOW_PHP_SDK_VERSION`, and `DURABLE_WORKFLOW_WATERLINE_VERSION` to
+override the published artifact set.
 By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which resolves the current published
 conformance tuple from the public docs release-audit manifest, advances routine
