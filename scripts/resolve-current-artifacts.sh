@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.630"
+pinned_server_image="durableworkflow/server:0.2.632"
 pinned_cli_version="0.1.86"
 pinned_python_sdk_version="0.4.98"
 pinned_rust_sdk_version="0.1.3"
