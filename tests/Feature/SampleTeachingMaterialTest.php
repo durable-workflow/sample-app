@@ -137,8 +137,8 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}', $dockerfile);
         $this->assertStringContainsString('SAMPLE_APP_COMMIT: ${SAMPLE_APP_COMMIT:-}', $compose);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
-        $this->assertMatchesRegularExpression(
-            '/pinned_server_image="durableworkflow\/server:0\.2\.\d+"/',
+        $this->assertStringContainsString(
+            'pinned_server_image="durableworkflow/server:0.2.649"',
             $artifactResolver,
         );
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE', $artifactResolver);
@@ -150,7 +150,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('pinned_cli_version="0.1.89"', $artifactResolver);
         $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_python_sdk_version="0\.4\.\d+"/', $artifactResolver);
-        $this->assertStringContainsString('pinned_rust_sdk_version="0.1.6"', $artifactResolver);
+        $this->assertStringContainsString('pinned_rust_sdk_version="0.1.15"', $artifactResolver);
         $this->assertStringNotContainsString('latest_pypi_version durable-workflow', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_workflow_version="2\.0\.0-(?:alpha|beta)\.\d+"/', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_waterline_version="2\.0\.0-(?:alpha|beta)\.\d+"/', $artifactResolver);
