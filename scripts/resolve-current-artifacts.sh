@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.649"
-pinned_cli_version="0.1.89"
-pinned_python_sdk_version="0.4.98"
+pinned_server_image="durableworkflow/server:0.2.655"
+pinned_cli_version="0.1.90"
+pinned_python_sdk_version="0.4.99"
 pinned_rust_sdk_version="0.1.15"
-pinned_workflow_version="2.0.0-alpha.274"
-pinned_waterline_version="2.0.0-alpha.130"
+pinned_workflow_version="2.0.0-alpha.280"
+pinned_waterline_version="2.0.0-alpha.132"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
 
@@ -101,6 +101,7 @@ process.stdin.on("end", () => {
   const officialRequirements = {
     server: /^0\.2\.\d+$/,
     cli: /^0\.1\.\d+$/,
+    "sdk-php": /^0\.1\.\d+$/,
     "sdk-python": /^0\.4\.\d+$/,
     "sdk-rust": /^0\.1\.\d+$/,
     workflow: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
@@ -112,10 +113,18 @@ process.stdin.on("end", () => {
     throw new Error(`${label} contains unknown artifact keys: ${unknown.join(", ")}`);
   }
 
-  for (const [key, requirement] of Object.entries(officialRequirements)) {
+  for (const key of emittedArtifacts) {
+    const requirement = officialRequirements[key];
     const version = artifacts[key];
     if (typeof version !== "string" || version.trim() !== version || !requirement.test(version)) {
       throw new Error(`${label} artifact ${key} has unsupported version ${JSON.stringify(version)}`);
+    }
+  }
+
+  if (Object.hasOwn(artifacts, "sdk-php")) {
+    const version = artifacts["sdk-php"];
+    if (typeof version !== "string" || version.trim() !== version || !officialRequirements["sdk-php"].test(version)) {
+      throw new Error(`${label} artifact sdk-php has unsupported version ${JSON.stringify(version)}`);
     }
   }
 

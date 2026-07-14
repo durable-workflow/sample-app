@@ -138,7 +138,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_COMMIT: ${SAMPLE_APP_COMMIT:-}', $compose);
         $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $script);
         $this->assertStringContainsString(
-            'pinned_server_image="durableworkflow/server:0.2.649"',
+            'pinned_server_image="durableworkflow/server:0.2.655"',
             $artifactResolver,
         );
         $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE', $artifactResolver);
@@ -147,7 +147,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('DURABLE_WORKFLOW_WATERLINE_CATALOG_URL', $artifactResolver);
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
-        $this->assertStringContainsString('pinned_cli_version="0.1.89"', $artifactResolver);
+        $this->assertStringContainsString('pinned_cli_version="0.1.90"', $artifactResolver);
         $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_python_sdk_version="0\.4\.\d+"/', $artifactResolver);
         $this->assertStringContainsString('pinned_rust_sdk_version="0.1.15"', $artifactResolver);

@@ -445,13 +445,26 @@ SH,
         $this->assertSame('^2.0.0-alpha', $composerJson['require']['durable-workflow/workflow'] ?? null);
         $this->assertSame('^2.0.0-alpha', $composerJson['require']['durable-workflow/waterline'] ?? null);
         $this->assertArrayNotHasKey('repositories', $composerJson);
+        $this->assertIsArray($lockedPackages['durable-workflow/sdk'] ?? null);
+        $this->assertSame(
+            '0.1.3',
+            $lockedPackages['durable-workflow/sdk']['version'] ?? null,
+        );
+        $this->assertSame(
+            'f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71',
+            $lockedPackages['durable-workflow/sdk']['source']['reference'] ?? null,
+        );
+        $this->assertSame(
+            'https://packagist.org/downloads/',
+            $lockedPackages['durable-workflow/sdk']['notification-url'] ?? null,
+        );
         $this->assertIsArray($lockedPackages['durable-workflow/workflow'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.274',
+            '2.0.0-alpha.280',
             $lockedPackages['durable-workflow/workflow']['version'] ?? null,
         );
         $this->assertSame(
-            'e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2',
+            '3fa9bff54c8ccef5537a885b167e470a629661b9',
             $lockedPackages['durable-workflow/workflow']['source']['reference'] ?? null,
         );
         $this->assertSame(
@@ -459,11 +472,11 @@ SH,
             $lockedPackages['durable-workflow/workflow']['source']['url'] ?? null,
         );
         $this->assertSame(
-            'https://api.github.com/repos/durable-workflow/workflow/zipball/e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2',
+            'https://api.github.com/repos/durable-workflow/workflow/zipball/3fa9bff54c8ccef5537a885b167e470a629661b9',
             $lockedPackages['durable-workflow/workflow']['dist']['url'] ?? null,
         );
         $this->assertSame(
-            'e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2',
+            '3fa9bff54c8ccef5537a885b167e470a629661b9',
             $lockedPackages['durable-workflow/workflow']['dist']['reference'] ?? null,
         );
         $this->assertSame(
@@ -472,11 +485,11 @@ SH,
         );
         $this->assertIsArray($lockedPackages['durable-workflow/waterline'] ?? null);
         $this->assertSame(
-            '2.0.0-alpha.130',
+            '2.0.0-alpha.132',
             $lockedPackages['durable-workflow/waterline']['version'] ?? null,
         );
         $this->assertSame(
-            '22188b5a18a24e5e87dad42741df3f773dd38d24',
+            '0508d57c85045781c07f55fda8460f4b5f4e9d28',
             $lockedPackages['durable-workflow/waterline']['source']['reference'] ?? null,
         );
         $this->assertSame(
@@ -484,8 +497,12 @@ SH,
             $lockedPackages['durable-workflow/waterline']['source']['url'] ?? null,
         );
         $this->assertSame(
-            'https://api.github.com/repos/durable-workflow/waterline/zipball/22188b5a18a24e5e87dad42741df3f773dd38d24',
+            'https://api.github.com/repos/durable-workflow/waterline/zipball/0508d57c85045781c07f55fda8460f4b5f4e9d28',
             $lockedPackages['durable-workflow/waterline']['dist']['url'] ?? null,
+        );
+        $this->assertSame(
+            '^0.1',
+            $lockedPackages['durable-workflow/waterline']['require']['durable-workflow/sdk'] ?? null,
         );
         $this->assertSame(
             'https://packagist.org/downloads/',
@@ -718,13 +735,13 @@ SH,
             'DURABLE_WORKFLOW_WATERLINE_CATALOG_URL' => 'file://'.$this->repoPath('tests/Fixtures/lagging-waterline-catalog.json'),
         ], false);
 
-        $this->assertSame('durableworkflow/server:0.2.649', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.649', $assignments['DURABLE_SERVER_VERSION'] ?? null);
-        $this->assertSame('0.1.89', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
-        $this->assertSame('0.4.98', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.655', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.655', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('0.1.90', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame('0.4.99', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('0.1.15', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.274', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.130', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.280', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.132', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
 
     public function test_polyglot_artifact_resolver_keeps_pinned_tuple_explicit(): void
@@ -733,20 +750,20 @@ SH,
             'DURABLE_WORKFLOW_ARTIFACT_SOURCE' => 'pinned',
         ]);
 
-        $this->assertSame('durableworkflow/server:0.2.649', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
-        $this->assertSame('0.2.649', $assignments['DURABLE_SERVER_VERSION'] ?? null);
-        $this->assertSame('0.1.89', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
-        $this->assertSame('dw==0.1.89', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
-        $this->assertSame('0.4.98', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
+        $this->assertSame('durableworkflow/server:0.2.655', $assignments['DURABLE_SERVER_IMAGE'] ?? null);
+        $this->assertSame('0.2.655', $assignments['DURABLE_SERVER_VERSION'] ?? null);
+        $this->assertSame('0.1.90', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
+        $this->assertSame('dw==0.1.90', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
+        $this->assertSame('0.4.99', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('0.1.15', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
-        $this->assertSame('2.0.0-alpha.274', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.280', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/workflow:2.0.0-alpha.274',
+            'durable-workflow/workflow:2.0.0-alpha.280',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
-        $this->assertSame('2.0.0-alpha.130', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
+        $this->assertSame('2.0.0-alpha.132', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/waterline:2.0.0-alpha.130',
+            'durable-workflow/waterline:2.0.0-alpha.132',
             $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null,
         );
     }

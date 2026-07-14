@@ -4,6 +4,7 @@
   "description": "Synthetic parser fixture for sample-app tests; these versions are not a public artifact tuple.",
   "artifacts": {
     "cli": "0.1.902",
+    "sdk-php": "0.1.901",
     "sdk-python": "0.4.903",
     "sdk-rust": "0.1.904",
     "server": "0.2.901",

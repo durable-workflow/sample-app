@@ -504,20 +504,93 @@
             "time": "2025-10-31T18:51:33+00:00"
         },
         {
-            "name": "durable-workflow/waterline",
-            "version": "2.0.0-alpha.130",
+            "name": "durable-workflow/sdk",
+            "version": "0.1.3",
             "source": {
                 "type": "git",
-                "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "22188b5a18a24e5e87dad42741df3f773dd38d24"
+                "url": "https://github.com/durable-workflow/sdk-php.git",
+                "reference": "f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/22188b5a18a24e5e87dad42741df3f773dd38d24",
-                "reference": "22188b5a18a24e5e87dad42741df3f773dd38d24",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71",
+                "reference": "f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71",
                 "shasum": ""
             },
             "require": {
+                "apache/avro": "^1.12",
+                "ext-json": "*",
+                "guzzlehttp/guzzle": "^7.8",
+                "php": "^8.1",
+                "psr/http-client": "^1.0",
+                "psr/http-factory": "^1.0",
+                "psr/http-message": "^1.1|^2.0"
+            },
+            "require-dev": {
+                "phpdocumentor/phpdocumentor": "^3.7",
+                "phpstan/phpstan": "^2.0",
+                "phpunit/phpunit": "^10.5|^11.0"
+            },
+            "suggest": {
+                "ext-pcntl": "Enables managed workers to handle SIGINT and SIGTERM gracefully."
+            },
+            "type": "library",
+            "extra": {
+                "durable-workflow": {
+                    "supported-server-versions": ">=0.2,<0.3",
+                    "worker-protocol-version": "1.13",
+                    "control-plane-version": "2",
+                    "payload-codecs": [
+                        "avro"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "DurableWorkflow\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Durable Workflow Contributors"
+                }
+            ],
+            "description": "Framework-neutral PHP client and worker SDK for the Durable Workflow server",
+            "homepage": "https://durable-workflow.com",
+            "keywords": [
+                "durable",
+                "orchestration",
+                "sdk",
+                "worker",
+                "workflow"
+            ],
+            "support": {
+                "docs": "https://php.durable-workflow.com/",
+                "issues": "https://github.com/durable-workflow/sdk-php/issues",
+                "source": "https://github.com/durable-workflow/sdk-php/tree/0.1.3"
+            },
+            "time": "2026-07-14T12:06:14+00:00"
+        },
+        {
+            "name": "durable-workflow/waterline",
+            "version": "2.0.0-alpha.132",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/durable-workflow/waterline.git",
+                "reference": "0508d57c85045781c07f55fda8460f4b5f4e9d28"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/0508d57c85045781c07f55fda8460f4b5f4e9d28",
+                "reference": "0508d57c85045781c07f55fda8460f4b5f4e9d28",
+                "shasum": ""
+            },
+            "require": {
+                "durable-workflow/sdk": "^0.1",
                 "durable-workflow/workflow": "^2.0.0-alpha",
                 "illuminate/support": "^9.0|^10.0|^11.0|^12.0|^13.0",
                 "php": "^8.0.2"
@@ -561,22 +634,22 @@
             "description": "An elegant UI for monitoring Laravel Workflows.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.130"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-alpha.132"
             },
-            "time": "2026-07-11T18:44:46+00:00"
+            "time": "2026-07-14T10:49:54+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-alpha.274",
+            "version": "2.0.0-alpha.280",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2"
+                "reference": "3fa9bff54c8ccef5537a885b167e470a629661b9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2",
-                "reference": "e9a615e6c7a98b1e34f72ee1cf7e53f542ba3cf2",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/3fa9bff54c8ccef5537a885b167e470a629661b9",
+                "reference": "3fa9bff54c8ccef5537a885b167e470a629661b9",
                 "shasum": ""
             },
             "require": {
@@ -592,6 +665,9 @@
                 "orchestra/testbench": "^8.0|^11.0",
                 "phpstan/phpstan": "^2.0",
                 "symplify/easy-coding-standard": "^11.0"
+            },
+            "suggest": {
+                "durable-workflow/sdk": "Framework-neutral client and remote-worker SDK for the standalone Durable Workflow server."
             },
             "type": "library",
             "extra": {
@@ -620,12 +696,12 @@
                     "email": "support@durable-workflow.com"
                 }
             ],
-            "description": "Durable workflow engine that allows users to write long running persistent distributed workflows (orchestrations) in PHP powered by Laravel queues.",
+            "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.274"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.280"
             },
-            "time": "2026-07-13T12:08:39+00:00"
+            "time": "2026-07-14T05:44:23+00:00"
         },
         {
             "name": "egulias/email-validator",
