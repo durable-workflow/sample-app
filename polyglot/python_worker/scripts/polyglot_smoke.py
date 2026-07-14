@@ -82,6 +82,19 @@ TO_RUST_QUEUE = os.environ.get("POLYGLOT_TO_RUST_TASK_QUEUE", "polyglot-to-rust"
 RUST_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_RUST_AVRO_VERSION")
 PYTHON_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_PYTHON_AVRO_VERSION")
 
+PHP_REQUIRED_RUNTIME_CELLS = {
+    "workflow": (
+        "php_same_language",
+        "php_to_python",
+        "php_to_rust",
+    ),
+    "activity": (
+        "php_same_language",
+        "python_to_php",
+        "rust_to_php",
+    ),
+}
+
 
 class DwCommandError(RuntimeError):
     def __init__(
@@ -115,6 +128,26 @@ class DwCommandError(RuntimeError):
             return parse_json_object(self.stdout)
         except Exception:  # noqa: BLE001
             return None
+
+
+class RuntimeMatrixError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        spec: dict[str, Any],
+        completed_runs: list[dict[str, Any]],
+        cause: Exception,
+    ) -> None:
+        scenario = str(spec["scenario"])
+        super().__init__(f"{scenario}: {cause}")
+        self.completed_runs = list(completed_runs)
+        self.failed_cell = {
+            "scenario": scenario,
+            "workflow_runtime": spec["workflow_language"],
+            "activity_runtime": spec["activity_language"],
+            "status": "failed",
+            "error": str(cause),
+        }
 
 
 def detect_dw_version() -> str | None:
@@ -279,13 +312,96 @@ def waterline_asset_findings(
     }
 
 
+def runtime_matrix_cells(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "scenario": run["scenario"],
+            "workflow_runtime": run["workflow_language"],
+            "activity_runtime": run["activity_language"],
+            "workflow_id": run["workflow_id"],
+            "run_id": run["run_id"],
+            "status": run["status"],
+        }
+        for run in runs
+    ]
+
+
+def php_sdk_execution_evidence(runtime_matrix: dict[str, Any] | None) -> dict[str, Any]:
+    required_cells = [
+        {"scenario": scenario, "php_role": role}
+        for role, scenarios in PHP_REQUIRED_RUNTIME_CELLS.items()
+        for scenario in scenarios
+    ]
+    raw_cells = runtime_matrix.get("cells") if isinstance(runtime_matrix, dict) else None
+    cells = raw_cells if isinstance(raw_cells, list) else []
+    completed_cells: list[dict[str, Any]] = []
+    missing_cells: list[dict[str, str]] = []
+
+    for required in required_cells:
+        runtime_key = f"{required['php_role']}_runtime"
+        matching_cell = next(
+            (
+                cell
+                for cell in cells
+                if isinstance(cell, dict)
+                and cell.get("scenario") == required["scenario"]
+                and cell.get(runtime_key) == "php"
+                and cell.get("status") == "passed"
+            ),
+            None,
+        )
+        if matching_cell is None:
+            missing_cells.append(required)
+            continue
+        completed_cells.append({
+            **required,
+            "workflow_id": matching_cell.get("workflow_id"),
+            "run_id": matching_cell.get("run_id"),
+            "status": matching_cell.get("status"),
+        })
+
+    matrix_status = runtime_matrix.get("status") if isinstance(runtime_matrix, dict) else "not_run"
+    exercised = matrix_status == "passed" and not missing_cells
+    if exercised:
+        status = "completed"
+        reason = None
+    elif matrix_status == "failed":
+        status = "not_completed"
+        reason = "runtime_matrix_failed"
+    elif matrix_status == "passed":
+        status = "not_completed"
+        reason = "required_php_cells_missing"
+    else:
+        status = "not_run"
+        reason = "runtime_matrix_not_run"
+
+    return {
+        "source": "runtime_matrix.completed_cells",
+        "status": status,
+        "reason": reason,
+        "matrix_status": matrix_status,
+        "failed_cell": runtime_matrix.get("failed_cell") if isinstance(runtime_matrix, dict) else None,
+        "required_cells": required_cells,
+        "completed_cells": completed_cells,
+        "missing_cells": missing_cells,
+        "required_cell_count": len(required_cells),
+        "completed_cell_count": len(completed_cells),
+        "all_required_cells_completed": not missing_cells,
+        "matrix_passed": matrix_status == "passed",
+    }
+
+
 def artifact_metadata(
     versions: dict[str, str | None] | None = None,
     php_probe: dict[str, Any] | None = None,
     php_probe_error: str | None = None,
     rust_exercised: bool = False,
+    php_worker_error: str | None = None,
+    runtime_matrix: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     versions = versions or resolved_artifact_versions()
+    php_execution = php_sdk_execution_evidence(runtime_matrix)
+    php_registration_observed = versions.get("sdk-php") is not None and php_worker_error is None
     probe = {
         "url": php_artifact_probe_url(),
         "payload": php_probe,
@@ -333,7 +449,17 @@ def artifact_metadata(
             "version": versions.get("sdk-php"),
             "version_source": "standalone_php_worker_registration",
             "role": "framework-neutral standalone client and remote worker SDK",
-            "exercised": True,
+            "registration_evidence": {
+                "status": "registered" if php_registration_observed else "not_registered",
+                "observed": php_registration_observed,
+                "version_matched": php_registration_observed,
+                "worker_id": "php-workflow-worker",
+                "task_queue": PHP2PY_QUEUE,
+                "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow",
+                "error": php_worker_error,
+            },
+            "exercised": php_registration_observed and php_execution["status"] == "completed",
+            "execution_evidence": php_execution,
         },
         "workflow": {
             "artifact": "durable-workflow/workflow",
@@ -721,33 +847,36 @@ async def four_corner_cli_scenarios() -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for spec in specs:
-        for worker in spec["workers"]:
-            await wait_for_worker(**worker)
-        wid = workflow_id(f"polyglot-cli-{spec['scenario']}")
-        describe = cli_start(
-            workflow_type=spec["workflow_type"],
-            task_queue=spec["task_queue"],
-            workflow_id_value=wid,
-            input_args=spec["input"],
-            wait=True,
-        )
-        result = assert_dict(completed_output(describe), spec["scenario"])
-        assert_runtime(result, spec["workflow_language"], spec["activity_language"], spec["scenario"])
-        results.append({
-            "surface": "cli_start_result",
-            "scenario": spec["scenario"],
-            "workflow_id": wid,
-            "run_id": describe.get("run_id"),
-            "workflow_type": spec["workflow_type"],
-            "task_queue": spec["task_queue"],
-            "workflow_language": spec["workflow_language"],
-            "activity_language": spec["activity_language"],
-            "workflow_start_result_driver": "dw CLI",
-            "input": spec["input"],
-            "status": "passed",
-            "result": result,
-        })
-        print(json.dumps(results[-1], indent=2, sort_keys=True), flush=True)
+        try:
+            for worker in spec["workers"]:
+                await wait_for_worker(**worker)
+            wid = workflow_id(f"polyglot-cli-{spec['scenario']}")
+            describe = cli_start(
+                workflow_type=spec["workflow_type"],
+                task_queue=spec["task_queue"],
+                workflow_id_value=wid,
+                input_args=spec["input"],
+                wait=True,
+            )
+            result = assert_dict(completed_output(describe), spec["scenario"])
+            assert_runtime(result, spec["workflow_language"], spec["activity_language"], spec["scenario"])
+            results.append({
+                "surface": "cli_start_result",
+                "scenario": spec["scenario"],
+                "workflow_id": wid,
+                "run_id": describe.get("run_id"),
+                "workflow_type": spec["workflow_type"],
+                "task_queue": spec["task_queue"],
+                "workflow_language": spec["workflow_language"],
+                "activity_language": spec["activity_language"],
+                "workflow_start_result_driver": "dw CLI",
+                "input": spec["input"],
+                "status": "passed",
+                "result": result,
+            })
+            print(json.dumps(results[-1], indent=2, sort_keys=True), flush=True)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeMatrixError(spec=spec, completed_runs=results, cause=exc) from exc
     return results
 
 
@@ -1341,7 +1470,12 @@ async def run_all() -> int:
                 "error": php_probe_error,
                 "standalonePhpWorkerError": php_sdk_worker_error,
             },
-            "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
+            "artifacts": artifact_metadata(
+                artifact_versions,
+                php_probe,
+                php_probe_error,
+                php_worker_error=php_sdk_worker_error,
+            ),
             "publishedDependencies": {"officialApacheAvro": avro_packages},
             "surfaces": surfaces,
             "summary": {
@@ -1381,23 +1515,30 @@ async def run_all() -> int:
                 for runtime in (run["workflow_language"], run["activity_language"])
             }),
             "rust_execution": True,
-            "cells": [
-                {
-                    "scenario": run["scenario"],
-                    "workflow_runtime": run["workflow_language"],
-                    "activity_runtime": run["activity_language"],
-                    "workflow_id": run["workflow_id"],
-                    "run_id": run["run_id"],
-                    "status": run["status"],
-                }
-                for run in cli_runs
-            ],
+            "cells": runtime_matrix_cells(cli_runs),
         }
+    except RuntimeMatrixError as exc:
+        failed = True
+        surfaces["cli_start_result"] = {"status": "failed", "error": str(exc)}
+        surfaces["four_corners"] = {"status": "failed", "error": str(exc)}
+        surfaces["runtime_matrix"] = {
+            "status": "failed",
+            "error": str(exc),
+            "rust_execution": False,
+            "cells": runtime_matrix_cells(exc.completed_runs),
+            "failed_cell": exc.failed_cell,
+        }
+        print(json.dumps(surfaces["cli_start_result"], indent=2, sort_keys=True), flush=True)
     except Exception as exc:  # noqa: BLE001
         failed = True
         surfaces["cli_start_result"] = {"status": "failed", "error": str(exc)}
         surfaces["four_corners"] = {"status": "failed", "error": str(exc)}
-        surfaces["runtime_matrix"] = {"status": "failed", "error": str(exc), "rust_execution": False}
+        surfaces["runtime_matrix"] = {
+            "status": "failed",
+            "error": str(exc),
+            "rust_execution": False,
+            "cells": [],
+        }
         print(json.dumps(surfaces["cli_start_result"], indent=2, sort_keys=True), flush=True)
 
     print("\n==> polyglot conformance: type round-trip matrix", flush=True)
@@ -1459,6 +1600,8 @@ async def run_all() -> int:
             php_probe,
             php_probe_error,
             rust_exercised=(surfaces.get("runtime_matrix", {}).get("status") == "passed"),
+            php_worker_error=php_sdk_worker_error,
+            runtime_matrix=surfaces.get("runtime_matrix"),
         ),
         "publishedDependencies": {"officialApacheAvro": avro_packages},
         "surfaces": surfaces,

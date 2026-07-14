@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test polyglot metadata evidence
+        run: python3 -m unittest discover -s polyglot/python_worker/tests -v
+
       - name: Set isolated Compose project
         shell: bash
         run: |
