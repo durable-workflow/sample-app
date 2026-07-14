@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "0.1.3",
+            "version": "0.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71"
+                "reference": "34eecd120acf6b1cfea3ccdc086e0c9b47ecc4b6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71",
-                "reference": "f7a0da279314dd40eb26a2c2ffb0b826c6ad1d71",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/34eecd120acf6b1cfea3ccdc086e0c9b47ecc4b6",
+                "reference": "34eecd120acf6b1cfea3ccdc086e0c9b47ecc4b6",
                 "shasum": ""
             },
             "require": {
@@ -571,9 +571,9 @@
             "support": {
                 "docs": "https://php.durable-workflow.com/",
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
-                "source": "https://github.com/durable-workflow/sdk-php/tree/0.1.3"
+                "source": "https://github.com/durable-workflow/sdk-php/tree/0.1.4"
             },
-            "time": "2026-07-14T12:06:14+00:00"
+            "time": "2026-07-14T17:12:54+00:00"
         },
         {
             "name": "durable-workflow/waterline",

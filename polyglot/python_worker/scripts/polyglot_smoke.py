@@ -56,11 +56,15 @@ SERVER_PIN = required_env("DURABLE_SERVER_IMAGE")
 REQUIRED_ARTIFACT_VERSIONS = {
     "server": semantic_version_from_text(SERVER_PIN) or required_env_version("DURABLE_SERVER_VERSION"),
     "cli": required_env_version("DURABLE_WORKFLOW_CLI_VERSION"),
+    "sdk-php": (
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
+        or required_env_version("DURABLE_WORKFLOW_PHP_SDK_VERSION")
+    ),
     "sdk-python": required_env_version("DURABLE_WORKFLOW_PYTHON_SDK_VERSION"),
     "sdk-rust": required_env_version("DURABLE_WORKFLOW_RUST_SDK_VERSION"),
     "workflow": (
-        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"))
-        or required_env_version("DURABLE_WORKFLOW_PHP_SDK_VERSION")
+        semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WORKFLOW_PIN"))
+        or required_env_version("DURABLE_WORKFLOW_WORKFLOW_VERSION")
     ),
     "waterline": (
         semantic_version_from_text(os.environ.get("DURABLE_WORKFLOW_WATERLINE_PIN"))
@@ -156,6 +160,7 @@ def fetch_php_artifact_probe() -> tuple[dict[str, Any] | None, str | None]:
 
 def php_artifact_versions(probe: dict[str, Any] | None) -> dict[str, str | None]:
     versions: dict[str, str | None] = {
+        "sdk-php": None,
         "workflow": None,
         "waterline": None,
     }
@@ -210,12 +215,16 @@ def php_waterline_assets(probe: dict[str, Any] | None) -> dict[str, Any] | None:
     return waterline if isinstance(waterline, dict) else None
 
 
-def resolved_artifact_versions(php_probe: dict[str, Any] | None = None) -> dict[str, str | None]:
+def resolved_artifact_versions(
+    php_probe: dict[str, Any] | None = None,
+    php_sdk_worker_version: str | None = None,
+) -> dict[str, str | None]:
     php_versions = php_artifact_versions(php_probe)
 
     return {
         "server": semantic_version_from_text(SERVER_PIN),
         "cli": detect_dw_version(),
+        "sdk-php": php_sdk_worker_version,
         "sdk-python": installed_python_sdk_version(),
         "sdk-rust": REQUIRED_ARTIFACT_VERSIONS["sdk-rust"],
         "workflow": php_versions.get("workflow"),
@@ -315,16 +324,28 @@ def artifact_metadata(
             "exercised": rust_exercised,
             "execution_evidence": "runtime_matrix" if rust_exercised else None,
         },
-        "sdk_php_workflow": {
-            "artifact": "durable-workflow/workflow",
+        "sdk_php": {
+            "artifact": "durable-workflow/sdk",
             "pin": (
                 os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN")
+                or f"durable-workflow/sdk:{REQUIRED_ARTIFACT_VERSIONS['sdk-php']}"
+            ),
+            "version": versions.get("sdk-php"),
+            "version_source": "standalone_php_worker_registration",
+            "role": "framework-neutral standalone client and remote worker SDK",
+            "exercised": True,
+        },
+        "workflow": {
+            "artifact": "durable-workflow/workflow",
+            "pin": (
+                os.environ.get("DURABLE_WORKFLOW_WORKFLOW_PIN")
                 or f"durable-workflow/workflow:{REQUIRED_ARTIFACT_VERSIONS['workflow']}"
             ),
             "version": versions.get("workflow"),
             "version_source": "waterline_conformance_artifact_probe",
             "probe": probe,
-            "exercised": True,
+            "role": "embedded Laravel engine and Waterline host",
+            "exercised": False,
         },
         "waterline": {
             "artifact": "durable-workflow/waterline",
@@ -350,7 +371,7 @@ async def wait_for_worker(
     activity_type: str | None = None,
     worker_id: str | None = None,
     timeout_seconds: float = 90.0,
-) -> None:
+) -> str | None:
     deadline = time.monotonic() + timeout_seconds
     last_error: Exception | None = None
 
@@ -364,6 +385,7 @@ async def wait_for_worker(
                 continue
 
             for worker in getattr(roster, "workers", []) or []:
+                observed_version: str | None = None
                 if worker_id is not None and getattr(worker, "worker_id", None) != worker_id:
                     continue
                 if getattr(worker, "runtime", None) != runtime:
@@ -371,13 +393,14 @@ async def wait_for_worker(
                 if runtime == "php":
                     sdk_version = getattr(worker, "sdk_version", None)
                     actual = semantic_version_from_text(sdk_version if isinstance(sdk_version, str) else None)
-                    expected = REQUIRED_ARTIFACT_VERSIONS["workflow"]
+                    expected = REQUIRED_ARTIFACT_VERSIONS["sdk-php"]
                     if actual != expected:
                         last_error = RuntimeError(
-                            "PHP worker advertised workflow SDK "
-                            f"{sdk_version!r}; expected durable-workflow/workflow:{expected}"
+                            "PHP worker advertised standalone SDK "
+                            f"{sdk_version!r}; expected durable-workflow/sdk:{expected}"
                         )
                         continue
+                    observed_version = actual
                 if runtime == "rust":
                     sdk_version = getattr(worker, "sdk_version", None)
                     actual = semantic_version_from_text(sdk_version if isinstance(sdk_version, str) else None)
@@ -388,13 +411,14 @@ async def wait_for_worker(
                             f"{sdk_version!r}; expected durable-workflow crates.io release {expected}"
                         )
                         continue
+                    observed_version = actual
                 workflows = getattr(worker, "supported_workflow_types", None) or []
                 activities = getattr(worker, "supported_activity_types", None) or []
                 if workflow_type is not None and workflow_type not in workflows:
                     continue
                 if activity_type is not None and activity_type not in activities:
                     continue
-                return
+                return observed_version
 
             await asyncio.sleep(1)
 
@@ -1264,7 +1288,19 @@ def summarize_waterline_workers(health: dict[str, Any]) -> dict[str, Any]:
 
 async def run_all() -> int:
     php_probe, php_probe_error = fetch_php_artifact_probe()
-    artifact_versions = resolved_artifact_versions(php_probe)
+    php_sdk_worker_error: str | None = None
+    try:
+        php_sdk_worker_version = await wait_for_worker(
+            task_queue=PHP2PY_QUEUE,
+            runtime="php",
+            workflow_type="polyglot.php-to-python.PhpToPythonWorkflow",
+            worker_id="php-workflow-worker",
+        )
+    except Exception as exc:  # noqa: BLE001
+        php_sdk_worker_version = None
+        php_sdk_worker_error = str(exc)
+
+    artifact_versions = resolved_artifact_versions(php_probe, php_sdk_worker_version)
     avro_packages = official_avro_packages(php_probe)
     missing_avro_packages = {
         runtime: package
@@ -1303,6 +1339,7 @@ async def run_all() -> int:
                 "url": php_artifact_probe_url(),
                 "payload": php_probe,
                 "error": php_probe_error,
+                "standalonePhpWorkerError": php_sdk_worker_error,
             },
             "artifacts": artifact_metadata(artifact_versions, php_probe, php_probe_error),
             "publishedDependencies": {"officialApacheAvro": avro_packages},
@@ -1415,6 +1452,7 @@ async def run_all() -> int:
             "url": php_artifact_probe_url(),
             "payload": php_probe,
             "error": php_probe_error,
+            "standalonePhpWorkerError": php_sdk_worker_error,
         },
         "artifacts": artifact_metadata(
             artifact_versions,

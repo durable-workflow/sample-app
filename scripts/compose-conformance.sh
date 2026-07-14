@@ -207,6 +207,7 @@ timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -
   -e DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
   -e DURABLE_WORKFLOW_RUST_SDK_VERSION \
   -e DURABLE_WORKFLOW_PHP_SDK_VERSION \
+  -e DURABLE_WORKFLOW_WORKFLOW_VERSION \
   -e DURABLE_WORKFLOW_WATERLINE_VERSION \
   -e OPENAI_API_KEY \
   app php artisan app:conformance --app-url="${app_url}" --output="${metadata_container_path}" "${args[@]}"

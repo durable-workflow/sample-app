@@ -19,10 +19,10 @@ use function Workflow\V2\activity;
  * `polyglot.php-to-python.*` activities registered to the Python worker,
  * each run drives a real cross-language interaction over the wire.
  *
- * The polling worker that executes this class lives in the polyglot
- * docker stack at `polyglot/php_worker/`; the same class file is
- * registered in `config/workflow_mcp.php` so it surfaces in the sample
- * app's MCP listing alongside the other authored workflows.
+ * This embedded-engine class remains registered in `config/workflow_mcp.php`
+ * so it surfaces in the Laravel sample's MCP listing. The public polyglot
+ * stack implements the same string workflow type in its separate,
+ * framework-neutral `durable-workflow/sdk` worker.
  */
 class PhpToPythonWorkflow extends Workflow
 {

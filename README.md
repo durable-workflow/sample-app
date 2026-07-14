@@ -154,8 +154,11 @@ lives in a dotenv file outside the repository; the wrapper also checks local
 workspace-level dotenv files without printing credential values. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`,
 `DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_RUST_SDK_VERSION`,
-`DURABLE_WORKFLOW_PHP_SDK_VERSION`, and `DURABLE_WORKFLOW_WATERLINE_VERSION` to
-override the published artifact set.
+`DURABLE_WORKFLOW_PHP_SDK_VERSION`, `DURABLE_WORKFLOW_WORKFLOW_VERSION`, and
+`DURABLE_WORKFLOW_WATERLINE_VERSION` to override the published artifact set.
+The PHP SDK variable selects the framework-neutral `durable-workflow/sdk`
+package used by `polyglot/`; the Workflow variable selects the separate
+`durable-workflow/workflow` engine used by this Laravel application.
 By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which resolves the current published
 conformance tuple from the public docs release-audit manifest, advances routine
@@ -163,8 +166,9 @@ Waterline prereleases from the public Waterline package catalog, keeps the
 committed fallback tuple as the minimum resolved artifact set, emits the result
 as shell assignments, and preserves explicit overrides. The wrapper rebuilds
 the app and worker containers with the resolved Composer pins before running the
-harness, so the recorded PHP SDK and Waterline versions come from installed
-packages rather than the committed fallback lock. Set
+harness, so the recorded embedded Workflow and Waterline versions come from
+installed packages rather than the committed fallback lock. The polyglot
+stack independently installs and executes the resolved PHP SDK pin. Set
 `DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned` for a reproducible run against the
 committed sample-app fallback tuple instead. Set
 `DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json` when a local run
@@ -329,12 +333,14 @@ See [docs/sandbox-orchestration.md](docs/sandbox-orchestration.md) for the full 
 
 The repository ships a runnable polyglot demonstration in
 [`polyglot/`](polyglot/). It brings up the standalone Durable Workflow
-server with real PHP workers (Laravel + Composer-installed
-`durable-workflow/workflow`), Python workers, and crates.io-installed Rust
-workers side by side. Nine workflow/activity runtime cells run end to end:
+server with framework-neutral PHP workers from the published
+`durable-workflow/sdk` package, Python workers, and crates.io-installed Rust
+workers side by side. The root Laravel example remains a separate embedded
+mode backed by `durable-workflow/workflow`. Nine workflow/activity runtime
+cells run end to end:
 
 - a Python-authored workflow on its own Python image, and
-- a PHP-authored workflow (`App\Workflows\Polyglot\PhpToPythonWorkflow`)
+- a PHP-authored workflow in `polyglot/php_worker/worker.php`
   that schedules `polyglot.php-to-python.*` activities handled by the
   Python worker on a shared task queue, and
 - a Python-authored workflow that schedules `polyglot.python-to-php.*`

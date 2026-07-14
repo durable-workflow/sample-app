@@ -3,6 +3,7 @@ set -euo pipefail
 
 pinned_server_image="durableworkflow/server:0.2.655"
 pinned_cli_version="0.1.90"
+pinned_php_sdk_version="0.1.4"
 pinned_python_sdk_version="0.4.99"
 pinned_rust_sdk_version="0.1.15"
 pinned_workflow_version="2.0.0-alpha.280"
@@ -107,7 +108,7 @@ process.stdin.on("end", () => {
     workflow: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
     waterline: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
   };
-  const emittedArtifacts = ["server", "cli", "sdk-python", "sdk-rust", "workflow", "waterline"];
+  const emittedArtifacts = ["server", "cli", "sdk-php", "sdk-python", "sdk-rust", "workflow", "waterline"];
   const unknown = Object.keys(artifacts).filter(key => !officialRequirements[key]).sort();
   if (unknown.length > 0) {
     throw new Error(`${label} contains unknown artifact keys: ${unknown.join(", ")}`);
@@ -118,13 +119,6 @@ process.stdin.on("end", () => {
     const version = artifacts[key];
     if (typeof version !== "string" || version.trim() !== version || !requirement.test(version)) {
       throw new Error(`${label} artifact ${key} has unsupported version ${JSON.stringify(version)}`);
-    }
-  }
-
-  if (Object.hasOwn(artifacts, "sdk-php")) {
-    const version = artifacts["sdk-php"];
-    if (typeof version !== "string" || version.trim() !== version || !officialRequirements["sdk-php"].test(version)) {
-      throw new Error(`${label} artifact sdk-php has unsupported version ${JSON.stringify(version)}`);
     }
   }
 
@@ -145,6 +139,9 @@ load_artifact_tuple_assignments() {
         ;;
       cli)
         current_cli_version="$version"
+        ;;
+      sdk-php)
+        current_php_sdk_version="$version"
         ;;
       sdk-python)
         current_python_sdk_version="$version"
@@ -320,6 +317,9 @@ apply_committed_tuple_floor() {
   if is_newer_stable_version "$pinned_cli_version" "$current_cli_version"; then
     current_cli_version="$pinned_cli_version"
   fi
+  if is_newer_stable_version "$pinned_php_sdk_version" "$current_php_sdk_version"; then
+    current_php_sdk_version="$pinned_php_sdk_version"
+  fi
   if is_newer_stable_version "$pinned_python_sdk_version" "$current_python_sdk_version"; then
     current_python_sdk_version="$pinned_python_sdk_version"
   fi
@@ -357,6 +357,7 @@ normalize_cli_pin() {
 
 current_server_version=""
 current_cli_version=""
+current_php_sdk_version=""
 current_python_sdk_version=""
 current_rust_sdk_version=""
 current_workflow_version=""
@@ -365,6 +366,7 @@ current_waterline_version=""
 if [[ "$artifact_source" == "pinned" ]]; then
   current_server_version="$(semantic_version_from_text "$pinned_server_image")"
   current_cli_version="$pinned_cli_version"
+  current_php_sdk_version="$pinned_php_sdk_version"
   current_python_sdk_version="$pinned_python_sdk_version"
   current_rust_sdk_version="$pinned_rust_sdk_version"
   current_workflow_version="$pinned_workflow_version"
@@ -400,9 +402,22 @@ cli_pin="$(normalize_cli_pin "$cli_pin" "$cli_version")"
 python_sdk_version="${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:-$current_python_sdk_version}"
 rust_sdk_version="${DURABLE_WORKFLOW_RUST_SDK_VERSION:-$current_rust_sdk_version}"
 
-workflow_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
+php_sdk_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
 if [[ -n "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}" ]]; then
-  workflow_version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"
+  php_sdk_version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"
+elif [[ -n "$php_sdk_pin" ]]; then
+  php_sdk_version="$(semantic_version_from_text "$php_sdk_pin")"
+  php_sdk_version="${php_sdk_version:-$current_php_sdk_version}"
+else
+  php_sdk_version="$current_php_sdk_version"
+fi
+if [[ -z "$php_sdk_pin" ]]; then
+  php_sdk_pin="durable-workflow/sdk:${php_sdk_version}"
+fi
+
+workflow_pin="${DURABLE_WORKFLOW_WORKFLOW_PIN:-}"
+if [[ -n "${DURABLE_WORKFLOW_WORKFLOW_VERSION:-}" ]]; then
+  workflow_version="$DURABLE_WORKFLOW_WORKFLOW_VERSION"
 elif [[ -n "$workflow_pin" ]]; then
   workflow_version="$(semantic_version_from_text "$workflow_pin")"
   workflow_version="${workflow_version:-$current_workflow_version}"
@@ -427,7 +442,7 @@ if [[ -z "$waterline_pin" ]]; then
 fi
 
 for name in \
-  server_image server_version cli_version cli_pin python_sdk_version rust_sdk_version workflow_version workflow_pin waterline_version waterline_pin
+  server_image server_version cli_version cli_pin php_sdk_version php_sdk_pin python_sdk_version rust_sdk_version workflow_version workflow_pin waterline_version waterline_pin
 do
   if [[ -z "${!name:-}" ]]; then
     printf 'resolve-current-artifacts: failed to resolve %s from %s artifact source\n' "$name" "$artifact_source" >&2
@@ -439,9 +454,11 @@ emit_assignment DURABLE_SERVER_IMAGE "$server_image"
 emit_assignment DURABLE_SERVER_VERSION "$server_version"
 emit_assignment DURABLE_WORKFLOW_CLI_VERSION "$cli_version"
 emit_assignment DURABLE_WORKFLOW_CLI_PIN "$cli_pin"
+emit_assignment DURABLE_WORKFLOW_PHP_SDK_VERSION "$php_sdk_version"
+emit_assignment DURABLE_WORKFLOW_PHP_SDK_PIN "$php_sdk_pin"
 emit_assignment DURABLE_WORKFLOW_PYTHON_SDK_VERSION "$python_sdk_version"
 emit_assignment DURABLE_WORKFLOW_RUST_SDK_VERSION "$rust_sdk_version"
-emit_assignment DURABLE_WORKFLOW_PHP_SDK_VERSION "$workflow_version"
-emit_assignment DURABLE_WORKFLOW_PHP_SDK_PIN "$workflow_pin"
+emit_assignment DURABLE_WORKFLOW_WORKFLOW_VERSION "$workflow_version"
+emit_assignment DURABLE_WORKFLOW_WORKFLOW_PIN "$workflow_pin"
 emit_assignment DURABLE_WORKFLOW_WATERLINE_VERSION "$waterline_version"
 emit_assignment DURABLE_WORKFLOW_WATERLINE_PIN "$waterline_pin"

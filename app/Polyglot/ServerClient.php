@@ -21,8 +21,8 @@ use Workflow\V2\Support\WorkerProtocolVersion;
  * (`X-Durable-Workflow-Protocol-Version`, namespace header, bearer
  * token), so this is the same wire shape an SDK-shipped polling worker
  * would emit. The protocol version is read from the installed
- * `durable-workflow/workflow` SDK so the worker always advertises the
- * version the rest of the package targets.
+ * embedded `durable-workflow/workflow` engine so this Laravel-only adapter
+ * advertises the version the rest of the package targets.
  */
 final class ServerClient
 {

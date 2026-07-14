@@ -7,8 +7,8 @@
 #       single Python worker on `polyglot-python`.
 #
 #   - php-workflow-worker + python-activity-worker / php_to_python scenario
-#       A real Laravel + Composer-installed durable-workflow PHP SDK
-#       worker registers the PHP-authored
+#       A framework-neutral `durable-workflow/sdk` worker registers the
+#       PHP-authored
 #       `polyglot.php-to-python.PhpToPythonWorkflow` on
 #       `polyglot-php-to-python`. A separate Python container registers
 #       the `polyglot.php-to-python.*` activities on the same queue, so
@@ -71,8 +71,16 @@ x-artifact-defaults:
   rust-avro-version: &durable-rust-avro-version "${DURABLE_WORKFLOW_RUST_AVRO_VERSION:-0.21.0}"
   php-sdk-pin: &durable-php-sdk-pin "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
   php-sdk-version: &durable-php-sdk-version "${DURABLE_WORKFLOW_PHP_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
+  workflow-pin: &durable-workflow-pin "${DURABLE_WORKFLOW_WORKFLOW_PIN:-}"
+  workflow-version: &durable-workflow-version "${DURABLE_WORKFLOW_WORKFLOW_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   waterline-pin: &durable-waterline-pin "${DURABLE_WORKFLOW_WATERLINE_PIN:-}"
   waterline-version: &durable-waterline-version "${DURABLE_WORKFLOW_WATERLINE_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
+
+x-php-sdk-worker-build: &php-sdk-worker-build
+  context: ./php_worker
+  args:
+    DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
+    DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
 
 services:
   mysql:
@@ -164,14 +172,7 @@ services:
         condition: service_healthy
 
   php-same-workflow-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -180,17 +181,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-php", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--task-queue=polyglot-php", "--poll-timeout=5"]
 
   php-same-activity-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -199,17 +193,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--mode=activity", "--task-queue=polyglot-php", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--mode=activity", "--task-queue=polyglot-php", "--poll-timeout=5"]
 
   php-workflow-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -218,17 +205,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-php-to-python", "--worker-id=php-workflow-worker", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--task-queue=polyglot-php-to-python", "--worker-id=php-workflow-worker", "--poll-timeout=5"]
 
   php-to-rust-workflow-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -237,17 +217,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--task-queue=polyglot-to-rust", "--worker-id=php-to-rust-workflow-worker", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--task-queue=polyglot-to-rust", "--worker-id=php-to-rust-workflow-worker", "--poll-timeout=5"]
 
   php-query-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -256,17 +229,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--mode=query", "--task-queue=polyglot-php-to-python", "--worker-id=php-query-worker", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--mode=query", "--task-queue=polyglot-php-to-python", "--worker-id=php-query-worker", "--poll-timeout=5"]
 
   php-activity-worker:
-    build:
-      context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
-      args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
-        DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
-        DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
+    build: *php-sdk-worker-build
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -275,7 +241,7 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    command: ["php", "artisan", "app:polyglot-worker", "--mode=activity", "--task-queue=polyglot-python-to-php", "--poll-timeout=5"]
+    command: ["php", "/app/worker.php", "--mode=activity", "--task-queue=polyglot-python-to-php", "--poll-timeout=5"]
 
   rust-workflow-worker:
     build:
@@ -318,10 +284,10 @@ services:
   waterline:
     build:
       context: ..
-      dockerfile: polyglot/php_worker/Dockerfile
+      dockerfile: polyglot/laravel/Dockerfile
       args:
-        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
-        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
+        DURABLE_WORKFLOW_WORKFLOW_PIN: *durable-workflow-pin
+        DURABLE_WORKFLOW_WORKFLOW_VERSION: *durable-workflow-version
         DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
         DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
     environment:
@@ -381,6 +347,8 @@ services:
       DURABLE_WORKFLOW_RUST_AVRO_VERSION: *durable-rust-avro-version
       DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
       DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
+      DURABLE_WORKFLOW_WORKFLOW_PIN: *durable-workflow-pin
+      DURABLE_WORKFLOW_WORKFLOW_VERSION: *durable-workflow-version
       DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin
       DURABLE_WORKFLOW_WATERLINE_VERSION: *durable-waterline-version
       DURABLE_WORKFLOW_WATERLINE_URL: "http://waterline:8081/waterline"

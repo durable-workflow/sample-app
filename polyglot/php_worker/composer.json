@@ -1,0 +1,15 @@
+{
+    "name": "durable-workflow/polyglot-php-worker",
+    "description": "Framework-neutral PHP worker used by the public polyglot sample",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4"
+    },
+    "config": {
+        "allow-plugins": {},
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

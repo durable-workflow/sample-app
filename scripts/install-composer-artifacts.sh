@@ -65,9 +65,9 @@ exit(1);
 
 workflow_constraint="$(
   artifact_constraint_from_pin \
-    "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}" \
+    "${DURABLE_WORKFLOW_WORKFLOW_PIN:-}" \
     durable-workflow/workflow \
-    "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
+    "${DURABLE_WORKFLOW_WORKFLOW_VERSION:-}"
 )"
 waterline_constraint="$(
   artifact_constraint_from_pin \

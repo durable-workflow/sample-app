@@ -20,22 +20,22 @@ Nine workflow/activity runtime cells run end to end:
 | Scenario | Workflow language | Activity language | Source |
 | --- | --- | --- | --- |
 | Python authoring | Python (`sdk-python`) | Python | `python_workflow/workflow.py` |
-| PHP authoring | PHP (`durable-workflow/workflow`) | PHP | `app/Workflows/Polyglot/PhpSameLanguageWorkflow.php` + `app/Console/Commands/PolyglotWorker.php` |
-| Cross-language activity | PHP (`durable-workflow/workflow`) | Python | `app/Workflows/Polyglot/PhpToPythonWorkflow.php` + `python_worker/activities.py` |
-| Reverse cross-language activity | Python (`sdk-python`) | PHP (`durable-workflow/workflow`) | `python_workflow/workflow.py` + `app/Console/Commands/PolyglotWorker.php` |
+| PHP authoring | PHP (`durable-workflow/sdk`) | PHP | `php_worker/worker.php` |
+| Cross-language activity | PHP (`durable-workflow/sdk`) | Python | `php_worker/worker.php` + `python_worker/activities.py` |
+| Reverse cross-language activity | Python (`sdk-python`) | PHP (`durable-workflow/sdk`) | `python_workflow/workflow.py` + `php_worker/worker.php` |
 | Rust authoring | Rust (`sdk-rust`) | Rust | `rust_worker/src/main.rs` |
 | Rust to Python | Rust (`sdk-rust`) | Python | `rust_worker/src/main.rs` + `python_worker/activities.py` |
-| Rust to PHP | Rust (`sdk-rust`) | PHP (`durable-workflow/workflow`) | `rust_worker/src/main.rs` + `app/Console/Commands/PolyglotWorker.php` |
+| Rust to PHP | Rust (`sdk-rust`) | PHP (`durable-workflow/sdk`) | `rust_worker/src/main.rs` + `php_worker/worker.php` |
 | Python to Rust | Python (`sdk-python`) | Rust (`sdk-rust`) | `python_workflow/workflow.py` + `rust_worker/src/main.rs` |
-| PHP to Rust | PHP (`durable-workflow/workflow`) | Rust (`sdk-rust`) | `app/Workflows/Polyglot/PhpToRustWorkflow.php` + `rust_worker/src/main.rs` |
+| PHP to Rust | PHP (`durable-workflow/sdk`) | Rust (`sdk-rust`) | `php_worker/worker.php` + `rust_worker/src/main.rs` |
 
 The PHP-authored scenario is the wire-level cross-language test:
 
-- `php-workflow-worker` is a real Laravel + Composer-installed
-  `durable-workflow/workflow` container that registers
+- `php-workflow-worker` is a framework-neutral Composer project that installs
+  the exact published `durable-workflow/sdk` release and registers
   `polyglot.php-to-python.PhpToPythonWorkflow` on the
-  `polyglot-php-to-python` task queue. Its workflow source is the same
-  file the main sample app's MCP listing surfaces.
+  `polyglot-php-to-python` task queue. Its image contains neither Laravel nor
+  the embedded `durable-workflow/workflow` engine.
 - `python-activity-worker` is a Python container that registers
   `polyglot.php-to-python.reverse` and `polyglot.php-to-python.tally`
   on the same task queue.
@@ -72,8 +72,8 @@ test:
 
 - The same `python-workflow-worker` registers
   `polyglot.python-to-php.greeter` on the `polyglot-python` task queue.
-- `php-activity-worker` is a separate Laravel + Composer-installed
-  `durable-workflow/workflow` container that registers
+- `php-activity-worker` is a separate process from the same published
+  `durable-workflow/sdk` image that registers
   `polyglot.python-to-php.marker` and `polyglot.python-to-php.describe`
   on the `polyglot-python-to-php` task queue.
 - The smoke asserts that the Python workflow result includes the PHP
@@ -107,9 +107,10 @@ and version, and the machine-readable output records input/output JSON types
 and equality for every value in every direction.
 
 The smoke emits a run metadata JSON document after all required surfaces run.
-That document includes exact public artifact pins for the server image, CLI,
-Python SDK, Rust SDK, PHP SDK, and Waterline, the Apache Avro dependency
-versions, plus pass/fail status per surface.
+That document includes separate exact public artifact pins and roles for the
+server image, CLI, framework-neutral PHP SDK, Python SDK, Rust SDK, embedded
+Laravel Workflow engine, and Waterline. It also records the Apache Avro
+dependency versions and pass/fail status per surface.
 
 The codec contract that determines which payload values cross the
 language boundary cleanly is documented in the workflow package:
@@ -139,7 +140,11 @@ polyglot/
 │   ├── Dockerfile                      exact released SDK build
 │   └── src/main.rs                     Rust workflows, activities, signal/query
 ├── php_worker/
-│   └── Dockerfile                      Real PHP image (Laravel + durable-workflow PHP SDK)
+│   ├── composer.json                   framework-neutral Composer project
+│   ├── Dockerfile                      published durable-workflow/sdk image
+│   └── worker.php                      PHP workflows, activities, signal/query
+├── laravel/
+│   └── Dockerfile                      embedded Workflow + Waterline host
 └── README.md                           this file
 ```
 
@@ -149,16 +154,14 @@ build context, and the Dockerfile bakes the `scripts/` tree into the
 image at `/app/scripts/`. Editing those files there is the only way to
 change what the smoke service runs — there is no bind mount.
 
-The PHP-authored polyglot workflow lives with the rest of the sample
-app's PHP code at `app/Workflows/Polyglot/PhpToPythonWorkflow.php` so it
-is autoloaded by Laravel and discoverable through the same MCP listing
-machinery as the other samples. The polyglot PHP worker container
-reuses the sample-app Laravel image and runs the
-`php artisan app:polyglot-worker` command. In `--mode=workflow` it
-registers itself against the standalone server and pumps workflow tasks
-through a Fiber-based replay of the same class file. In
-`--mode=activity` it registers PHP activities consumed by the
-Python-authored workflow.
+The standalone PHP implementation lives entirely in `php_worker/worker.php`
+and uses `DurableWorkflow\Client`, `DurableWorkflow\Worker`, workflow and query
+contexts, and the SDK's Apache Avro codec. The matching classes under
+`app/Workflows/Polyglot/` remain Laravel teaching material for the root
+embedded sample and its MCP catalog; they are not copied into the standalone
+worker image. Waterline is likewise hosted in the separate `laravel` image,
+where `durable-workflow/workflow` retains its actual role as the embedded
+Laravel engine.
 
 ## Running locally
 

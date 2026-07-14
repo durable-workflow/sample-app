@@ -23,9 +23,9 @@ use Throwable;
 use Workflow\V2\Support\WorkerProtocolVersion;
 
 /**
- * Polling worker that registers PHP-authored workflows or PHP-authored
- * activities on a polyglot task queue and executes them against the
- * standalone Durable Workflow server.
+ * Laravel-hosted protocol adapter retained for embedded-engine development.
+ * The public standalone PHP worker lives in polyglot/php_worker and uses the
+ * framework-neutral durable-workflow/sdk package instead.
  *
  * On each workflow task the worker performs a cold replay of the
  * workflow Fiber: it instantiates the registered class, starts the
@@ -52,7 +52,7 @@ class PolyglotWorker extends Command
     private const QUERY_AWARE_WORKFLOW_POLL_TIMEOUT_SECONDS = 1;
     private const READY_QUERY_DRAIN_ATTEMPTS = 10;
 
-    protected $signature = 'app:polyglot-worker
+    protected $signature = 'app:embedded-polyglot-adapter
         {--mode=workflow : Worker mode: workflow, activity, or query}
         {--server-url= : Standalone Durable Workflow server URL (defaults to DURABLE_WORKFLOW_SERVER_URL)}
         {--token= : Worker bearer token (defaults to DURABLE_WORKFLOW_AUTH_TOKEN)}
@@ -62,7 +62,7 @@ class PolyglotWorker extends Command
         {--idle-iterations=0 : Stop after this many empty polls (0 = run forever)}
         {--poll-timeout=30 : Long-poll timeout in seconds}';
 
-    protected $description = 'Run a polyglot PHP workflow or activity worker against the standalone Durable Workflow server.';
+    protected $description = 'Run the Laravel Workflow engine protocol adapter (not the standalone PHP SDK worker).';
 
     /** @var array<string, class-string<\Workflow\V2\Workflow>> */
     private const WORKFLOW_REGISTRY = [
@@ -137,7 +137,7 @@ class PolyglotWorker extends Command
         return (string) env('POLYGLOT_PHP2PY_TASK_QUEUE', 'polyglot-php-to-python');
     }
 
-    private function phpSdkVersion(): string
+    private function workflowEngineIdentity(): string
     {
         $version = InstalledVersions::getPrettyVersion('durable-workflow/workflow')
             ?? InstalledVersions::getVersion('durable-workflow/workflow')
@@ -158,7 +158,7 @@ class PolyglotWorker extends Command
             taskQueue: $taskQueue,
             supportedWorkflowTypes: array_keys(self::WORKFLOW_REGISTRY),
             capabilities: [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
-            sdkVersion: $this->phpSdkVersion(),
+            sdkVersion: $this->workflowEngineIdentity(),
         );
 
         $this->info(sprintf(
@@ -252,7 +252,7 @@ class PolyglotWorker extends Command
             taskQueue: $taskQueue,
             supportedWorkflowTypes: self::QUERY_WORKFLOW_TYPES,
             capabilities: [WorkerProtocolVersion::CAPABILITY_QUERY_TASKS],
-            sdkVersion: $this->phpSdkVersion(),
+            sdkVersion: $this->workflowEngineIdentity(),
         );
 
         $this->info(sprintf(
@@ -296,7 +296,7 @@ class PolyglotWorker extends Command
             workerId: $workerId,
             taskQueue: $taskQueue,
             supportedActivityTypes: self::ACTIVITY_TYPES,
-            sdkVersion: $this->phpSdkVersion(),
+            sdkVersion: $this->workflowEngineIdentity(),
         );
 
         $this->info(sprintf(

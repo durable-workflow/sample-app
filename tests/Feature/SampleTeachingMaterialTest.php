@@ -148,6 +148,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
         $this->assertStringContainsString('pinned_cli_version="0.1.90"', $artifactResolver);
+        $this->assertStringContainsString('pinned_php_sdk_version="0.1.4"', $artifactResolver);
         $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
         $this->assertMatchesRegularExpression('/pinned_python_sdk_version="0\.4\.\d+"/', $artifactResolver);
         $this->assertStringContainsString('pinned_rust_sdk_version="0.1.15"', $artifactResolver);
@@ -160,7 +161,9 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_RUST_SDK_VERSION', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PHP_SDK_VERSION', $script);
+        $this->assertStringContainsString('-e DURABLE_WORKFLOW_WORKFLOW_VERSION', $script);
         $this->assertStringContainsString("'sdk-rust' => \$this->envString('DURABLE_WORKFLOW_RUST_SDK_VERSION')", $command);
+        $this->assertStringContainsString("'sdk-php' => \$this->installedVersion('durable-workflow/sdk')", $command);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_WATERLINE_VERSION', $script);
         $this->assertStringContainsString('durable-workflow.sample-app.conformance.run', $command);
         $this->assertStringContainsString('{--allow-skips', $command);

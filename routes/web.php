@@ -53,9 +53,15 @@ Route::get('/polyglot/conformance/artifacts', function () {
     return response()->json([
         'schema' => 'durable-workflow.sample-app.polyglot-artifacts',
         'artifacts' => [
+            'sdk-php' => [
+                'artifact' => 'durable-workflow/sdk',
+                'version' => $version('durable-workflow/sdk'),
+                'role' => 'framework-neutral client and remote worker SDK',
+            ],
             'workflow' => [
                 'artifact' => 'durable-workflow/workflow',
                 'version' => $version('durable-workflow/workflow'),
+                'role' => 'embedded Laravel workflow engine',
             ],
             'waterline' => [
                 'artifact' => 'durable-workflow/waterline',
