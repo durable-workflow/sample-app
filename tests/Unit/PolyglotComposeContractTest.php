@@ -224,7 +224,7 @@ SH,
             $script,
             'export SAMPLE_APP_COMMIT="$sample_app_commit"',
             "printf '\\n==> resolving current published artifact tuple\\n'",
-            "\nrebuild_services_for_artifact_tuple\n",
+            "\n  rebuild_services_for_artifact_tuple\n",
             'app php artisan app:conformance',
             'docker compose cp "app:${metadata_container_abs}" "$metadata_path"',
         );

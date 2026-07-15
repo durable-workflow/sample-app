@@ -126,15 +126,29 @@ docker compose exec -T app php artisan app:workflow
 Once the stack is up, Waterline is at `http://localhost:${APP_PORT:-8000}/waterline/dashboard`
 and the MCP server is at `http://localhost:${APP_PORT:-8000}/mcp/workflows`.
 
-To measure the full public sample-app surface, run the conformance harness after
-the stack is healthy:
+For a release-style proof from a clean checkout, use the combined entry point
+instead of the manual build, migration, and sample commands above. It builds the
+resolved artifact tuple once, runs deterministic smoke, and continues through
+the full strict matrix on the same healthy stack and schema:
+
+```bash
+scripts/compose-smoke-conformance.sh --strict
+```
+
+The standalone full-conformance entry point remains self-contained for callers
+that do not need the deterministic preflight:
 
 ```bash
 scripts/compose-conformance.sh --strict
 ```
 
 The harness emits a JSON document with the sample-app commit, artifact versions,
-timestamp, per-surface outcome, focused findings, and any skipped surfaces. It runs the documented
+timestamp, per-surface outcome, focused findings, setup measurements, and any
+skipped surfaces. Setup measurements include whether the run started with a
+clean or warm image cache, setup duration, peak Docker disk growth, build
+invocation count, and whether a prepared stack was reused. Run the combined
+entry point once without its app image and again with the resulting cache to
+capture comparable clean-cache and warm-cache measurements. It runs the documented
 artisan samples, browser checks for the app and Waterline, the MCP workflow API,
 an API documentation check that compares the README's documented MCP tools and
 workflow keys with the live endpoint, a Waterline/manual observation check using
@@ -194,11 +208,14 @@ runs the deterministic samples and exits after printing the blocked step,
 container status, and recent app/worker logs on failure. By default, a passing
 preflight continues into the broader public sample-app conformance surface so a
 release/conformance caller does not accidentally record deterministic smoke as
-full coverage. Set `SAMPLE_APP_SMOKE_ONLY=1` when a caller intentionally wants
-only the deterministic path. Set `SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0` to
-disable the chained full surface for exploratory local runs, or run
-`scripts/compose-conformance.sh --strict` directly when the deterministic
-preflight is not needed.
+full coverage. The handoff records the prepared app and worker containers; the
+full wrapper reuses them only when their health, artifact tuple, credentials,
+installed packages, and migrated schema still match. Otherwise it falls back to
+its self-contained rebuild and schema reset. Set `SAMPLE_APP_SMOKE_ONLY=1` when
+a caller intentionally wants only the deterministic path. Set
+`SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0` to disable the chained full surface for
+exploratory local runs, or run `scripts/compose-conformance.sh --strict`
+directly when the deterministic preflight is not needed.
 
 Tear the stack down with `docker compose down -v --remove-orphans` when
 finished. The deterministic Docker path is exercised on every push through the

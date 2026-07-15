@@ -244,7 +244,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param list<string> $command
+     * @param  list<string>  $command
      */
     private function runProcessSurface(string $name, array $command, string $expected, int $timeoutSeconds = 180): void
     {
@@ -350,7 +350,7 @@ class Conformance extends Command
                     'method' => 'initialize',
                     'params' => [
                         'protocolVersion' => '2024-11-05',
-                        'capabilities' => new \stdClass(),
+                        'capabilities' => new \stdClass,
                         'clientInfo' => [
                             'name' => 'sample-app-conformance-docs',
                             'version' => '1',
@@ -370,14 +370,14 @@ class Conformance extends Command
             $initialized = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'method' => 'notifications/initialized',
-                'params' => new \stdClass(),
+                'params' => new \stdClass,
             ]);
 
             $tools = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-docs-tools',
                 'method' => 'tools/list',
-                'params' => new \stdClass(),
+                'params' => new \stdClass,
             ]);
 
             $workflows = $request->post($url, [
@@ -472,7 +472,7 @@ class Conformance extends Command
                     'method' => 'initialize',
                     'params' => [
                         'protocolVersion' => '2024-11-05',
-                        'capabilities' => new \stdClass(),
+                        'capabilities' => new \stdClass,
                         'clientInfo' => [
                             'name' => 'sample-app-conformance',
                             'version' => '1',
@@ -492,14 +492,14 @@ class Conformance extends Command
             $initialized = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'method' => 'notifications/initialized',
-                'params' => new \stdClass(),
+                'params' => new \stdClass,
             ]);
 
             $tools = $request->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 'sample-app-conformance-tools',
                 'method' => 'tools/list',
-                'params' => new \stdClass(),
+                'params' => new \stdClass,
             ]);
 
             $workflows = $request->post($url, [
@@ -1030,7 +1030,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<int, mixed> $availableWorkflows
+     * @param  array<int, mixed>  $availableWorkflows
      * @return list<string>
      */
     private function workflowKeys(array $availableWorkflows): array
@@ -1042,7 +1042,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<int, mixed> $availableWorkflows
+     * @param  array<int, mixed>  $availableWorkflows
      * @return array<string, mixed>
      */
     private function workflowDefinition(array $availableWorkflows, string $key): array
@@ -1057,7 +1057,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $content
+     * @param  array<string, mixed>  $content
      * @return list<string>
      */
     private function nextActionCodes(array $content): array
@@ -1075,7 +1075,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $content
+     * @param  array<string, mixed>  $content
      */
     private function historyContainsEvent(array $content, string $eventType): bool
     {
@@ -1205,6 +1205,7 @@ class Conformance extends Command
             'started_at' => $startedAt,
             'completed_at' => gmdate('c'),
             'app_url' => $baseUrl,
+            'setup' => $this->setupMetrics(),
             'artifactVersions' => $artifactVersions,
             'local_product_source_checkouts_used' => $localProductSourceCheckoutsUsed,
             'artifact_install_evidence' => [
@@ -1231,9 +1232,41 @@ class Conformance extends Command
     }
 
     /**
-     * @param list<string> $failed
-     * @param list<string> $skipped
-     * @param list<string> $missing
+     * @return array<string, bool|int|string|null>
+     */
+    private function setupMetrics(): array
+    {
+        return [
+            'cache_state' => $this->envString('SAMPLE_APP_SETUP_CACHE_STATE') ?? 'unreported',
+            'duration_ms' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_DURATION_MS'),
+            'peak_disk_growth_bytes' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES'),
+            'stack_reused' => $this->envBoolean('SAMPLE_APP_SETUP_STACK_REUSED'),
+            'build_invocations' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_BUILD_INVOCATIONS'),
+        ];
+    }
+
+    private function envBoolean(string $name): bool
+    {
+        $value = env($name);
+
+        return $value === true || (is_string($value) && strtolower($value) === 'true');
+    }
+
+    private function envUnsignedInteger(string $name): ?int
+    {
+        $value = $this->envString($name);
+
+        if ($value === null || preg_match('/^\d+$/', $value) !== 1) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    /**
+     * @param  list<string>  $failed
+     * @param  list<string>  $skipped
+     * @param  list<string>  $missing
      * @return list<array<string, mixed>>
      */
     private function findings(array $failed, array $skipped, array $missing): array
@@ -1292,7 +1325,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $result
+     * @param  array<string, mixed>  $result
      */
     private function surfaceEvidence(array $result): ?string
     {
@@ -1403,7 +1436,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param list<string> $command
+     * @param  list<string>  $command
      */
     private function commandLine(array $command): string
     {
@@ -1411,7 +1444,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $value
+     * @param  array<string, mixed>  $value
      */
     private function jsonArgument(array $value): string
     {
@@ -1424,7 +1457,7 @@ class Conformance extends Command
     }
 
     /**
-     * @param list<string> $tokens
+     * @param  list<string>  $tokens
      * @return list<string>
      */
     private function missingTokens(string $haystack, array $tokens): array

@@ -115,16 +115,34 @@ restart_worker_after_schema_refresh() {
     docker compose up -d --no-deps --force-recreate --wait worker
 }
 
+prepared_stack_handoff_matches() {
+  local expected_app_id="${SAMPLE_APP_PREPARED_APP_CONTAINER_ID:-}"
+  local expected_worker_id="${SAMPLE_APP_PREPARED_WORKER_CONTAINER_ID:-}"
+
+  [[ "${SAMPLE_APP_SMOKE_REUSE_PREPARED:-0}" == "1" ]] &&
+    [[ -n "$expected_app_id" && -n "$expected_worker_id" ]] &&
+    [[ "$(docker compose ps -q app)" == "$expected_app_id" ]] &&
+    [[ "$(docker compose ps -q worker)" == "$expected_worker_id" ]]
+}
+
 docker compose ps
 
-printf '\n==> waiting for database to accept app connections\n'
-wait_for_db
+if prepared_stack_handoff_matches; then
+  printf '\n==> reusing schema prepared by combined conformance setup\n'
+else
+  if [[ "${SAMPLE_APP_SMOKE_REUSE_PREPARED:-0}" == "1" ]]; then
+    printf '\n==> prepared stack handoff changed; refreshing schema before smoke\n'
+  fi
 
-run_step \
-  "fresh database migrations" \
-  "${SAMPLE_APP_MIGRATION_TIMEOUT_SECONDS:-180}" \
-  docker compose exec -T app php artisan migrate:fresh --force
-restart_worker_after_schema_refresh
+  printf '\n==> waiting for database to accept app connections\n'
+  wait_for_db
+
+  run_step \
+    "fresh database migrations" \
+    "${SAMPLE_APP_MIGRATION_TIMEOUT_SECONDS:-180}" \
+    docker compose exec -T app php artisan migrate:fresh --force
+  restart_worker_after_schema_refresh
+fi
 
 run_sample "simple workflow" "app:workflow" "workflow_activity_other"
 run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
@@ -133,8 +151,14 @@ run_sample "webhook workflow" "app:webhook" "Hello world"
 
 if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
   printf '\n==> full sample-app conformance surface\n'
+  prepared_app_container_id="$(docker compose ps -q app)"
+  prepared_worker_container_id="$(docker compose ps -q worker)"
   set +e
-  timeout "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800}s" scripts/compose-conformance.sh
+  timeout "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800}s" env \
+    SAMPLE_APP_CONFORMANCE_REUSE_PREPARED=1 \
+    SAMPLE_APP_PREPARED_APP_CONTAINER_ID="$prepared_app_container_id" \
+    SAMPLE_APP_PREPARED_WORKER_CONTAINER_ID="$prepared_worker_container_id" \
+    scripts/compose-conformance.sh
   status=$?
   set -e
 

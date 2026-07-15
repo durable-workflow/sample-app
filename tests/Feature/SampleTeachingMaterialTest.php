@@ -75,6 +75,7 @@ class SampleTeachingMaterialTest extends TestCase
     {
         $readme = file_get_contents(__DIR__.'/../../README.md');
         $script = file_get_contents(__DIR__.'/../../scripts/compose-conformance.sh');
+        $combinedScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke-conformance.sh');
         $artifactResolver = file_get_contents(__DIR__.'/../../scripts/resolve-current-artifacts.sh');
         $smokeScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke.sh');
         $smokeWorkflow = file_get_contents(__DIR__.'/../../.github/workflows/smoke.yml');
@@ -87,6 +88,7 @@ class SampleTeachingMaterialTest extends TestCase
 
         $this->assertIsString($readme);
         $this->assertIsString($script);
+        $this->assertIsString($combinedScript);
         $this->assertIsString($artifactResolver);
         $this->assertIsString($smokeScript);
         $this->assertIsString($smokeWorkflow);
@@ -119,7 +121,10 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
         $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
         $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
-        $this->assertStringContainsString('refresh_services_for_conformance_env', $script);
+        $this->assertStringContainsString('prepared_stack_is_reusable', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES', $script);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_SMOKE_FIRST=1', $combinedScript);
+        $this->assertStringContainsString('exec scripts/compose-conformance.sh "$@"', $combinedScript);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);
         $this->assertStringContainsString('docker compose cp "app:${metadata_container_abs}" "$metadata_path"', $script);
         $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH=%s', $script);
@@ -169,6 +174,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('{--allow-skips', $command);
         $this->assertStringContainsString("envString('SAMPLE_APP_COMMIT')", $command);
         $this->assertStringContainsString('active_payload_codec', $command);
+        $this->assertStringContainsString("'setup' => \$this->setupMetrics()", $command);
         $this->assertStringContainsString('DOCUMENTED_MCP_TOOLS', $command);
         $this->assertStringContainsString('DOCUMENTED_WORKFLOW_KEYS', $command);
         $this->assertStringContainsString('required_surfaces', $command);
