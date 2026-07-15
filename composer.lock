@@ -640,16 +640,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-alpha.280",
+            "version": "2.0.0-alpha.284",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "3fa9bff54c8ccef5537a885b167e470a629661b9"
+                "reference": "80bef5d9bf01f3282c088b59c433e46b8b146617"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/3fa9bff54c8ccef5537a885b167e470a629661b9",
-                "reference": "3fa9bff54c8ccef5537a885b167e470a629661b9",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/80bef5d9bf01f3282c088b59c433e46b8b146617",
+                "reference": "80bef5d9bf01f3282c088b59c433e46b8b146617",
                 "shasum": ""
             },
             "require": {
@@ -699,9 +699,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.280"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-alpha.284"
             },
-            "time": "2026-07-14T05:44:23+00:00"
+            "time": "2026-07-15T11:56:17+00:00"
         },
         {
             "name": "egulias/email-validator",
