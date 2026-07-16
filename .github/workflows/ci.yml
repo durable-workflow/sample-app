@@ -5,17 +5,19 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     name: php artisan test (php ${{ matrix.php }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
-      # Keep shared-runner pressure low while still exercising both supported
-      # PHP versions.
-      max-parallel: 1
       matrix:
         php: ['8.4', '8.5']
 
@@ -105,3 +107,15 @@ jobs:
           SHARED_DB_PASSWORD: password
           REDIS_CLIENT: phpredis
         run: php artisan test
+
+  target-branch-qualification:
+    name: Target branch qualification
+    if: ${{ always() }}
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every supported PHP cell
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+        run: test "$TEST_RESULT" = success
