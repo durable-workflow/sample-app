@@ -505,20 +505,21 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "0.1.5",
+            "version": "0.1.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "474a9a6d59b8c9ee904c01e50d9a302ca492ec20"
+                "reference": "05fe99b44062b939e4c43acc00dae457eef87af2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/474a9a6d59b8c9ee904c01e50d9a302ca492ec20",
-                "reference": "474a9a6d59b8c9ee904c01e50d9a302ca492ec20",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/05fe99b44062b939e4c43acc00dae457eef87af2",
+                "reference": "05fe99b44062b939e4c43acc00dae457eef87af2",
                 "shasum": ""
             },
             "require": {
                 "apache/avro": "^1.12",
+                "composer-runtime-api": "^2.0",
                 "ext-json": "*",
                 "guzzlehttp/guzzle": "^7.8",
                 "php": "^8.1",
@@ -537,12 +538,12 @@
             "type": "library",
             "extra": {
                 "durable-workflow": {
-                    "supported-server-versions": ">=0.2,<0.3",
-                    "worker-protocol-version": "1.13",
-                    "control-plane-version": "2",
                     "payload-codecs": [
                         "avro"
-                    ]
+                    ],
+                    "control-plane-version": "2",
+                    "worker-protocol-version": "1.13",
+                    "supported-server-versions": ">=0.2,<0.3"
                 }
             },
             "autoload": {
@@ -571,9 +572,9 @@
             "support": {
                 "docs": "https://php.durable-workflow.com/",
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
-                "source": "https://github.com/durable-workflow/sdk-php/tree/0.1.5"
+                "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-07-14T18:37:44+00:00"
+            "time": "2026-07-16T10:56:46+00:00"
         },
         {
             "name": "durable-workflow/waterline",

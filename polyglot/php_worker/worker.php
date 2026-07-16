@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-require __DIR__.'/vendor/autoload.php';
-
 use Composer\InstalledVersions;
 use DurableWorkflow\Client;
 use DurableWorkflow\Codec\PayloadCodec;
@@ -13,6 +11,10 @@ use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
 use DurableWorkflow\Worker\WorkflowCommand;
 use DurableWorkflow\Worker\WorkflowContext;
+
+if (! class_exists(Client::class)) {
+    require __DIR__.'/vendor/autoload.php';
+}
 
 const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
@@ -325,6 +327,12 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
         },
     );
 
+    $worker->declareSignal(
+        'polyglot.php.signal-query',
+        'polyglot-signal',
+        static fn (array $value): mixed => null,
+    );
+
     $worker->registerQuery(
         'polyglot.php.signal-query',
         'state',
@@ -344,13 +352,17 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
 function installShutdownHandlers(bool &$shutdown): void
 {
-    if (!function_exists('pcntl_async_signals') || !function_exists('pcntl_signal')) {
+    if (! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
         return;
     }
 
     pcntl_async_signals(true);
-    pcntl_signal(SIGINT, static function () use (&$shutdown): void { $shutdown = true; });
-    pcntl_signal(SIGTERM, static function () use (&$shutdown): void { $shutdown = true; });
+    pcntl_signal(SIGINT, static function () use (&$shutdown): void {
+        $shutdown = true;
+    });
+    pcntl_signal(SIGTERM, static function () use (&$shutdown): void {
+        $shutdown = true;
+    });
 }
 
 function runActivityWorker(Client $client, string $workerId, string $taskQueue, int $pollTimeout): void
@@ -365,14 +377,14 @@ function runActivityWorker(Client $client, string $workerId, string $taskQueue, 
 
     $shutdown = false;
     installShutdownHandlers($shutdown);
-    while (!$shutdown) {
+    while (! $shutdown) {
         $client->heartbeatWorker($workerId, ['activity_available' => 1]);
         $poll = $client->pollActivityTaskResponse($workerId, $taskQueue, $pollTimeout);
         if (PollResponse::isTerminal($poll)) {
             break;
         }
         $task = $poll['task'] ?? null;
-        if (!is_array($task)) {
+        if (! is_array($task)) {
             continue;
         }
 
@@ -399,6 +411,7 @@ function runActivityWorker(Client $client, string $workerId, string $taskQueue, 
                         ],
                     ],
                 );
+
                 continue;
             }
 
@@ -443,14 +456,14 @@ function runQueryWorker(Client $client, string $workerId, string $taskQueue, int
     $shutdown = false;
     installShutdownHandlers($shutdown);
     $codec = $client->payloadCodec();
-    while (!$shutdown) {
+    while (! $shutdown) {
         $client->heartbeatWorker($workerId, ['workflow_available' => 1]);
         $poll = $client->pollQueryTaskResponse($workerId, $taskQueue, $pollTimeout);
         if (PollResponse::isTerminal($poll)) {
             break;
         }
         $task = $poll['task'] ?? null;
-        if (!is_array($task)) {
+        if (! is_array($task)) {
             continue;
         }
 
@@ -478,45 +491,54 @@ function runQueryWorker(Client $client, string $workerId, string $taskQueue, int
     }
 }
 
-$options = commandOptions();
-$mode = option($options, 'mode', 'workflow');
-$serverUrl = option($options, 'server-url', (string) getenv('DURABLE_WORKFLOW_SERVER_URL'));
-$token = option($options, 'token', (string) (getenv('DURABLE_WORKFLOW_AUTH_TOKEN') ?: 'test-token'));
-$namespace = option($options, 'namespace', (string) (getenv('DURABLE_WORKFLOW_NAMESPACE') ?: 'default'));
-$defaultQueue = $mode === 'activity'
-    ? (string) (getenv('POLYGLOT_PY2PHP_TASK_QUEUE') ?: 'polyglot-python-to-php')
-    : (string) (getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python');
-$taskQueue = option($options, 'task-queue', $defaultQueue);
-$workerId = option(
-    $options,
-    'worker-id',
-    sprintf('php-%s-worker-%s-%d', $mode, gethostname() ?: 'host', getmypid()),
-);
-$pollTimeout = max(0, (int) option($options, 'poll-timeout', '5'));
+function runStandaloneWorker(): void
+{
+    $options = commandOptions();
+    $mode = option($options, 'mode', 'workflow');
+    $serverUrl = option($options, 'server-url', (string) getenv('DURABLE_WORKFLOW_SERVER_URL'));
+    $token = option($options, 'token', (string) (getenv('DURABLE_WORKFLOW_AUTH_TOKEN') ?: 'test-token'));
+    $namespace = option($options, 'namespace', (string) (getenv('DURABLE_WORKFLOW_NAMESPACE') ?: 'default'));
+    $defaultQueue = $mode === 'activity'
+        ? (string) (getenv('POLYGLOT_PY2PHP_TASK_QUEUE') ?: 'polyglot-python-to-php')
+        : (string) (getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python');
+    $taskQueue = option($options, 'task-queue', $defaultQueue);
+    $workerId = option(
+        $options,
+        'worker-id',
+        sprintf('php-%s-worker-%s-%d', $mode, gethostname() ?: 'host', getmypid()),
+    );
+    $pollTimeout = max(0, (int) option($options, 'poll-timeout', '5'));
 
-if ($serverUrl === '') {
-    throw new RuntimeException('Set DURABLE_WORKFLOW_SERVER_URL or pass --server-url.');
-}
-if (!in_array($mode, ['workflow', 'activity', 'query'], true)) {
-    throw new RuntimeException('Expected --mode=workflow, --mode=activity, or --mode=query.');
+    if ($serverUrl === '') {
+        throw new RuntimeException('Set DURABLE_WORKFLOW_SERVER_URL or pass --server-url.');
+    }
+    if (! in_array($mode, ['workflow', 'activity', 'query'], true)) {
+        throw new RuntimeException('Expected --mode=workflow, --mode=activity, or --mode=query.');
+    }
+
+    $client = new Client($serverUrl, token: $token, namespace: $namespace);
+    if ($mode === 'activity') {
+        runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);
+
+        return;
+    }
+    if ($mode === 'query') {
+        runQueryWorker($client, $workerId, $taskQueue, $pollTimeout);
+
+        return;
+    }
+
+    $worker = new Worker($client, $taskQueue, $workerId);
+    configureWorkflows($worker, $client->payloadCodec());
+    fwrite(STDOUT, sprintf(
+        "polyglot php worker registered: id=%s queue=%s types=[%s]\n",
+        $workerId,
+        $taskQueue,
+        implode(',', WORKFLOW_TYPES),
+    ));
+    $worker->run($pollTimeout);
 }
 
-$client = new Client($serverUrl, token: $token, namespace: $namespace);
-if ($mode === 'activity') {
-    runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);
-    exit(0);
+if (realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
+    runStandaloneWorker();
 }
-if ($mode === 'query') {
-    runQueryWorker($client, $workerId, $taskQueue, $pollTimeout);
-    exit(0);
-}
-
-$worker = new Worker($client, $taskQueue, $workerId);
-configureWorkflows($worker, $client->payloadCodec());
-fwrite(STDOUT, sprintf(
-    "polyglot php worker registered: id=%s queue=%s types=[%s]\n",
-    $workerId,
-    $taskQueue,
-    implode(',', WORKFLOW_TYPES),
-));
-$worker->run($pollTimeout);

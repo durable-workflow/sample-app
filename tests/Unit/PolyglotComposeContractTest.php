@@ -469,11 +469,11 @@ SH,
         $this->assertArrayNotHasKey('repositories', $composerJson);
         $this->assertIsArray($lockedPackages['durable-workflow/sdk'] ?? null);
         $this->assertSame(
-            '0.1.5',
+            '0.1.9',
             $lockedPackages['durable-workflow/sdk']['version'] ?? null,
         );
         $this->assertSame(
-            '474a9a6d59b8c9ee904c01e50d9a302ca492ec20',
+            '05fe99b44062b939e4c43acc00dae457eef87af2',
             $lockedPackages['durable-workflow/sdk']['source']['reference'] ?? null,
         );
         $this->assertSame(
@@ -792,7 +792,7 @@ SH,
         $this->assertSame('0.1.90', $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         $this->assertSame('0.4.99', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('0.1.15', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
-        $this->assertSame('0.1.5', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.9', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.284', $assignments['DURABLE_WORKFLOW_WORKFLOW_VERSION'] ?? null);
         $this->assertSame('2.0.0-alpha.133', $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION'] ?? null);
     }
@@ -809,9 +809,9 @@ SH,
         $this->assertSame('dw==0.1.90', $assignments['DURABLE_WORKFLOW_CLI_PIN'] ?? null);
         $this->assertSame('0.4.99', $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
         $this->assertSame('0.1.15', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION'] ?? null);
-        $this->assertSame('0.1.5', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
+        $this->assertSame('0.1.9', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION'] ?? null);
         $this->assertSame(
-            'durable-workflow/sdk:0.1.5',
+            'durable-workflow/sdk:0.1.9',
             $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN'] ?? null,
         );
         $this->assertSame('2.0.0-alpha.284', $assignments['DURABLE_WORKFLOW_WORKFLOW_VERSION'] ?? null);

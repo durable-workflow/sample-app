@@ -3,7 +3,7 @@ set -euo pipefail
 
 pinned_server_image="durableworkflow/server:0.2.658"
 pinned_cli_version="0.1.90"
-pinned_php_sdk_version="0.1.5"
+pinned_php_sdk_version="0.1.9"
 pinned_python_sdk_version="0.4.99"
 pinned_rust_sdk_version="0.1.15"
 pinned_workflow_version="2.0.0-alpha.284"
