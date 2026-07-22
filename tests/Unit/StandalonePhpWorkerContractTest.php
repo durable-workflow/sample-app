@@ -62,6 +62,14 @@ final class StandalonePhpWorkerContractTest extends TestCase
                 if (str_ends_with($uri, '/api/worker/workflow-tasks/poll')) {
                     return ['task' => $this->workflowTask, 'poll_status' => 'leased'];
                 }
+                if (str_ends_with($uri, '/api/worker/workflow-tasks/php-signal-contract-task/heartbeat')) {
+                    return [
+                        'task_id' => 'php-signal-contract-task',
+                        'lease_owner' => 'php-signal-contract-worker',
+                        'workflow_task_attempt' => 1,
+                        'renewed' => true,
+                    ];
+                }
                 if (str_ends_with($uri, '/api/worker/activity-tasks/poll')) {
                     return ['poll_status' => 'stopped', 'reason' => 'worker_stopped'];
                 }

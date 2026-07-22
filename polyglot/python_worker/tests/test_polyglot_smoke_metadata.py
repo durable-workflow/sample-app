@@ -13,7 +13,7 @@ REQUIRED_ENV = {
     "DURABLE_SERVER_IMAGE": "durableworkflow/server:0.2.0",
     "DURABLE_WORKFLOW_CLI_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_PHP_SDK_VERSION": "0.2.0",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "0.2.0",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-beta.3",
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_WORKFLOW_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_WATERLINE_VERSION": "2.0.0-alpha.1",
@@ -105,6 +105,62 @@ class PhpSdkMetadataTest(unittest.TestCase):
         self.assertEqual(
             {"workflow", "activity"},
             {item["php_role"] for item in execution["completed_cells"]},
+        )
+
+
+class ArtifactVersionFindingsTest(unittest.TestCase):
+    def versions(self, python_version: str) -> dict[str, str]:
+        versions = dict(polyglot_smoke.REQUIRED_ARTIFACT_VERSIONS)
+        versions["sdk-python"] = python_version
+        return versions
+
+    def test_accepts_python_pep_440_spelling_for_the_required_beta(self) -> None:
+        stale, missing = polyglot_smoke.artifact_version_findings(
+            self.versions("2.0.0b3")
+        )
+
+        self.assertEqual({}, stale)
+        self.assertEqual({}, missing)
+
+    def test_rejects_a_different_python_beta(self) -> None:
+        stale, missing = polyglot_smoke.artifact_version_findings(
+            self.versions("2.0.0b4")
+        )
+
+        self.assertEqual(
+            {
+                "sdk-python": {
+                    "expected": "2.0.0-beta.3",
+                    "actual": "2.0.0b4",
+                }
+            },
+            stale,
+        )
+        self.assertEqual({}, missing)
+
+    def test_rejects_a_legacy_python_version(self) -> None:
+        stale, missing = polyglot_smoke.artifact_version_findings(
+            self.versions("0.4.0")
+        )
+
+        self.assertEqual(
+            {
+                "sdk-python": {
+                    "expected": "2.0.0-beta.3",
+                    "actual": "0.4.0",
+                }
+            },
+            stale,
+        )
+        self.assertEqual({}, missing)
+
+    def test_does_not_apply_python_beta_spelling_to_other_artifacts(self) -> None:
+        self.assertFalse(
+            polyglot_smoke.artifact_versions_match(
+                "sdk-php",
+                "2.0.0b3",
+                "2.0.0-beta.3",
+            )
         )
 
 

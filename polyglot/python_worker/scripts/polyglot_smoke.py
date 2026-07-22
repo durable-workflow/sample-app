@@ -265,6 +265,21 @@ def resolved_artifact_versions(
     }
 
 
+def artifact_versions_match(artifact: str, actual: str, expected: str) -> bool:
+    if actual == expected:
+        return True
+    if artifact != "sdk-python":
+        return False
+
+    expected_beta = re.fullmatch(r"(\d+\.\d+\.\d+)-beta\.(\d+)", expected)
+    actual_beta = re.fullmatch(r"(\d+\.\d+\.\d+)b(\d+)", actual)
+    return bool(
+        expected_beta
+        and actual_beta
+        and expected_beta.groups() == actual_beta.groups()
+    )
+
+
 def artifact_version_findings(
     versions: dict[str, str | None],
 ) -> tuple[dict[str, dict[str, str | None]], dict[str, str]]:
@@ -274,7 +289,7 @@ def artifact_version_findings(
         actual = versions.get(artifact)
         if actual is None:
             missing[artifact] = expected
-        elif actual != expected:
+        elif not artifact_versions_match(artifact, actual, expected):
             stale[artifact] = {
                 "expected": expected,
                 "actual": actual,

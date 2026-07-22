@@ -3,13 +3,13 @@
   "schemaVersion": 1,
   "description": "Synthetic parser fixture containing a non-platform artifact key.",
   "artifacts": {
-    "cli": "0.1.902",
-    "sdk-php": "0.1.901",
-    "sdk-python": "0.4.903",
-    "sdk-rust": "0.1.904",
-    "server": "0.2.901",
+    "cli": "2.0.0-beta.7",
+    "sdk-php": "2.0.0-beta.7",
+    "sdk-python": "2.0.0-beta.7",
+    "sdk-rust": "2.0.0-beta.7",
+    "server": "2.0.0-beta.7",
     "unknown-sdk": "1.0.0",
-    "waterline": "2.0.0-alpha.905",
-    "workflow": "2.0.0-alpha.904"
+    "waterline": "2.0.0-beta.7",
+    "workflow": "2.0.0-beta.7"
   }
 }

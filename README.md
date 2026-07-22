@@ -62,7 +62,7 @@ For this Laravel-only sample, Waterline proves that the durable run exists and s
 Minimal Python worker Prometheus wiring looks like this:
 
 ```bash
-pip install 'durable-workflow[prometheus]'
+pip install 'durable-workflow[prometheus]==2.0.0-beta.3'
 ```
 
 ```python
@@ -174,11 +174,10 @@ The PHP SDK variable selects the framework-neutral `durable-workflow/sdk`
 package used by `polyglot/`; the Workflow variable selects the separate
 `durable-workflow/workflow` engine used by this Laravel application.
 By default, the wrapper calls
-`scripts/resolve-current-artifacts.sh`, which resolves the current published
-conformance tuple from the public docs release-audit manifest, advances routine
-Waterline prereleases from the public Waterline package catalog, keeps the
-committed fallback tuple as the minimum resolved artifact set, emits the result
-as shell assignments, and preserves explicit overrides. The wrapper rebuilds
+`scripts/resolve-current-artifacts.sh`, which resolves one synchronized 2.0 beta
+tuple from the public docs release-audit manifest, rejects mixed prerelease
+generations, emits the result as shell assignments, and preserves explicit
+overrides. The wrapper rebuilds
 the app and worker containers with the resolved Composer pins before running the
 harness, so the recorded embedded Workflow and Waterline versions come from
 installed packages rather than the committed fallback lock. The polyglot

@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:0.2.658"
-pinned_cli_version="0.1.90"
-pinned_php_sdk_version="0.1.9"
-pinned_python_sdk_version="0.4.99"
-pinned_rust_sdk_version="0.1.15"
-pinned_workflow_version="2.0.0-alpha.284"
-pinned_waterline_version="2.0.0-alpha.133"
+pinned_server_image="durableworkflow/server:2.0.0-beta.3"
+pinned_cli_version="2.0.0-beta.3"
+pinned_php_sdk_version="2.0.0-beta.3"
+pinned_python_sdk_version="2.0.0-beta.3"
+pinned_rust_sdk_version="2.0.0-beta.3"
+pinned_workflow_version="2.0.0-beta.3"
+pinned_waterline_version="2.0.0-beta.3"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
-waterline_catalog_url="${DURABLE_WORKFLOW_WATERLINE_CATALOG_URL:-https://repo.packagist.org/p2/durable-workflow/waterline.json}"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
 legacy_resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-}"
@@ -99,15 +98,11 @@ process.stdin.on("end", () => {
     throw new Error(`${label} must expose artifact_versions or artifacts`);
   }
 
-  const officialRequirements = {
-    server: /^0\.2\.\d+$/,
-    cli: /^0\.1\.\d+$/,
-    "sdk-php": /^0\.1\.\d+$/,
-    "sdk-python": /^0\.4\.\d+$/,
-    "sdk-rust": /^0\.1\.\d+$/,
-    workflow: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
-    waterline: /^2\.0\.0-(?:alpha|beta)\.\d+$/,
-  };
+  const supportedTrainPattern = /^2\.0\.0-beta\.\d+$/;
+  const officialRequirements = Object.fromEntries(
+    ["server", "cli", "sdk-php", "sdk-python", "sdk-rust", "workflow", "waterline"]
+      .map(key => [key, supportedTrainPattern]),
+  );
   const emittedArtifacts = ["server", "cli", "sdk-php", "sdk-python", "sdk-rust", "workflow", "waterline"];
   const unknown = Object.keys(artifacts).filter(key => !officialRequirements[key]).sort();
   if (unknown.length > 0) {
@@ -120,6 +115,11 @@ process.stdin.on("end", () => {
     if (typeof version !== "string" || version.trim() !== version || !requirement.test(version)) {
       throw new Error(`${label} artifact ${key} has unsupported version ${JSON.stringify(version)}`);
     }
+  }
+
+  const versions = new Set(emittedArtifacts.map(key => artifacts[key]));
+  if (versions.size !== 1) {
+    throw new Error(`${label} must expose one synchronized 2.0 beta version across every artifact`);
   }
 
   process.stdout.write(emittedArtifacts.map(key => `${key}=${artifacts[key]}`).join("\n") + "\n");
@@ -199,141 +199,6 @@ load_artifact_tuple_url() {
   load_artifact_tuple_assignments "$assignments"
 }
 
-latest_waterline_prerelease_version() {
-  local latest
-
-  require_command curl "resolve durable-workflow/waterline from Packagist"
-  require_command node "select the current durable-workflow/waterline prerelease"
-
-  if ! latest="$(
-    curl -fsSL --retry 2 --connect-timeout 5 --max-time 20 "$waterline_catalog_url" \
-      | node -e '
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", chunk => { raw += chunk; });
-process.stdin.on("end", () => {
-  const payload = JSON.parse(raw);
-  const versions = (((payload || {}).packages || {})["durable-workflow/waterline"] || [])
-    .map(candidate => typeof candidate.version === "string" ? candidate.version : "")
-    .map(version => {
-      const match = /^2\.0\.0-(alpha|beta)\.(\d+)$/.exec(version);
-      return match ? { version, channel: match[1] === "beta" ? 1 : 0, ordinal: Number(match[2]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => (b.channel - a.channel) || (b.ordinal - a.ordinal));
-
-  if (versions.length === 0) {
-    process.exit(1);
-  }
-
-  process.stdout.write(versions[0].version);
-});
-'
-  )" || ! [[ "$latest" =~ ^2\.0\.0-(alpha|beta)\.[0-9]+$ ]]; then
-    printf 'resolve-current-artifacts: unable to resolve current durable-workflow/waterline prerelease from %s\n' "$waterline_catalog_url" >&2
-    exit 1
-  fi
-
-  printf '%s\n' "$latest"
-}
-
-is_newer_prerelease() {
-  local candidate="$1"
-  local current="$2"
-  local candidate_channel
-  local current_channel
-  local candidate_rank
-  local current_rank
-  local candidate_ordinal
-  local current_ordinal
-
-  if ! [[ "$candidate" =~ ^2\.0\.0-(alpha|beta)\.([0-9]+)$ ]]; then
-    return 1
-  fi
-  candidate_channel="${BASH_REMATCH[1]}"
-  candidate_ordinal="${BASH_REMATCH[2]}"
-
-  if ! [[ "$current" =~ ^2\.0\.0-(alpha|beta)\.([0-9]+)$ ]]; then
-    return 0
-  fi
-  current_channel="${BASH_REMATCH[1]}"
-  current_ordinal="${BASH_REMATCH[2]}"
-
-  candidate_rank=0
-  current_rank=0
-  [[ "$candidate_channel" == "beta" ]] && candidate_rank=1
-  [[ "$current_channel" == "beta" ]] && current_rank=1
-
-  (( candidate_rank > current_rank )) \
-    || (( candidate_rank == current_rank && candidate_ordinal > current_ordinal ))
-}
-
-is_newer_stable_version() {
-  local candidate="$1"
-  local current="$2"
-  local candidate_major
-  local candidate_minor
-  local candidate_patch
-  local current_major
-  local current_minor
-  local current_patch
-
-  if ! [[ "$candidate" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    return 1
-  fi
-  candidate_major="${BASH_REMATCH[1]}"
-  candidate_minor="${BASH_REMATCH[2]}"
-  candidate_patch="${BASH_REMATCH[3]}"
-
-  if ! [[ "$current" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    return 0
-  fi
-  current_major="${BASH_REMATCH[1]}"
-  current_minor="${BASH_REMATCH[2]}"
-  current_patch="${BASH_REMATCH[3]}"
-
-  (( candidate_major > current_major )) \
-    || (( candidate_major == current_major && candidate_minor > current_minor )) \
-    || (( candidate_major == current_major && candidate_minor == current_minor && candidate_patch > current_patch ))
-}
-
-advance_waterline_from_public_catalog() {
-  local latest_waterline_version
-
-  latest_waterline_version="$(latest_waterline_prerelease_version)"
-  if is_newer_prerelease "$latest_waterline_version" "$current_waterline_version"; then
-    current_waterline_version="$latest_waterline_version"
-  fi
-}
-
-apply_committed_tuple_floor() {
-  local pinned_server_version
-
-  pinned_server_version="$(semantic_version_from_text "$pinned_server_image")"
-
-  if is_newer_stable_version "$pinned_server_version" "$current_server_version"; then
-    current_server_version="$pinned_server_version"
-  fi
-  if is_newer_stable_version "$pinned_cli_version" "$current_cli_version"; then
-    current_cli_version="$pinned_cli_version"
-  fi
-  if is_newer_stable_version "$pinned_php_sdk_version" "$current_php_sdk_version"; then
-    current_php_sdk_version="$pinned_php_sdk_version"
-  fi
-  if is_newer_stable_version "$pinned_python_sdk_version" "$current_python_sdk_version"; then
-    current_python_sdk_version="$pinned_python_sdk_version"
-  fi
-  if is_newer_stable_version "$pinned_rust_sdk_version" "$current_rust_sdk_version"; then
-    current_rust_sdk_version="$pinned_rust_sdk_version"
-  fi
-  if is_newer_prerelease "$pinned_workflow_version" "$current_workflow_version"; then
-    current_workflow_version="$pinned_workflow_version"
-  fi
-  if is_newer_prerelease "$pinned_waterline_version" "$current_waterline_version"; then
-    current_waterline_version="$pinned_waterline_version"
-  fi
-}
-
 normalize_cli_pin() {
   local pin="$1"
   local version="$2"
@@ -377,8 +242,6 @@ elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL:-}" ]]; then
   load_artifact_tuple_url "$DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL"
 else
   load_artifact_tuple_url "$current_artifact_tuple_url"
-  advance_waterline_from_public_catalog
-  apply_committed_tuple_floor
 fi
 
 server_image="${DURABLE_SERVER_IMAGE:-}"
@@ -412,7 +275,7 @@ else
   php_sdk_version="$current_php_sdk_version"
 fi
 if [[ -z "$php_sdk_pin" ]]; then
-  php_sdk_pin="durable-workflow/sdk:${php_sdk_version}"
+  php_sdk_pin="durable-workflow/sdk:${php_sdk_version}@beta"
 fi
 
 workflow_pin="${DURABLE_WORKFLOW_WORKFLOW_PIN:-}"
@@ -425,7 +288,7 @@ else
   workflow_version="$current_workflow_version"
 fi
 if [[ -z "$workflow_pin" ]]; then
-  workflow_pin="durable-workflow/workflow:${workflow_version}"
+  workflow_pin="durable-workflow/workflow:${workflow_version}@beta"
 fi
 
 waterline_pin="${DURABLE_WORKFLOW_WATERLINE_PIN:-}"
@@ -438,7 +301,7 @@ else
   waterline_version="$current_waterline_version"
 fi
 if [[ -z "$waterline_pin" ]]; then
-  waterline_pin="durable-workflow/waterline:${waterline_version}"
+  waterline_pin="durable-workflow/waterline:${waterline_version}@beta"
 fi
 
 for name in \

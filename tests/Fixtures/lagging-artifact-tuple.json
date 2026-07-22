@@ -1,14 +1,14 @@
 {
   "schema": "durable-workflow.sample-app.synthetic-artifact-tuple",
   "schemaVersion": 1,
-  "description": "Synthetic parser fixture for sample-app tests; these versions are lower than the committed fallback tuple.",
+  "description": "Synthetic parser fixture for sample-app tests; this tuple mixes beta generations.",
   "artifacts": {
-    "cli": "0.1.81",
-    "sdk-php": "0.1.0",
-    "sdk-python": "0.4.89",
-    "sdk-rust": "0.1.0",
-    "server": "0.2.488",
-    "waterline": "2.0.0-alpha.110",
-    "workflow": "2.0.0-alpha.220"
+    "cli": "2.0.0-beta.1",
+    "sdk-php": "2.0.0-beta.1",
+    "sdk-python": "2.0.0-beta.1",
+    "sdk-rust": "2.0.0-beta.1",
+    "server": "2.0.0-beta.1",
+    "waterline": "2.0.0-beta.3",
+    "workflow": "2.0.0-beta.1"
   }
 }
