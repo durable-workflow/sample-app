@@ -13,7 +13,7 @@ REQUIRED_ENV = {
     "DURABLE_SERVER_IMAGE": "durableworkflow/server:0.2.0",
     "DURABLE_WORKFLOW_CLI_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_PHP_SDK_VERSION": "0.2.0",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-beta.3",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-beta.5",
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_WORKFLOW_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_WATERLINE_VERSION": "2.0.0-alpha.1",
@@ -116,7 +116,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
 
     def test_accepts_python_pep_440_spelling_for_the_required_beta(self) -> None:
         stale, missing = polyglot_smoke.artifact_version_findings(
-            self.versions("2.0.0b3")
+            self.versions("2.0.0b5")
         )
 
         self.assertEqual({}, stale)
@@ -130,7 +130,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-beta.3",
+                    "expected": "2.0.0-beta.5",
                     "actual": "2.0.0b4",
                 }
             },
@@ -146,7 +146,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-beta.3",
+                    "expected": "2.0.0-beta.5",
                     "actual": "0.4.0",
                 }
             },
@@ -158,9 +158,19 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertFalse(
             polyglot_smoke.artifact_versions_match(
                 "sdk-php",
-                "2.0.0b3",
-                "2.0.0-beta.3",
+                "2.0.0b5",
+                "2.0.0-beta.5",
             )
+        )
+
+    def test_rust_artifact_metadata_uses_cargo_exact_requirement_syntax(self) -> None:
+        versions = self.versions("2.0.0b5")
+        versions["sdk-rust"] = "2.0.0-beta.5"
+        rust = polyglot_smoke.artifact_metadata(versions)["sdk_rust"]
+
+        self.assertEqual(
+            "cargo add durable-workflow@=2.0.0-beta.5",
+            rust["pin"],
         )
 
 

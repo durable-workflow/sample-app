@@ -448,7 +448,7 @@ def artifact_metadata(
         },
         "sdk_rust": {
             "artifact": "durable-workflow",
-            "pin": f"cargo add durable-workflow@{versions.get('sdk-rust') or 'unknown'} --exact",
+            "pin": f"cargo add durable-workflow@={versions.get('sdk-rust') or 'unknown'}",
             "version": versions.get("sdk-rust"),
             "version_source": "rust_worker_registration" if rust_exercised else "artifact_tuple_metadata",
             "install_channel": "crates.io",

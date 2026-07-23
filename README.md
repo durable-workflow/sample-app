@@ -62,7 +62,7 @@ For this Laravel-only sample, Waterline proves that the durable run exists and s
 Minimal Python worker Prometheus wiring looks like this:
 
 ```bash
-pip install 'durable-workflow[prometheus]==2.0.0-beta.3'
+pip install 'durable-workflow[prometheus]==2.0.0b5'
 ```
 
 ```python

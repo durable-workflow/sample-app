@@ -17,8 +17,8 @@ jobs:
     timeout-minutes: 30
 
     env:
-      COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}
-      APP_PORT: 18080
+      COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      APP_PORT: "0"
       SAMPLE_APP_SMOKE_ONLY: 1
 
     steps:
