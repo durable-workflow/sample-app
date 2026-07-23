@@ -286,6 +286,8 @@ services:
       context: ..
       dockerfile: polyglot/laravel/Dockerfile
       args:
+        DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
+        DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
         DURABLE_WORKFLOW_WORKFLOW_PIN: *durable-workflow-pin
         DURABLE_WORKFLOW_WORKFLOW_VERSION: *durable-workflow-version
         DURABLE_WORKFLOW_WATERLINE_PIN: *durable-waterline-pin

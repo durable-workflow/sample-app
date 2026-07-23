@@ -10,7 +10,7 @@ COPY src ./src
 
 RUN set -eux; \
     test -n "$DURABLE_WORKFLOW_RUST_SDK_VERSION"; \
-    cargo update -p durable-workflow --precise "$DURABLE_WORKFLOW_RUST_SDK_VERSION"; \
+    cargo add "durable-workflow@=${DURABLE_WORKFLOW_RUST_SDK_VERSION}"; \
     cargo build --release --locked; \
     cargo tree --locked -i "durable-workflow@${DURABLE_WORKFLOW_RUST_SDK_VERSION}"; \
     cargo tree --locked -i "apache-avro@${APACHE_AVRO_RUST_VERSION}"

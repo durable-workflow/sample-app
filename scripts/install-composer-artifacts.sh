@@ -63,6 +63,12 @@ exit(1);
 ' "$package"
 }
 
+php_sdk_constraint="$(
+  artifact_constraint_from_pin \
+    "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}" \
+    durable-workflow/sdk \
+    "${DURABLE_WORKFLOW_PHP_SDK_VERSION:-}"
+)"
 workflow_constraint="$(
   artifact_constraint_from_pin \
     "${DURABLE_WORKFLOW_WORKFLOW_PIN:-}" \
@@ -76,25 +82,28 @@ waterline_constraint="$(
     "${DURABLE_WORKFLOW_WATERLINE_VERSION:-}"
 )"
 
-if [[ -z "$workflow_constraint" && -z "$waterline_constraint" ]]; then
+if [[ -z "$php_sdk_constraint" && -z "$workflow_constraint" && -z "$waterline_constraint" ]]; then
   composer install "${install_flags[@]}"
   exit 0
 fi
 
+test -n "$php_sdk_constraint"
 test -n "$workflow_constraint"
 test -n "$waterline_constraint"
 
+locked_php_sdk_version="$(locked_package_version durable-workflow/sdk || true)"
 locked_workflow_version="$(locked_package_version durable-workflow/workflow || true)"
 locked_waterline_version="$(locked_package_version durable-workflow/waterline || true)"
 
-if [[ "$locked_workflow_version" == "$workflow_constraint" && "$locked_waterline_version" == "$waterline_constraint" ]]; then
+if [[ "$locked_php_sdk_version" == "$php_sdk_constraint" && "$locked_workflow_version" == "$workflow_constraint" && "$locked_waterline_version" == "$waterline_constraint" ]]; then
   composer install "${install_flags[@]}"
   exit 0
 fi
 
 composer require --no-update \
+  "durable-workflow/sdk:${php_sdk_constraint}" \
   "durable-workflow/workflow:${workflow_constraint}" \
   "durable-workflow/waterline:${waterline_constraint}"
 
-composer update durable-workflow/workflow durable-workflow/waterline \
+composer update durable-workflow/sdk durable-workflow/workflow durable-workflow/waterline \
   "${update_flags[@]}"

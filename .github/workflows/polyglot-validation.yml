@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
+      DURABLE_WORKFLOW_ARTIFACT_SOURCE: current
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
@@ -33,7 +33,7 @@ jobs:
           echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
           echo "Polyglot Compose project: $project"
 
-      - name: Resolve validation artifact tuple
+      - name: Resolve current artifact tuple
         shell: bash
         run: |
           while IFS= read -r assignment; do

@@ -177,11 +177,13 @@ By default, the wrapper calls
 `scripts/resolve-current-artifacts.sh`, which resolves one synchronized 2.0 beta
 tuple from the public docs release-audit manifest, rejects mixed prerelease
 generations, emits the result as shell assignments, and preserves explicit
-overrides. The wrapper rebuilds
-the app and worker containers with the resolved Composer pins before running the
-harness, so the recorded embedded Workflow and Waterline versions come from
-installed packages rather than the committed fallback lock. The polyglot
-stack independently installs and executes the resolved PHP SDK pin. Set
+overrides. The wrapper rebuilds the app and worker containers with the resolved
+PHP SDK, Workflow, and Waterline pins before running the harness, so the
+recorded versions come from installed packages rather than the committed
+fallback lock. The polyglot Rust image likewise applies the resolved SDK version
+to its build-local manifest, leaving the committed Cargo manifest and lock as
+the pinned fallback. The standalone PHP stack independently installs and
+executes the resolved PHP SDK pin. Set
 `DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned` for a reproducible run against the
 committed sample-app fallback tuple instead. Set
 `DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json` when a local run

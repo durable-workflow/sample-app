@@ -306,12 +306,14 @@ installed_artifacts_match() {
   local service="$1"
 
   docker compose exec -T \
+    -e DURABLE_WORKFLOW_PHP_SDK_VERSION \
     -e DURABLE_WORKFLOW_WORKFLOW_VERSION \
     -e DURABLE_WORKFLOW_WATERLINE_VERSION \
     "$service" php -r '
       require "/app/vendor/autoload.php";
 
       foreach ([
+        "durable-workflow/sdk" => getenv("DURABLE_WORKFLOW_PHP_SDK_VERSION"),
         "durable-workflow/workflow" => getenv("DURABLE_WORKFLOW_WORKFLOW_VERSION"),
         "durable-workflow/waterline" => getenv("DURABLE_WORKFLOW_WATERLINE_VERSION"),
       ] as $package => $expected) {
