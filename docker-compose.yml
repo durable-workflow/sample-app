@@ -154,6 +154,21 @@ services:
     profiles:
       - seed
 
+  screenshots:
+    build: *app-build
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_URL: http://sample-app:8000
+      OUTPUT_DIR: /app/screenshots
+    volumes:
+      - ./screenshots:/app/screenshots
+    entrypoint: ["node", "docker/screenshots.js"]
+    command: []
+    profiles:
+      - screenshots
+
 volumes:
   mysql_data:
   redis_data:

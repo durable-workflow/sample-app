@@ -2,7 +2,7 @@
  * Waterline Screenshot Generator
  *
  * Usage:
- *   npx playwright install chromium
+ *   npx playwright install --with-deps chromium
  *   node docker/screenshots.js [base_url] [output_dir]
  *
  * Or via Docker:
@@ -11,9 +11,9 @@
 import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+import { resolveScreenshotOptions } from './screenshot-options.js';
 
-const BASE = process.argv[2] || process.env.APP_URL || 'http://sample-app:8000';
-const OUTPUT = process.argv[3] || process.env.OUTPUT_DIR || './screenshots';
+const { baseUrl: BASE, outputDir: OUTPUT } = resolveScreenshotOptions();
 
 if (!fs.existsSync(OUTPUT)) {
     fs.mkdirSync(OUTPUT, { recursive: true });
