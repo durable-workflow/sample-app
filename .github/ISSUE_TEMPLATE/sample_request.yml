@@ -48,8 +48,8 @@ body:
     id: durable_workflow_version
     attributes:
       label: Minimum Durable Workflow version
-      description: Earliest workflow package version this pattern needs to work on.
-      placeholder: 2.0.0-alpha.5
+      description: Earliest `durable-workflow/workflow` package version this pattern needs to work on.
+      placeholder: Enter the minimum compatible package version
     validations:
       required: true
 

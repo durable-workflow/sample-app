@@ -67,8 +67,8 @@ body:
     id: durable_workflow_version
     attributes:
       label: Durable Workflow package version
-      description: Run `composer show durable-workflow/workflow` and paste the resolved version.
-      placeholder: 2.0.0-alpha.5
+      description: Run `composer show durable-workflow/workflow` and paste the exact resolved version.
+      placeholder: Paste the resolved package version
     validations:
       required: true
 
