@@ -129,6 +129,24 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/durableworkflow\/server:0\.2\.\d+/', $smokeDriver);
     }
 
+    public function test_php_workers_share_one_project_scoped_image_identity(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $services = $compose['services'] ?? [];
+        $expectedImage = '${COMPOSE_PROJECT_NAME:-sample-app-polyglot}-php-sdk-worker:latest';
+
+        foreach ([
+            'php-same-workflow-worker',
+            'php-same-activity-worker',
+            'php-workflow-worker',
+            'php-to-rust-workflow-worker',
+            'php-query-worker',
+            'php-activity-worker',
+        ] as $serviceName) {
+            $this->assertSame($expectedImage, $services[$serviceName]['image'] ?? null);
+        }
+    }
+
     public function test_sample_app_compose_can_build_against_resolved_php_artifacts(): void
     {
         $compose = Yaml::parseFile($this->repoPath('docker-compose.yml'));

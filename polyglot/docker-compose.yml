@@ -82,6 +82,10 @@ x-php-sdk-worker-build: &php-sdk-worker-build
     DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
     DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
 
+x-runtime-images:
+  php-sdk-worker: &php-sdk-worker-image >-
+    ${COMPOSE_PROJECT_NAME:-sample-app-polyglot}-php-sdk-worker:latest
+
 services:
   mysql:
     image: mysql:8.0
@@ -173,6 +177,7 @@ services:
 
   php-same-workflow-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -185,6 +190,7 @@ services:
 
   php-same-activity-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -197,6 +203,7 @@ services:
 
   php-workflow-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -209,6 +216,7 @@ services:
 
   php-to-rust-workflow-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -221,6 +229,7 @@ services:
 
   php-query-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -233,6 +242,7 @@ services:
 
   php-activity-worker:
     build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
