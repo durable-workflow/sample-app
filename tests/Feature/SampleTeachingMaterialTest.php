@@ -115,7 +115,7 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://app:8000', $script);
+        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://sample-app:8000', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);

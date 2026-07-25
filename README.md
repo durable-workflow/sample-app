@@ -199,8 +199,9 @@ The wrapper also copies the JSON metadata back to
 Pass that file as `DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH` when validating
 the agent-operability executable-loop contract against the current artifact
 tuple.
-The wrapper uses `http://app:8000` inside the Compose network so browser
-activities running in the worker container can reach the app. Set
+The app service has the browser-safe `sample-app` network alias, and the wrapper
+uses `http://sample-app:8000` inside the Compose network so browser activities
+running in the worker container can reach the app without an HTTPS upgrade. Set
 `SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.
 The wrapper runs strict by default; set `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1`
 for local exploratory runs that should return zero while naming skipped surfaces.

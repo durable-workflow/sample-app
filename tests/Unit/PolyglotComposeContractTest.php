@@ -266,6 +266,28 @@ SH,
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_WATERLINE_VERSION', $script);
     }
 
+    public function test_sample_app_image_installs_playwright_browser_dependencies(): void
+    {
+        $dockerfile = (string) file_get_contents($this->repoPath('Dockerfile'));
+
+        $this->assertStringContainsString('npx playwright install --with-deps chromium', $dockerfile);
+        $this->assertStringContainsString('node docker/playwright-smoke.js', $dockerfile);
+        $this->assertFileExists($this->repoPath('docker/playwright-smoke.js'));
+    }
+
+    public function test_sample_app_browser_conformance_uses_a_non_hsts_network_alias(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('docker-compose.yml'));
+        $aliases = $compose['services']['app']['networks']['default']['aliases'] ?? [];
+        $script = (string) file_get_contents($this->repoPath('scripts/compose-conformance.sh'));
+
+        $this->assertContains('sample-app', $aliases);
+        $this->assertStringContainsString(
+            'SAMPLE_APP_CONFORMANCE_URL:-http://sample-app:8000',
+            $script,
+        );
+    }
+
     public function test_polyglot_validation_derives_compose_project_from_actions_run_context(): void
     {
         $workflowPath = $this->repoPath('.github/workflows/polyglot-validation.yml');

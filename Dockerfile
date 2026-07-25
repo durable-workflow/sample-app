@@ -54,7 +54,8 @@ COPY .env.example /app/.env.example
 
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && npx playwright install chromium
+    && npx playwright install --with-deps chromium \
+    && node docker/playwright-smoke.js
 
 # Create .env so artisan commands work at build time
 RUN cp .env.example .env 2>/dev/null || echo "APP_KEY=" > .env

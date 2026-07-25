@@ -462,7 +462,7 @@ else
   args=(--allow-skips "${args[@]}")
 fi
 
-app_url="${SAMPLE_APP_CONFORMANCE_URL:-http://app:8000}"
+app_url="${SAMPLE_APP_CONFORMANCE_URL:-http://sample-app:8000}"
 metadata_path="${SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
 metadata_container_path="${SAMPLE_APP_CONFORMANCE_CONTAINER_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
 metadata_container_abs="/app/${metadata_container_path#/}"

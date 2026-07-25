@@ -88,6 +88,10 @@ services:
       - "${APP_PORT:-8000}:8000"
     volumes:
       - playwright_videos:/app/videos
+    networks:
+      default:
+        aliases:
+          - sample-app
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/up"]
       interval: 5s

@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 
-const BASE = process.argv[2] || process.env.APP_URL || 'http://app:8000';
+const BASE = process.argv[2] || process.env.APP_URL || 'http://sample-app:8000';
 const OUTPUT = process.argv[3] || process.env.OUTPUT_DIR || './screenshots';
 
 if (!fs.existsSync(OUTPUT)) {
