@@ -12,11 +12,16 @@ permissions:
 
 jobs:
   smoke:
-    name: polyglot smoke (PHP/Python/Rust)
+    name: polyglot smoke (PHP/Python/Rust, ${{ matrix.cache_mode }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cache_mode: [cold-cache, warm-cache]
     env:
       DURABLE_WORKFLOW_ARTIFACT_SOURCE: current
+      POLYGLOT_BUILD_CACHE_MODE: ${{ matrix.cache_mode }}
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
@@ -27,7 +32,7 @@ jobs:
       - name: Set isolated Compose project
         shell: bash
         run: |
-          raw="sample-app-polyglot-${GITHUB_RUN_ID:-local}-${GITHUB_JOB:-smoke}-${GITHUB_RUN_ATTEMPT:-1}"
+          raw="sample-app-polyglot-${GITHUB_RUN_ID:-local}-${GITHUB_JOB:-smoke}-${POLYGLOT_BUILD_CACHE_MODE}-${GITHUB_RUN_ATTEMPT:-1}"
           project="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
           project="${project%-}"
           echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
@@ -51,119 +56,6 @@ jobs:
           echo "Polyglot server image:"
           docker compose config server | awk '/^[[:space:]]+image:/ {print; exit}'
 
-      - name: Bring up polyglot stack
-        working-directory: polyglot
-        run: |
-          docker compose up -d --build --wait \
-            server python-activity-worker php-same-workflow-worker php-same-activity-worker php-workflow-worker php-to-rust-workflow-worker php-query-worker php-activity-worker python-workflow-worker rust-workflow-worker rust-activity-worker
-          docker compose up -d --build --wait waterline
-
-      - name: Wait for PHP workflow/query workers to register on the polyglot queue
-        working-directory: polyglot
-        run: |
-          # docker compose --wait considers a service healthy as soon as the
-          # container starts when no healthcheck is defined; the PHP worker
-          # then needs another moment to call registerWorker on the server.
-          # Poll the log for the registration line so this step does not race.
-          for attempt in $(seq 1 60); do
-            workflow_registered=0
-            query_registered=0
-
-            if docker compose logs php-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
-              workflow_registered=1
-            fi
-            if docker compose logs php-query-worker 2>/dev/null | grep -qF "polyglot php query worker registered"; then
-              query_registered=1
-            fi
-
-            if [ "$workflow_registered" -eq 1 ] && [ "$query_registered" -eq 1 ]; then
-              echo "PHP workflow/query workers registered (after ${attempt}s)"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::PHP workflow/query workers did not log polyglot registration within 60s"
-          docker compose logs --tail=200 php-workflow-worker php-query-worker
-          exit 1
-
-      - name: Wait for PHP same-language workers to register
-        working-directory: polyglot
-        run: |
-          for attempt in $(seq 1 60); do
-            workflow_registered=0
-            activity_registered=0
-
-            if docker compose logs php-same-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
-              workflow_registered=1
-            fi
-            if docker compose logs php-same-activity-worker 2>/dev/null | grep -qF "polyglot php activity worker registered"; then
-              activity_registered=1
-            fi
-
-            if [ "$workflow_registered" -eq 1 ] && [ "$activity_registered" -eq 1 ]; then
-              echo "PHP same-language workers registered (after ${attempt}s)"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::PHP same-language workers did not both register within 60s"
-          docker compose logs --tail=200 php-same-workflow-worker php-same-activity-worker
-          exit 1
-
-      - name: Wait for PHP activity worker to register on the polyglot queue
-        working-directory: polyglot
-        run: |
-          # The Python-to-PHP scenario needs a separate PHP activity
-          # worker, not the PHP workflow worker above.
-          for attempt in $(seq 1 60); do
-            if docker compose logs php-activity-worker 2>/dev/null | grep -qF "polyglot php activity worker registered"; then
-              echo "PHP activity worker registered (after ${attempt}s)"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::PHP activity worker did not log polyglot registration within 60s"
-          docker compose logs --tail=200 php-activity-worker
-          exit 1
-
-      - name: Wait for Rust and PHP-to-Rust workers to register
-        working-directory: polyglot
-        run: |
-          for attempt in $(seq 1 90); do
-            rust_workflow_registered=0
-            rust_activity_registered=0
-            php_to_rust_registered=0
-
-            if docker compose logs rust-workflow-worker 2>/dev/null | grep -qF "polyglot rust workflow worker starting"; then
-              rust_workflow_registered=1
-            fi
-            if docker compose logs rust-activity-worker 2>/dev/null | grep -qF "polyglot rust activity worker starting"; then
-              rust_activity_registered=1
-            fi
-            if docker compose logs php-to-rust-workflow-worker 2>/dev/null | grep -qF "polyglot php worker registered"; then
-              php_to_rust_registered=1
-            fi
-
-            if [ "$rust_workflow_registered" -eq 1 ] && [ "$rust_activity_registered" -eq 1 ] && [ "$php_to_rust_registered" -eq 1 ]; then
-              echo "Rust workflow/activity workers and PHP-to-Rust workflow worker registered (after ${attempt}s)"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::Rust polyglot workers did not all register within 90s"
-          docker compose logs --tail=200 rust-workflow-worker rust-activity-worker php-to-rust-workflow-worker
-          exit 1
-
-      - name: Run polyglot smoke
-        working-directory: polyglot
-        run: docker compose run --rm --build smoke
-
-      - name: Dump compose logs on failure
-        if: failure()
-        working-directory: polyglot
-        run: docker compose logs --no-color --timestamps
-
-      - name: Tear down stack
-        if: always()
-        working-directory: polyglot
-        run: docker compose down -v --remove-orphans
+      - name: Validate one stable polyglot runtime lifecycle
+        shell: bash
+        run: timeout --signal=TERM --kill-after=60s 1620s scripts/polyglot-validation.sh

@@ -95,6 +95,82 @@ PHP_REQUIRED_RUNTIME_CELLS = {
     ),
 }
 
+REQUIRED_WORKER_REGISTRATIONS = (
+    {
+        "service": "python-workflow-worker",
+        "task_queue": PY_QUEUE,
+        "runtime": "python",
+        "workflow_type": "polyglot.python.greeter",
+        "activity_type": "polyglot.python.greet",
+    },
+    {
+        "service": "python-activity-worker",
+        "task_queue": PHP2PY_QUEUE,
+        "runtime": "python",
+        "activity_type": "polyglot.php-to-python.reverse",
+    },
+    {
+        "service": "python-activity-worker",
+        "task_queue": PHP2PY_QUEUE,
+        "runtime": "python",
+        "activity_type": "polyglot.php-to-python.typed-error",
+    },
+    {
+        "service": "php-same-workflow-worker",
+        "task_queue": PHP_QUEUE,
+        "runtime": "php",
+        "workflow_type": "polyglot.php.greeter",
+    },
+    {
+        "service": "php-same-activity-worker",
+        "task_queue": PHP_QUEUE,
+        "runtime": "php",
+        "activity_type": "polyglot.php.marker",
+    },
+    {
+        "service": "php-workflow-worker",
+        "task_queue": PHP2PY_QUEUE,
+        "runtime": "php",
+        "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow",
+        "worker_id": "php-workflow-worker",
+    },
+    {
+        "service": "php-to-rust-workflow-worker",
+        "task_queue": TO_RUST_QUEUE,
+        "runtime": "php",
+        "workflow_type": "polyglot.php-to-rust.greeter",
+        "worker_id": "php-to-rust-workflow-worker",
+    },
+    {
+        "service": "php-query-worker",
+        "task_queue": PHP2PY_QUEUE,
+        "runtime": "php",
+        "workflow_type": "polyglot.php.signal-query",
+        "worker_id": "php-query-worker",
+    },
+    {
+        "service": "php-activity-worker",
+        "task_queue": PY2PHP_QUEUE,
+        "runtime": "php",
+        "activity_type": "polyglot.python-to-php.marker",
+    },
+    {
+        "service": "rust-workflow-worker",
+        "task_queue": RUST_QUEUE,
+        "runtime": "rust",
+        "workflow_type": "polyglot.rust.greeter",
+        "activity_type": "polyglot.rust.echo",
+        "worker_id": "rust-workflow-worker",
+    },
+    {
+        "service": "rust-activity-worker",
+        "task_queue": TO_RUST_QUEUE,
+        "runtime": "rust",
+        "activity_type": "polyglot.php-to-rust.echo",
+        "worker_id": "rust-activity-worker",
+    },
+)
+
 
 class DwCommandError(RuntimeError):
     def __init__(
@@ -569,6 +645,54 @@ async def wait_for_worker(
         f"no {runtime}{identity} worker registered on task queue {task_queue!r} "
         f"within {timeout_seconds:.0f}s{detail}"
     )
+
+
+async def wait_for_required_worker_registrations(
+    *,
+    timeout_seconds: float,
+) -> list[dict[str, Any]]:
+    async def wait_for_registration(registration: dict[str, str]) -> dict[str, Any]:
+        worker_arguments = {
+            key: value for key, value in registration.items() if key != "service"
+        }
+        observed_version = await wait_for_worker(
+            **worker_arguments,
+            timeout_seconds=timeout_seconds,
+        )
+        return {
+            **registration,
+            "observed_sdk_version": observed_version,
+            "status": "registered",
+        }
+
+    registrations = await asyncio.gather(
+        *(
+            wait_for_registration(registration)
+            for registration in REQUIRED_WORKER_REGISTRATIONS
+        )
+    )
+    return list(registrations)
+
+
+async def run_registration_readiness() -> int:
+    timeout_seconds = float(
+        os.environ.get("POLYGLOT_REGISTRATION_TIMEOUT_SECONDS", "90")
+    )
+    registrations = await wait_for_required_worker_registrations(
+        timeout_seconds=timeout_seconds,
+    )
+    print(
+        json.dumps(
+            {
+                "server_url": SERVER_URL,
+                "status": "ready",
+                "registrations": registrations,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
 
 
 def run_dw(args: list[str], *, timeout_seconds: int = 300) -> dict[str, Any]:
@@ -1645,6 +1769,12 @@ async def run_all() -> int:
 
 if __name__ == "__main__":
     try:
+        if sys.argv[1:] == ["--readiness-only"]:
+            sys.exit(asyncio.run(run_registration_readiness()))
+        if sys.argv[1:]:
+            raise RuntimeError(
+                f"unsupported polyglot smoke arguments: {sys.argv[1:]!r}"
+            )
         sys.exit(asyncio.run(run_all()))
     except Exception as exc:  # noqa: BLE001
         print(str(exc), file=sys.stderr)

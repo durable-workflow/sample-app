@@ -167,14 +167,16 @@ Laravel engine.
 
 ```bash
 while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh)
-cd polyglot
-docker compose up -d --build --wait \
-  server python-activity-worker php-same-workflow-worker php-same-activity-worker \
-  php-workflow-worker php-to-rust-workflow-worker php-query-worker php-activity-worker \
-  python-workflow-worker rust-workflow-worker rust-activity-worker waterline
-docker compose run --rm --build smoke
-docker compose down -v
+export COMPOSE_PROJECT_NAME="sample-app-polyglot-local-${USER:-user}"
+POLYGLOT_BUILD_CACHE_MODE=cold-cache scripts/polyglot-validation.sh
 ```
+
+Use `POLYGLOT_BUILD_CACHE_MODE=warm-cache` to prime the image graph and then
+exercise the cached build path. The validation script builds the complete
+artifact topology before starting it, brings up Server, every worker, and
+Waterline together, and runs registration probes plus smoke without allowing
+either one-off container to start or recreate dependencies. It retains bounded
+Compose diagnostics on failure and removes the isolated project on exit.
 
 The `smoke` service runs `/app/scripts/smoke.sh` (baked in from
 `python_worker/scripts/smoke.sh`), which:
@@ -211,10 +213,12 @@ the report cannot mark the Rust SDK exercised from tuple metadata alone.
 ## CI
 
 The `.github/workflows/polyglot-validation.yml` GitHub Actions job
-runs the same `docker compose run --rm --build smoke` on every push and
-pull request, so the checked-out smoke driver scripts are rebuilt into
-the image before they execute. A regression in either direction is
-caught here, not in the field.
+runs the lifecycle harness in cold-cache and warm-cache cells on every push and
+pull request. Each cell resolves the public artifact tuple once, builds the
+checked-out smoke driver before startup, and verifies that worker readiness and
+smoke execution stay bound to the Server container created by the initial
+topology bootstrap. A regression in either direction is caught here, not in the
+field.
 
 ## Codec round-trip notes
 

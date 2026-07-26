@@ -405,39 +405,85 @@ SH,
         $this->assertStringContainsString('python_same_language', $smoke);
     }
 
-    public function test_polyglot_validation_rebuilds_baked_smoke_driver(): void
+    public function test_polyglot_validation_uses_one_stable_runtime_lifecycle_for_both_cache_paths(): void
     {
         $workflow = Yaml::parseFile($this->repoPath('.github/workflows/polyglot-validation.yml'));
-        $steps = $workflow['jobs']['smoke']['steps'] ?? [];
-        $bringUpSteps = array_values(array_filter(
+        $job = $workflow['jobs']['smoke'] ?? [];
+        $steps = $job['steps'] ?? [];
+        $validationSteps = array_values(array_filter(
             $steps,
-            static fn (array $step): bool => ($step['name'] ?? null) === 'Bring up polyglot stack',
+            static fn (array $step): bool => ($step['name'] ?? null) === 'Validate one stable polyglot runtime lifecycle',
         ));
-        $smokeSteps = array_values(array_filter(
-            $steps,
-            static fn (array $step): bool => ($step['name'] ?? null) === 'Run polyglot smoke',
-        ));
+        $script = (string) file_get_contents($this->repoPath('scripts/polyglot-validation.sh'));
 
-        $this->assertNotEmpty($bringUpSteps);
-        $bringUpRun = (string) ($bringUpSteps[0]['run'] ?? '');
-        $bringUpLines = array_values(array_filter(
-            array_map('trim', explode("\n", $bringUpRun)),
-            static fn (string $line): bool => $line !== '',
-        ));
-        $waitLineIndex = array_search('docker compose up -d --build --wait \\', $bringUpLines, true);
-
-        $this->assertStringContainsString('docker compose up -d --build --wait', $bringUpRun);
-        $this->assertStringContainsString('docker compose up -d --build --wait waterline', $bringUpRun);
-        $this->assertStringContainsString('php-query-worker', $bringUpRun);
-        $this->assertNotFalse($waitLineIndex);
-        $this->assertArrayHasKey($waitLineIndex + 1, $bringUpLines);
-        $this->assertStringNotContainsString('waterline', $bringUpLines[$waitLineIndex + 1]);
-
-        $this->assertNotEmpty($smokeSteps);
+        $this->assertSame(['cold-cache', 'warm-cache'], $job['strategy']['matrix']['cache_mode'] ?? null);
+        $this->assertSame('${{ matrix.cache_mode }}', $job['env']['POLYGLOT_BUILD_CACHE_MODE'] ?? null);
+        $this->assertCount(1, $validationSteps);
         $this->assertSame(
-            'docker compose run --rm --build smoke',
-            trim((string) ($smokeSteps[0]['run'] ?? '')),
+            'timeout --signal=TERM --kill-after=60s 1620s scripts/polyglot-validation.sh',
+            trim((string) ($validationSteps[0]['run'] ?? '')),
         );
+        $this->assertStringContainsString('docker compose build --pull --no-cache "${build_services[@]}"', $script);
+        $this->assertSame(3, substr_count($script, 'docker compose build'));
+        $this->assertSame(1, substr_count($script, 'docker compose build "${build_services[@]}"'));
+        $this->assertSame(1, substr_count($script, "docker compose up \\\n"));
+        $this->assertStringContainsString('--no-build', $script);
+        $this->assertStringContainsString('"${topology_services[@]}"', $script);
+        $this->assertStringContainsString('waterline', $script);
+        $this->assertStringContainsString('php-query-worker', $script);
+        $this->assertStringContainsString('--readiness-only', $script);
+        $this->assertStringContainsString('docker compose run --rm --no-deps smoke', $script);
+        $this->assertStringContainsString('assert_server_stable "worker registration"', $script);
+        $this->assertStringContainsString('assert_server_stable "polyglot smoke"', $script);
+        $this->assertStringContainsString('trap cleanup EXIT', $script);
+        $this->assertStringContainsString('docker compose down', $script);
+        $this->assertStringContainsString('--remove-orphans', $script);
+        $this->assertStringContainsString('--rmi local', $script);
+        $this->assertStringNotContainsString('sleep ', $script);
+    }
+
+    public function test_polyglot_validation_executes_cold_and_warm_cache_paths_without_split_startup(): void
+    {
+        foreach (['cold-cache' => 1, 'warm-cache' => 2] as $cacheMode => $expectedBuilds) {
+            $commands = $this->runPolyglotValidationWithFakeDocker($cacheMode);
+            $builds = array_values(array_filter(
+                $commands,
+                static fn (string $command): bool => str_starts_with($command, 'compose build '),
+            ));
+            $startups = array_values(array_filter(
+                $commands,
+                static fn (string $command): bool => str_starts_with($command, 'compose up '),
+            ));
+            $readinessIndex = $this->firstCommandIndex($commands, '--readiness-only');
+            $smokeIndex = $this->firstCommandIndex($commands, 'compose run --rm --no-deps smoke');
+            $startupIndex = $this->firstCommandIndex($commands, 'compose up ');
+            $teardownIndex = $this->firstCommandIndex($commands, 'compose down ');
+
+            $this->assertCount($expectedBuilds, $builds);
+            $this->assertCount(1, $startups);
+            $this->assertStringContainsString('--no-build', $startups[0]);
+            $this->assertStringContainsString('server', $startups[0]);
+            $this->assertStringContainsString('python-activity-worker', $startups[0]);
+            $this->assertStringContainsString('php-query-worker', $startups[0]);
+            $this->assertStringContainsString('rust-activity-worker', $startups[0]);
+            $this->assertStringContainsString('waterline', $startups[0]);
+            $this->assertStringContainsString('--no-deps', $commands[$readinessIndex]);
+            $this->assertStringNotContainsString('--build', $commands[$readinessIndex]);
+            $this->assertStringNotContainsString('--build', $commands[$smokeIndex]);
+            $this->assertLessThan($startupIndex, $this->firstCommandIndex($commands, 'compose build '));
+            $this->assertLessThan($readinessIndex, $startupIndex);
+            $this->assertLessThan($smokeIndex, $readinessIndex);
+            $this->assertLessThan($teardownIndex, $smokeIndex);
+            $this->assertSame($teardownIndex, array_key_last($commands));
+
+            if ($cacheMode === 'cold-cache') {
+                $this->assertStringContainsString('--pull --no-cache', $builds[0]);
+            } else {
+                $this->assertStringContainsString('--pull', $builds[0]);
+                $this->assertStringNotContainsString('--no-cache', implode("\n", $builds));
+                $this->assertStringNotContainsString('--pull', $builds[1]);
+            }
+        }
     }
 
     public function test_polyglot_smoke_installs_published_cli_and_configures_waterline(): void
@@ -1101,6 +1147,80 @@ SH,
     private function repoPath(string $path): string
     {
         return dirname(__DIR__, 2).'/'.$path;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runPolyglotValidationWithFakeDocker(string $cacheMode): array
+    {
+        $temporaryDirectory = sys_get_temp_dir().'/polyglot-validation-'.bin2hex(random_bytes(6));
+        $dockerPath = $temporaryDirectory.'/docker';
+        $logPath = $temporaryDirectory.'/docker.log';
+
+        mkdir($temporaryDirectory, 0700, true);
+        file_put_contents($dockerPath, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >> "$POLYGLOT_FAKE_DOCKER_LOG"
+
+if [[ "${1:-}" == "compose" && "${2:-}" == "ps" && "${3:-}" == "-q" && "${4:-}" == "server" ]]; then
+  printf 'stable-server-container\n'
+elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{.State.Running}}" ]]; then
+  printf 'true\n'
+elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{if .State.Health}}{{.State.Health.Status}}{{end}}" ]]; then
+  printf 'healthy\n'
+fi
+BASH);
+        chmod($dockerPath, 0700);
+
+        $environment = [
+            'PATH' => $temporaryDirectory.PATH_SEPARATOR.getenv('PATH'),
+            'COMPOSE_PROJECT_NAME' => 'polyglot-script-test-'.$cacheMode,
+            'POLYGLOT_BUILD_CACHE_MODE' => $cacheMode,
+            'POLYGLOT_FAKE_DOCKER_LOG' => $logPath,
+            'POLYGLOT_BUILD_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_WARM_BUILD_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_IMAGE_PULL_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_TOPOLOGY_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_REGISTRATION_STEP_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_SMOKE_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_CLEANUP_TIMEOUT_SECONDS' => '5',
+        ];
+        $command = 'env';
+        foreach ($environment as $name => $value) {
+            $command .= ' '.escapeshellarg($name.'='.$value);
+        }
+        $command .= ' bash '.escapeshellarg($this->repoPath('scripts/polyglot-validation.sh')).' 2>&1';
+
+        try {
+            exec($command, $output, $exitCode);
+            $this->assertSame(0, $exitCode, implode("\n", $output));
+
+            $commands = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $this->assertIsArray($commands);
+
+            return array_values($commands);
+        } finally {
+            @unlink($dockerPath);
+            @unlink($logPath);
+            @rmdir($temporaryDirectory);
+        }
+    }
+
+    /**
+     * @param  list<string>  $commands
+     */
+    private function firstCommandIndex(array $commands, string $fragment): int
+    {
+        foreach ($commands as $index => $command) {
+            if (str_contains($command, $fragment)) {
+                return $index;
+            }
+        }
+
+        $this->fail(sprintf('Did not observe Docker command containing [%s].', $fragment));
     }
 
     /**

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import sys
@@ -172,6 +173,49 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
             "cargo add durable-workflow@=2.0.0-beta.17",
             rust["pin"],
         )
+
+
+class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
+    async def test_waits_for_every_required_registration_concurrently(self) -> None:
+        expected_count = len(polyglot_smoke.REQUIRED_WORKER_REGISTRATIONS)
+        calls: list[dict[str, object]] = []
+        all_started = asyncio.Event()
+        original_wait_for_worker = polyglot_smoke.wait_for_worker
+
+        async def wait_for_worker(**arguments: object) -> str | None:
+            calls.append(arguments)
+            if len(calls) == expected_count:
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), timeout=0.5)
+            return "2.0.0-beta.17" if arguments["runtime"] in {"php", "rust"} else None
+
+        polyglot_smoke.wait_for_worker = wait_for_worker
+        try:
+            evidence = await polyglot_smoke.wait_for_required_worker_registrations(
+                timeout_seconds=37.0,
+            )
+        finally:
+            polyglot_smoke.wait_for_worker = original_wait_for_worker
+
+        self.assertEqual(expected_count, len(calls))
+        self.assertEqual(expected_count, len(evidence))
+        self.assertEqual({"registered"}, {item["status"] for item in evidence})
+        self.assertEqual(
+            {
+                "python-workflow-worker",
+                "python-activity-worker",
+                "php-same-workflow-worker",
+                "php-same-activity-worker",
+                "php-workflow-worker",
+                "php-to-rust-workflow-worker",
+                "php-query-worker",
+                "php-activity-worker",
+                "rust-workflow-worker",
+                "rust-activity-worker",
+            },
+            {item["service"] for item in evidence},
+        )
+        self.assertEqual({37.0}, {call["timeout_seconds"] for call in calls})
 
 
 if __name__ == "__main__":
