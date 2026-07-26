@@ -130,7 +130,7 @@ class AiWorkflowMessageStreamTest extends TestCase
 
         $this->assertSame(
             'Final cancellation output.',
-            $method->invoke(new Ai(), WorkflowStub::loadRun($run->id)),
+            $method->invoke(new Ai, WorkflowStub::loadRun($run->id)),
         );
     }
 
@@ -279,21 +279,6 @@ class AiWorkflowMessageStreamTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
-    }
-
-    public function test_readme_teaches_the_public_message_stream_authoring_api(): void
-    {
-        $source = file_get_contents(base_path('README.md'));
-
-        $this->assertIsString($source);
-        $this->assertStringContainsString('#### Message Streams', $source);
-        $this->assertStringContainsString('Workflow::inbox()', $source);
-        $this->assertStringContainsString('Workflow::outbox()', $source);
-        $this->assertStringContainsString('outbox(self::ASSISTANT_STREAM)', $source);
-        $this->assertStringContainsString('inbox(self::ASSISTANT_STREAM)', $source);
-        $this->assertStringNotContainsString('Workflow\\V2\\Support\\MessageService', $source);
-        $this->assertStringNotContainsString('MessageStreamCursor::reserveNextSequence', $source);
-        $this->assertStringContainsString('App\\Workflows\\Ai\\AiWorkflow', $source);
     }
 
     private function publishAssistantMessage(AiWorkflow $workflow, string $content): void

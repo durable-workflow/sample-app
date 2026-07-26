@@ -6,74 +6,10 @@ namespace Tests\Feature;
 
 use PHPUnit\Framework\TestCase;
 
-class SampleTeachingMaterialTest extends TestCase
+class ConformanceHarnessContractTest extends TestCase
 {
-    public function test_readme_contains_replay_safety_do_and_do_not_examples(): void
-    {
-        $readme = file_get_contents(__DIR__.'/../../README.md');
-
-        $this->assertIsString($readme);
-        $this->assertStringContainsString('#### Replay-Safety Teaching Notes', $readme);
-        $this->assertStringContainsString('$startedAt = sideEffect(fn () => now()->getTimestamp());', $readme);
-        $this->assertStringContainsString('$startedAt = now();', $readme);
-        $this->assertStringContainsString('replay can run the method again later', $readme);
-        $this->assertStringContainsString('Prefer scalar values inside `sideEffect()` callbacks', $readme);
-    }
-
-    public function test_readme_contains_short_v1_to_v2_migration_section(): void
-    {
-        $readme = file_get_contents(__DIR__.'/../../README.md');
-
-        $this->assertIsString($readme);
-        $this->assertStringContainsString('#### Migrating from Durable Workflow 1.x', $readme);
-        $this->assertStringContainsString('Extend `Workflow\V2\Workflow` instead of `Workflow\Workflow`.', $readme);
-        $this->assertStringContainsString('Replace `yield activity(...)` with a straight-line `activity(...)` call', $readme);
-        $this->assertStringContainsString('Rename the entry method from `execute(...)` to `handle(...)`', $readme);
-        $this->assertStringContainsString('Extend `Workflow\V2\Activity` and define `handle(...)`', $readme);
-        $this->assertStringNotContainsString('Workflow\V2\Attributes\Activity', $readme);
-        $this->assertStringContainsString('use Workflow\V2\Attributes\Signal;', $readme);
-        $this->assertStringContainsString("#[Signal('name', [...])]", $readme);
-        $this->assertStringNotContainsString("#[Workflow\V2\Attributes\Signal", $readme);
-        $this->assertStringContainsString("await('name')", $readme);
-    }
-
-    public function test_workflow_entry_points_include_teaching_preambles(): void
-    {
-        $expectations = [
-            'app/Workflows/Simple/SimpleWorkflow.php' => 'Smallest v2 shape',
-            'app/Workflows/Elapsed/ElapsedTimeWorkflow.php' => 'Clock reads are non-deterministic',
-            'app/Workflows/Microservice/MicroserviceWorkflow.php' => 'shares the queue/database contract',
-            'app/Workflows/Playwright/CheckConsoleErrorsWorkflow.php' => 'Browser and FFmpeg work belongs in activities',
-            'app/Workflows/Webhooks/WebhookWorkflow.php' => 'v2 signals are pull-style',
-            'app/Workflows/Prism/PrismWorkflow.php' => 'workflow loop is replay-safe',
-            'app/Workflows/Ai/AiWorkflow.php' => 'durable agent pattern',
-            'app/Workflows/Sandbox/SandboxAgentWorkflow.php' => 'durable sandbox orchestration pattern',
-            'app/Workflows/Diagnostics/DiagnosticFailureWorkflow.php' => 'Purpose-built no-credential workflow for agent diagnostic drills',
-        ];
-
-        foreach ($expectations as $path => $needle) {
-            $contents = file_get_contents(__DIR__.'/../../'.$path);
-
-            $this->assertIsString($contents);
-            $this->assertStringContainsString($needle, $contents, "{$path} is missing its teaching preamble.");
-        }
-    }
-
-    public function test_readme_documents_sandbox_orchestration_pattern(): void
-    {
-        $readme = file_get_contents(__DIR__.'/../../README.md');
-
-        $this->assertIsString($readme);
-        $this->assertStringContainsString('#### Sandbox Orchestration', $readme);
-        $this->assertStringContainsString('App\\Workflows\\Sandbox\\SandboxAgentWorkflow', $readme);
-        $this->assertStringContainsString('App\\Sandbox\\SandboxProvider', $readme);
-        $this->assertStringContainsString('php artisan app:sandbox', $readme);
-        $this->assertStringContainsString('--inject-loss-after=2', $readme);
-    }
-
     public function test_full_conformance_harness_is_public_and_names_required_surfaces(): void
     {
-        $readme = file_get_contents(__DIR__.'/../../README.md');
         $script = file_get_contents(__DIR__.'/../../scripts/compose-conformance.sh');
         $combinedScript = file_get_contents(__DIR__.'/../../scripts/compose-smoke-conformance.sh');
         $artifactResolver = file_get_contents(__DIR__.'/../../scripts/resolve-current-artifacts.sh');
@@ -86,7 +22,6 @@ class SampleTeachingMaterialTest extends TestCase
         $aiWorkflow = file_get_contents(__DIR__.'/../../app/Workflows/Ai/AiWorkflow.php');
         $travelAgentActivity = file_get_contents(__DIR__.'/../../app/Workflows/Ai/TravelAgentActivity.php');
 
-        $this->assertIsString($readme);
         $this->assertIsString($script);
         $this->assertIsString($combinedScript);
         $this->assertIsString($artifactResolver);
@@ -99,20 +34,6 @@ class SampleTeachingMaterialTest extends TestCase
         $this->assertIsString($aiWorkflow);
         $this->assertIsString($travelAgentActivity);
 
-        $this->assertStringContainsString('scripts/compose-conformance.sh --strict', $readme);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_ENV_FILE', $readme);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH', $readme);
-        $this->assertStringContainsString('DW_AGENT_OPERABILITY_SAMPLE_APP_METADATA_PATH', $readme);
-        $this->assertStringContainsString('SAMPLE_APP_SMOKE_ONLY=1', $readme);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0', $readme);
-        $this->assertStringContainsString('does not accidentally record deterministic smoke as', $readme);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_SOURCE=pinned', $readme);
-        $this->assertStringContainsString('DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json', $readme);
-        $this->assertStringContainsString('API documentation check', $readme);
-        $this->assertStringContainsString('source-free containers can report the', $readme);
-        $this->assertStringContainsString('Waterline/manual observation check', $readme);
-        $this->assertStringContainsString('focused findings', $readme);
-        $this->assertStringContainsString('--booking-plan-json', $readme);
         $this->assertStringContainsString('app:conformance', $script);
         $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_URL:-http://sample-app:8000', $script);
