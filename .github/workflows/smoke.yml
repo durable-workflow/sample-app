@@ -13,6 +13,7 @@ permissions:
 jobs:
   compose:
     name: docker compose sample workflows
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

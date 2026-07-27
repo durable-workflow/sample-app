@@ -13,6 +13,7 @@ permissions:
 jobs:
   smoke:
     name: polyglot smoke (PHP/Python/Rust, ${{ matrix.cache_mode }})
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -62,7 +63,7 @@ jobs:
 
   polyglot-qualification:
     name: polyglot smoke (PHP/Python/Rust)
-    if: ${{ always() }}
+    if: ${{ always() && github.server_url == 'https://github.com' }}
     needs: [smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2

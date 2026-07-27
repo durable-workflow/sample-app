@@ -449,7 +449,10 @@ SH,
         $steps = $job['steps'] ?? [];
 
         $this->assertSame('polyglot smoke (PHP/Python/Rust)', $job['name'] ?? null);
-        $this->assertSame('${{ always() }}', $job['if'] ?? null);
+        $this->assertSame(
+            '${{ always() && github.server_url == \'https://github.com\' }}',
+            $job['if'] ?? null,
+        );
         $this->assertSame(['smoke'], $job['needs'] ?? null);
         $this->assertSame('${{ needs.smoke.result }}', $steps[0]['env']['SMOKE_RESULT'] ?? null);
         $this->assertSame('test "$SMOKE_RESULT" = success', $steps[0]['run'] ?? null);
