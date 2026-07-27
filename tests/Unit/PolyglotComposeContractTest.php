@@ -442,6 +442,19 @@ SH,
         $this->assertStringNotContainsString('sleep ', $script);
     }
 
+    public function test_polyglot_validation_exposes_a_stable_check_for_the_cache_matrix(): void
+    {
+        $workflow = Yaml::parseFile($this->repoPath('.github/workflows/polyglot-validation.yml'));
+        $job = $workflow['jobs']['polyglot-qualification'] ?? [];
+        $steps = $job['steps'] ?? [];
+
+        $this->assertSame('polyglot smoke (PHP/Python/Rust)', $job['name'] ?? null);
+        $this->assertSame('${{ always() }}', $job['if'] ?? null);
+        $this->assertSame(['smoke'], $job['needs'] ?? null);
+        $this->assertSame('${{ needs.smoke.result }}', $steps[0]['env']['SMOKE_RESULT'] ?? null);
+        $this->assertSame('test "$SMOKE_RESULT" = success', $steps[0]['run'] ?? null);
+    }
+
     public function test_polyglot_validation_executes_cold_and_warm_cache_paths_without_split_startup(): void
     {
         foreach (['cold-cache' => 1, 'warm-cache' => 2] as $cacheMode => $expectedBuilds) {

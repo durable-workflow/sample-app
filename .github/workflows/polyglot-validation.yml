@@ -59,3 +59,15 @@ jobs:
       - name: Validate one stable polyglot runtime lifecycle
         shell: bash
         run: timeout --signal=TERM --kill-after=60s 1620s scripts/polyglot-validation.sh
+
+  polyglot-qualification:
+    name: polyglot smoke (PHP/Python/Rust)
+    if: ${{ always() }}
+    needs: [smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every cache-mode smoke
+        env:
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: test "$SMOKE_RESULT" = success
