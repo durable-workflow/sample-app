@@ -1,7 +1,8 @@
-use std::{env, time::Duration};
+use std::{collections::BTreeMap, env, time::Duration};
 
 use apache_avro::{from_avro_datum, to_avro_datum, Schema};
-use durable_workflow::{json, Client, Result, Value, Worker};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, Value, Worker};
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TO_PYTHON_WORKFLOW: &str = "polyglot.rust-to-python.greeter";
@@ -96,14 +97,15 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
         let task_queue = types_to_python_queue.clone();
         async move {
             let payload = first_argument(&input);
+            let wire_payload = native_binary_payload(&payload)?;
             let echo = ctx
-                .activity_on_queue(
+                .activity_avro_value_with_options(
                     "polyglot.rust-to-python.echo",
-                    Some(task_queue),
-                    json!([payload.clone()]),
+                    ActivityOptions::new().task_queue(task_queue),
+                    AvroValue::Array(vec![wire_payload]),
                 )
                 .await?;
-            Ok(type_observation("rust", "python", payload, echo))
+            type_observation("rust", "python", payload, echo)
         }
     });
 
@@ -112,14 +114,15 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
         let task_queue = types_to_php_queue.clone();
         async move {
             let payload = first_argument(&input);
+            let wire_payload = native_binary_payload(&payload)?;
             let echo = ctx
-                .activity_on_queue(
+                .activity_avro_value_with_options(
                     "polyglot.rust-to-php.echo",
-                    Some(task_queue),
-                    json!([payload.clone()]),
+                    ActivityOptions::new().task_queue(task_queue),
+                    AvroValue::Array(vec![wire_payload]),
                 )
                 .await?;
-            Ok(type_observation("rust", "php", payload, echo))
+            type_observation("rust", "php", payload, echo)
         }
     });
 
@@ -182,8 +185,8 @@ async fn run_activity_worker(client: Client) -> Result<()> {
         .poll_timeout(Duration::from_secs(5));
 
     for activity_type in ["polyglot.php-to-rust.echo", "polyglot.python-to-rust.echo"] {
-        worker.register_activity(activity_type, |_ctx, args| async move {
-            Ok(runtime_echo(first_argument(&args)))
+        worker.register_activity_avro_value(activity_type, |_ctx, args| async move {
+            native_runtime_echo(first_avro_argument(args))
         });
     }
 
@@ -214,15 +217,22 @@ fn type_observation(
     workflow_runtime: &str,
     activity_runtime: &str,
     payload: Value,
-    echo: Value,
-) -> Value {
-    json!({
+    echo: AvroValue,
+) -> Result<Value> {
+    let (echo, activity_evidence, workflow_evidence) =
+        complete_native_binary_roundtrip(&payload, echo, workflow_runtime)?;
+
+    Ok(json!({
         "workflow_runtime": workflow_runtime,
         "activity_runtime": activity_runtime,
         "input": payload,
         "echo": echo,
+        "binary_evidence": {
+            "activity": activity_evidence,
+            "workflow": workflow_evidence,
+        },
         "codec": avro_observation(),
-    })
+    }))
 }
 
 fn runtime_echo(value: Value) -> Value {
@@ -231,6 +241,16 @@ fn runtime_echo(value: Value) -> Value {
         "value": value,
         "codec": avro_observation(),
     })
+}
+
+fn native_runtime_echo(value: AvroValue) -> Result<AvroValue> {
+    let evidence = native_binary_evidence(&value, "rust")?;
+    Ok(AvroValue::Map(BTreeMap::from([
+        ("runtime".into(), AvroValue::String("rust".into())),
+        ("value".into(), value),
+        ("binary_evidence".into(), evidence),
+        ("codec".into(), json_to_avro_value(&avro_observation())?),
+    ])))
 }
 
 fn avro_observation() -> Value {
@@ -251,6 +271,180 @@ fn first_argument(value: &Value) -> Value {
         .and_then(|items| items.first())
         .cloned()
         .unwrap_or(Value::Null)
+}
+
+fn first_avro_argument(value: AvroValue) -> AvroValue {
+    match value {
+        AvroValue::Array(items) => items.into_iter().next().unwrap_or(AvroValue::Null),
+        other => other,
+    }
+}
+
+fn native_binary_payload(payload: &Value) -> Result<AvroValue> {
+    let AvroValue::Map(mut payload) = json_to_avro_value(payload)? else {
+        return Err(Error::Codec(
+            "native binary type-matrix payload must be a map".into(),
+        ));
+    };
+    let encoded = avro_map_string(&payload, "binary_base64")?;
+    let text = avro_map_string(&payload, "binary_text")?;
+    let bytes = BASE64.decode(encoded).map_err(|error| {
+        Error::Codec(format!(
+            "native binary type-matrix fixture must contain strict base64: {error}"
+        ))
+    })?;
+    if bytes == text.as_bytes() {
+        return Err(Error::Codec(
+            "native binary fixture must be distinct from its UTF-8 text companion".into(),
+        ));
+    }
+    payload.insert("binary_native".into(), AvroValue::Bytes(bytes));
+
+    Ok(AvroValue::Map(payload))
+}
+
+fn native_binary_evidence(value: &AvroValue, runtime: &str) -> Result<AvroValue> {
+    let AvroValue::Map(value) = value else {
+        return Err(Error::Codec(
+            "native binary worker payload must be a map".into(),
+        ));
+    };
+    let encoded = avro_map_string(value, "binary_base64")?;
+    let text = avro_map_string(value, "binary_text")?;
+    let binary = match value.get("binary_native") {
+        Some(AvroValue::Bytes(binary)) => binary,
+        Some(other) => {
+            return Err(Error::Codec(format!(
+                "expected native Rust AvroValue::Bytes, received {other:?}"
+            )))
+        }
+        None => {
+            return Err(Error::Codec(
+                "native Rust bytes are missing from the worker payload".into(),
+            ))
+        }
+    };
+    let expected = BASE64.decode(encoded).map_err(|error| {
+        Error::Codec(format!(
+            "native binary type-matrix fixture must contain strict base64: {error}"
+        ))
+    })?;
+    if binary != &expected {
+        return Err(Error::Codec(
+            "native Rust bytes changed across the worker boundary".into(),
+        ));
+    }
+    if binary == text.as_bytes() {
+        return Err(Error::Codec(
+            "native Rust bytes collapsed into the UTF-8 text value".into(),
+        ));
+    }
+    let byte_length = i64::try_from(binary.len())
+        .map_err(|_| Error::Codec("native binary fixture is too large".into()))?;
+
+    Ok(AvroValue::Map(BTreeMap::from([
+        ("runtime".into(), AvroValue::String(runtime.into())),
+        (
+            "native_type".into(),
+            AvroValue::String("AvroValue::Bytes".into()),
+        ),
+        ("base64".into(), AvroValue::String(BASE64.encode(binary))),
+        ("byte_length".into(), AvroValue::Long(byte_length)),
+        ("matches_expected".into(), AvroValue::Boolean(true)),
+        ("text_type".into(), AvroValue::String("String".into())),
+        ("text_value".into(), AvroValue::String(text.into())),
+        ("text_and_bytes_distinct".into(), AvroValue::Boolean(true)),
+    ])))
+}
+
+fn complete_native_binary_roundtrip(
+    payload: &Value,
+    echo: AvroValue,
+    workflow_runtime: &str,
+) -> Result<(Value, Value, Value)> {
+    let AvroValue::Map(mut echo) = echo else {
+        return Err(Error::Codec(
+            "activity did not return a native binary map".into(),
+        ));
+    };
+    let echoed_value = echo
+        .get("value")
+        .ok_or_else(|| Error::Codec("activity did not echo the native binary payload".into()))?;
+    let workflow_evidence = native_binary_evidence(echoed_value, workflow_runtime)?;
+    let activity_evidence = echo.get("binary_evidence").cloned().ok_or_else(|| {
+        Error::Codec("activity did not return executable native binary evidence".into())
+    })?;
+    echo.insert("value".into(), json_to_avro_value(payload)?);
+
+    Ok((
+        avro_to_json(AvroValue::Map(echo))?,
+        avro_to_json(activity_evidence)?,
+        avro_to_json(workflow_evidence)?,
+    ))
+}
+
+fn avro_map_string<'a>(value: &'a BTreeMap<String, AvroValue>, key: &str) -> Result<&'a str> {
+    match value.get(key) {
+        Some(AvroValue::String(value)) => Ok(value),
+        _ => Err(Error::Codec(format!(
+            "native binary type-matrix field {key:?} must be a string"
+        ))),
+    }
+}
+
+fn json_to_avro_value(value: &Value) -> Result<AvroValue> {
+    match value {
+        Value::Null => Ok(AvroValue::Null),
+        Value::Bool(value) => Ok(AvroValue::Boolean(*value)),
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Ok(AvroValue::Long(value))
+            } else if let Some(value) = value.as_f64().filter(|value| value.is_finite()) {
+                Ok(AvroValue::Double(value))
+            } else {
+                Err(Error::Codec(
+                    "type-matrix number must fit int64 or a finite double".into(),
+                ))
+            }
+        }
+        Value::String(value) => Ok(AvroValue::String(value.clone())),
+        Value::Array(values) => values
+            .iter()
+            .map(json_to_avro_value)
+            .collect::<Result<Vec<_>>>()
+            .map(AvroValue::Array),
+        Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), json_to_avro_value(value)?)))
+            .collect::<Result<BTreeMap<_, _>>>()
+            .map(AvroValue::Map),
+    }
+}
+
+fn avro_to_json(value: AvroValue) -> Result<Value> {
+    match value {
+        AvroValue::Null => Ok(Value::Null),
+        AvroValue::Boolean(value) => Ok(json!(value)),
+        AvroValue::Long(value) => Ok(json!(value)),
+        AvroValue::Double(value) if value.is_finite() => Ok(json!(value)),
+        AvroValue::Double(_) => Err(Error::Codec(
+            "type-matrix evidence contains a non-finite double".into(),
+        )),
+        AvroValue::Bytes(_) => Err(Error::Codec(
+            "native bytes must be verified before producing JSON-safe smoke evidence".into(),
+        )),
+        AvroValue::String(value) => Ok(Value::String(value)),
+        AvroValue::Array(values) => values
+            .into_iter()
+            .map(avro_to_json)
+            .collect::<Result<Vec<_>>>()
+            .map(Value::Array),
+        AvroValue::Map(values) => values
+            .into_iter()
+            .map(|(key, value)| Ok((key, avro_to_json(value)?)))
+            .collect::<Result<_>>()
+            .map(Value::Object),
+    }
 }
 
 fn verify_official_avro_runtime() -> Result<()> {
@@ -300,5 +494,29 @@ mod tests {
             json!({"typed": true})
         );
         assert_eq!(first_argument(&json!([])), Value::Null);
+    }
+
+    #[test]
+    fn type_matrix_constructs_and_checks_native_binary_values() {
+        let payload = json!({
+            "binary_base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+            "binary_text": "polyglot-binary",
+        });
+        let wire_payload = native_binary_payload(&payload).expect("native binary payload");
+        let AvroValue::Map(values) = &wire_payload else {
+            panic!("wire payload must be a map");
+        };
+        assert_eq!(
+            values.get("binary_native"),
+            Some(&AvroValue::Bytes(b"polyglot-binary\x00\xff\x01".to_vec()))
+        );
+
+        let evidence =
+            avro_to_json(native_binary_evidence(&wire_payload, "rust").expect("evidence"))
+                .expect("JSON-safe evidence");
+        assert_eq!(evidence["native_type"], "AvroValue::Bytes");
+        assert_eq!(evidence["base64"], payload["binary_base64"]);
+        assert_eq!(evidence["matches_expected"], true);
+        assert_eq!(evidence["text_and_bytes_distinct"], true);
     }
 }

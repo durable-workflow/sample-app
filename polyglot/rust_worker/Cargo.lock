@@ -248,6 +248,7 @@ name = "durable-workflow-polyglot-rust-worker"
 version = "0.1.0"
 dependencies = [
  "apache-avro",
+ "base64",
  "durable-workflow",
  "tokio",
 ]

@@ -188,6 +188,59 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         )
 
 
+class NativeBinaryEvidenceTest(unittest.TestCase):
+    def evidence(self, runtime: str, native_type: str, text_type: str) -> dict[str, object]:
+        return {
+            "runtime": runtime,
+            "native_type": native_type,
+            "base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+            "byte_length": 18,
+            "matches_expected": True,
+            "text_type": text_type,
+            "text_value": "polyglot-binary",
+            "text_and_bytes_distinct": True,
+        }
+
+    def test_accepts_executable_native_byte_evidence_from_both_boundaries(self) -> None:
+        result = {
+            "binary_evidence": {
+                "workflow": self.evidence("python", "bytes", "str"),
+                "activity": self.evidence("rust", "AvroValue::Bytes", "String"),
+            },
+        }
+
+        self.assertEqual(
+            result["binary_evidence"],
+            polyglot_smoke.assert_native_binary_evidence(
+                result,
+                direction="python_to_rust",
+                workflow_runtime="python",
+                activity_runtime="rust",
+                expected_base64="cG9seWdsb3QtYmluYXJ5AP8B",
+            ),
+        )
+
+    def test_rejects_a_metadata_claim_without_native_byte_equality(self) -> None:
+        result = {
+            "binary_evidence": {
+                "workflow": self.evidence("php", "AvroBinaryValue", "string"),
+                "activity": {
+                    **self.evidence("python", "bytes", "str"),
+                    "matches_expected": False,
+                },
+            },
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "activity native bytes evidence changed"):
+            polyglot_smoke.assert_native_binary_evidence(
+                result,
+                direction="php_to_python",
+                workflow_runtime="php",
+                activity_runtime="python",
+                expected_base64="cG9seWdsb3QtYmluYXJ5AP8B",
+            )
+
+
 class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_waits_for_every_required_registration_concurrently(self) -> None:
         expected_count = len(polyglot_smoke.REQUIRED_WORKER_REGISTRATIONS)

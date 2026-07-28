@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Composer\InstalledVersions;
 use DurableWorkflow\Client;
+use DurableWorkflow\Codec\AvroBinaryValue;
 use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
@@ -195,6 +196,7 @@ function echoValue(array $value): array
     return [
         'runtime' => 'php',
         'value' => $value,
+        'binary_evidence' => nativeBinaryEvidence($value, 'php'),
         'codec' => [
             'codec' => 'avro',
             'implementation' => 'Apache Avro',
@@ -204,6 +206,96 @@ function echoValue(array $value): array
             'schema' => 'durable_workflow.protocol.Value',
             'fingerprint' => AvroPayloadCodec::VALUE_SCHEMA_FINGERPRINT_HEX,
             'framing' => 'single_object',
+        ],
+    ];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
+function nativeBinaryPayload(array $payload): array
+{
+    $encoded = $payload['binary_base64'] ?? null;
+    $text = $payload['binary_text'] ?? null;
+    if (! is_string($encoded) || ! is_string($text)) {
+        throw new InvalidArgumentException('binary_base64 and binary_text must be strings.');
+    }
+
+    $bytes = base64_decode($encoded, true);
+    if ($bytes === false) {
+        throw new InvalidArgumentException('binary_base64 must contain strict base64.');
+    }
+    if ($bytes === $text) {
+        throw new InvalidArgumentException('Binary fixture must be distinct from its UTF-8 text companion.');
+    }
+
+    $payload['binary_native'] = AvroBinaryValue::fromBytes($bytes);
+
+    return $payload;
+}
+
+/**
+ * @param  array<string, mixed>  $value
+ * @return array<string, mixed>
+ */
+function nativeBinaryEvidence(array $value, string $runtime): array
+{
+    $binary = $value['binary_native'] ?? null;
+    $text = $value['binary_text'] ?? null;
+    $encoded = $value['binary_base64'] ?? null;
+    if (! $binary instanceof AvroBinaryValue) {
+        throw new UnexpectedValueException(sprintf(
+            'Expected native PHP AvroBinaryValue, received %s.',
+            get_debug_type($binary),
+        ));
+    }
+    if (! is_string($text) || ! is_string($encoded)) {
+        throw new UnexpectedValueException('Expected binary text and base64 fixtures as strings.');
+    }
+
+    $expected = base64_decode($encoded, true);
+    if ($expected === false || $binary->bytes !== $expected) {
+        throw new UnexpectedValueException('Native PHP bytes changed across the worker boundary.');
+    }
+    if ($binary->bytes === $text) {
+        throw new UnexpectedValueException('Native PHP bytes collapsed into the UTF-8 text value.');
+    }
+
+    return [
+        'runtime' => $runtime,
+        'native_type' => 'AvroBinaryValue',
+        'base64' => base64_encode($binary->bytes),
+        'byte_length' => strlen($binary->bytes),
+        'matches_expected' => true,
+        'text_type' => 'string',
+        'text_value' => $text,
+        'text_and_bytes_distinct' => true,
+    ];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array{echo: array<string, mixed>, binary_evidence: array<string, mixed>}
+ */
+function completeNativeBinaryRoundtrip(array $payload, mixed $echo): array
+{
+    if (! is_array($echo) || ! is_array($echo['value'] ?? null)) {
+        throw new UnexpectedValueException('Activity did not return the native binary payload.');
+    }
+    if (! is_array($echo['binary_evidence'] ?? null)) {
+        throw new UnexpectedValueException('Activity did not return executable native binary evidence.');
+    }
+
+    $workflowEvidence = nativeBinaryEvidence($echo['value'], 'php');
+    $activityEvidence = $echo['binary_evidence'];
+    $echo['value'] = $payload;
+
+    return [
+        'echo' => $echo,
+        'binary_evidence' => [
+            'activity' => $activityEvidence,
+            'workflow' => $workflowEvidence,
         ],
     ];
 }
@@ -248,13 +340,15 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
     $worker->registerWorkflow(
         'polyglot.php-to-python.type-roundtrip',
         static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-python.echo', [$payload]);
+            $echo = yield $context->activity('polyglot.php-to-python.echo', [nativeBinaryPayload($payload)]);
+            $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
 
             return [
                 'workflow_runtime' => 'php',
                 'activity_runtime' => is_array($echo) ? ($echo['runtime'] ?? null) : null,
                 'input' => $payload,
-                'echo' => $echo,
+                'echo' => $roundtrip['echo'],
+                'binary_evidence' => $roundtrip['binary_evidence'],
             ];
         },
     );
@@ -299,13 +393,15 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
     $worker->registerWorkflow(
         'polyglot.php-to-rust.type-roundtrip',
         static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-rust.echo', [$payload]);
+            $echo = yield $context->activity('polyglot.php-to-rust.echo', [nativeBinaryPayload($payload)]);
+            $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
 
             return [
                 'workflow_runtime' => 'php',
                 'activity_runtime' => is_array($echo) ? ($echo['runtime'] ?? null) : null,
                 'input' => $payload,
-                'echo' => $echo,
+                'echo' => $roundtrip['echo'],
+                'binary_evidence' => $roundtrip['binary_evidence'],
             ];
         },
     );

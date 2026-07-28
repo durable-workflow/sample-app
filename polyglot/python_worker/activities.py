@@ -9,6 +9,7 @@ crosses the language boundary on the wire.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import importlib.metadata
 import logging
@@ -53,6 +54,7 @@ def echo_value(value: dict[str, Any]) -> dict[str, Any]:
     return {
         "runtime": "python",
         "value": value,
+        "binary_evidence": _native_binary_evidence(value),
         "codec": _avro_observation(),
     }
 
@@ -62,7 +64,37 @@ def echo_rust_value(value: dict[str, Any]) -> dict[str, Any]:
     return {
         "runtime": "python",
         "value": value,
+        "binary_evidence": _native_binary_evidence(value),
         "codec": _avro_observation(),
+    }
+
+
+def _native_binary_evidence(value: dict[str, Any]) -> dict[str, Any]:
+    binary = value.get("binary_native")
+    text = value.get("binary_text")
+    encoded = value.get("binary_base64")
+    if type(binary) is not bytes:
+        raise TypeError(f"expected native Python bytes, received {type(binary).__name__}")
+    if type(text) is not str:
+        raise TypeError(f"expected UTF-8 text as str, received {type(text).__name__}")
+    if not isinstance(encoded, str):
+        raise TypeError("expected the binary fixture base64 to be text")
+
+    expected = base64.b64decode(encoded, validate=True)
+    if binary != expected:
+        raise ValueError("native Python bytes changed across the activity boundary")
+    if binary == text.encode("utf-8"):
+        raise ValueError("native Python bytes collapsed into the UTF-8 text value")
+
+    return {
+        "runtime": "python",
+        "native_type": "bytes",
+        "base64": base64.b64encode(binary).decode("ascii"),
+        "byte_length": len(binary),
+        "matches_expected": True,
+        "text_type": "str",
+        "text_value": text,
+        "text_and_bytes_distinct": True,
     }
 
 

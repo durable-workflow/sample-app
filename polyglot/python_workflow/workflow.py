@@ -20,6 +20,7 @@ unit under test.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import socket
@@ -99,16 +100,19 @@ class PythonToPhpGreeterWorkflow:
 @workflow.defn(name="polyglot.python-to-php.type-roundtrip")
 class PythonToPhpTypeRoundtripWorkflow:
     def run(self, ctx, payload):  # type: ignore[no-untyped-def]
+        wire_payload = _native_binary_payload(payload)
         echo = yield ctx.schedule_activity(
             "polyglot.python-to-php.echo",
-            [payload],
+            [wire_payload],
             queue=PHP_ACTIVITY_TASK_QUEUE,
         )
+        normalized_echo, binary_evidence = _complete_native_binary_roundtrip(payload, echo)
         return {
             "workflow_runtime": "python",
             "activity_runtime": echo.get("runtime") if isinstance(echo, dict) else None,
             "input": payload,
-            "echo": echo,
+            "echo": normalized_echo,
+            "binary_evidence": binary_evidence,
         }
 
 
@@ -155,16 +159,19 @@ class PythonToRustGreeterWorkflow:
 @workflow.defn(name="polyglot.python-to-rust.type-roundtrip")
 class PythonToRustTypeRoundtripWorkflow:
     def run(self, ctx, payload):  # type: ignore[no-untyped-def]
+        wire_payload = _native_binary_payload(payload)
         echo = yield ctx.schedule_activity(
             "polyglot.python-to-rust.echo",
-            [payload],
+            [wire_payload],
             queue=RUST_ACTIVITY_TASK_QUEUE,
         )
+        normalized_echo, binary_evidence = _complete_native_binary_roundtrip(payload, echo)
         return {
             "workflow_runtime": "python",
             "activity_runtime": echo.get("runtime") if isinstance(echo, dict) else None,
             "input": payload,
-            "echo": echo,
+            "echo": normalized_echo,
+            "binary_evidence": binary_evidence,
         }
 
 
@@ -200,6 +207,71 @@ class PythonSignalQueryWorkflow:
             "request": request,
             "signal": self.signals[0],
         }
+
+
+def _native_binary_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    encoded = payload.get("binary_base64")
+    text = payload.get("binary_text")
+    if not isinstance(encoded, str) or not isinstance(text, str):
+        raise TypeError("binary_base64 and binary_text must be strings")
+
+    binary = base64.b64decode(encoded, validate=True)
+    if binary == text.encode("utf-8"):
+        raise ValueError("binary fixture must be distinct from its UTF-8 text companion")
+
+    return {
+        **payload,
+        "binary_native": binary,
+    }
+
+
+def _native_binary_evidence(value: dict[str, Any]) -> dict[str, Any]:
+    binary = value.get("binary_native")
+    text = value.get("binary_text")
+    encoded = value.get("binary_base64")
+    if type(binary) is not bytes:
+        raise TypeError(f"expected native Python bytes, received {type(binary).__name__}")
+    if type(text) is not str:
+        raise TypeError(f"expected UTF-8 text as str, received {type(text).__name__}")
+    if not isinstance(encoded, str):
+        raise TypeError("expected the binary fixture base64 to be text")
+
+    expected = base64.b64decode(encoded, validate=True)
+    if binary != expected:
+        raise ValueError("native Python bytes changed across the workflow boundary")
+    if binary == text.encode("utf-8"):
+        raise ValueError("native Python bytes collapsed into the UTF-8 text value")
+
+    return {
+        "runtime": "python",
+        "native_type": "bytes",
+        "base64": base64.b64encode(binary).decode("ascii"),
+        "byte_length": len(binary),
+        "matches_expected": True,
+        "text_type": "str",
+        "text_value": text,
+        "text_and_bytes_distinct": True,
+    }
+
+
+def _complete_native_binary_roundtrip(
+    payload: dict[str, Any],
+    echo: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(echo, dict) or not isinstance(echo.get("value"), dict):
+        raise TypeError("activity did not return the native binary payload")
+    activity_evidence = echo.get("binary_evidence")
+    if not isinstance(activity_evidence, dict):
+        raise TypeError("activity did not return executable native binary evidence")
+
+    workflow_evidence = _native_binary_evidence(echo["value"])
+    normalized_echo = dict(echo)
+    normalized_echo["value"] = payload
+
+    return normalized_echo, {
+        "activity": activity_evidence,
+        "workflow": workflow_evidence,
+    }
 
 
 def _activity_failure(exc: ActivityFailed) -> dict[str, Any]:

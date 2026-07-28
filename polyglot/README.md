@@ -86,8 +86,8 @@ and the five Rust cells:
 - signal and query handling through the published `dw` CLI for PHP-authored,
   Python-authored, and Rust-authored workflows;
 - six-direction type round-trips for strings with non-ASCII text, ints, floats,
-  booleans, nulls, mixed lists, nested maps, timestamps, and binary values
-  represented by the published JSON-native codec as explicit base64 objects;
+  booleans, nulls, mixed lists, nested maps, timestamps, and native binary
+  values kept distinct from UTF-8 text at every worker boundary;
 - typed activity error round-trips from Python activity to PHP workflow and PHP
   activity to Python workflow;
 - Waterline event typing, payload rendering, and worker attribution for
@@ -101,10 +101,11 @@ version before accepting a cell, so a version pin without an executed Rust
 worker cannot pass.
 
 All six cross-language type directions use the platform Avro envelope. PHP
-uses `apache/avro` from Packagist, Python uses `avro` from PyPI, and Rust uses
+uses `apache/avro` from Packagist, Python uses `fastavro` from PyPI, and Rust uses
 `apache-avro` from crates.io. Each echo activity reports its official package
-and version, and the machine-readable output records input/output JSON types
-and equality for every value in every direction.
+and version. For the binary case, each workflow constructs a native SDK value,
+the activity validates and echoes that value, and the workflow validates the
+echo before returning JSON-safe byte-equality evidence to the smoke driver.
 
 The smoke emits a run metadata JSON document after all required surfaces run.
 That document includes separate exact public artifact pins and roles for the
@@ -229,12 +230,12 @@ field.
 ## Codec round-trip notes
 
 All scenarios use the `avro` codec by default — that is the v2
-default. Values that round-trip cleanly (JSON-native scalars, lists,
-maps) flow without adapter code; values that need explicit codec
+default. Native scalars, lists, maps, bytes, and UTF-8 strings flow through
+the fixed Value schema; values that need explicit codec
 negotiation (PHP `BackedEnum`, Python `dataclasses`, `Decimal`,
 `datetime`) are listed in the codec round-trip contract linked above.
-The smoke fixtures stay inside the clean round-trip set by design so
-the demo runs without per-language adapter shims.
+PHP uses the SDK's `AvroBinaryValue` adapter to distinguish byte strings from
+text, while Python uses `bytes` and Rust uses `AvroValue::Bytes`.
 
 ## Waterline rendering
 

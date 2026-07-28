@@ -1051,10 +1051,8 @@ def type_matrix_payload() -> dict[str, Any]:
         "mixed_list": ["text", 7, 2.5, False, None, {"nested": "map"}],
         "nested_map": {"outer": {"inner": [1, "two", None], "flag": True}},
         "timestamp": "2026-05-17T00:00:00Z",
-        "binary_base64": {
-            "encoding": "base64",
-            "value": "cG9seWdsb3QtYmluYXJ5AAE=",
-        },
+        "binary_base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+        "binary_text": "polyglot-binary",
     }
 
 
@@ -1152,6 +1150,13 @@ async def run_type_matrix() -> dict[str, Any]:
             f"type_matrix.{direction}",
         )
         codec = assert_dict(echo.get("codec"), f"type_matrix.{direction}.codec")
+        binary_evidence = assert_native_binary_evidence(
+            result,
+            direction=direction,
+            workflow_runtime=spec["workflow_runtime"],
+            activity_runtime=spec["activity_runtime"],
+            expected_base64=payload["binary_base64"],
+        )
         expected_package = official_avro_package_name(spec["activity_runtime"])
         if (
             codec.get("codec") != "avro"
@@ -1169,6 +1174,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "workflow_runtime": spec["workflow_runtime"],
             "activity_runtime": spec["activity_runtime"],
             "codec_observation": codec,
+            "native_binary_evidence": binary_evidence,
             "typed_observations": [
                 {
                     "case": name,
@@ -1188,11 +1194,52 @@ async def run_type_matrix() -> dict[str, Any]:
         "direction_count": len(runs),
         "cases": sorted(payload.keys()),
         "binary": {
-            "status": "covered_by_cross_language_golden_fixture",
-            "reason": "The fixed Value protocol preserves bytes separately from UTF-8 text through explicit SDK adapters.",
+            "status": "passed",
+            "expected_base64": payload["binary_base64"],
+            "expected_byte_length": 18,
+            "direction_count": len(runs),
+            "evidence_source": "executed native workflow/activity round-trips",
         },
         "runs": runs,
     }
+
+
+def assert_native_binary_evidence(
+    result: dict[str, Any],
+    *,
+    direction: str,
+    workflow_runtime: str,
+    activity_runtime: str,
+    expected_base64: str,
+) -> dict[str, Any]:
+    evidence = assert_dict(result.get("binary_evidence"), f"type_matrix.{direction}.binary_evidence")
+    expected_types = {
+        "php": ("AvroBinaryValue", "string"),
+        "python": ("bytes", "str"),
+        "rust": ("AvroValue::Bytes", "String"),
+    }
+    for boundary, runtime in (("workflow", workflow_runtime), ("activity", activity_runtime)):
+        observation = assert_dict(
+            evidence.get(boundary),
+            f"type_matrix.{direction}.binary_evidence.{boundary}",
+        )
+        native_type, text_type = expected_types[runtime]
+        expected = {
+            "runtime": runtime,
+            "native_type": native_type,
+            "base64": expected_base64,
+            "byte_length": 18,
+            "matches_expected": True,
+            "text_type": text_type,
+            "text_value": "polyglot-binary",
+            "text_and_bytes_distinct": True,
+        }
+        if any(observation.get(key) != value for key, value in expected.items()):
+            raise RuntimeError(
+                f"type_matrix.{direction}: {boundary} native bytes evidence changed: {observation}"
+            )
+
+    return evidence
 
 
 def official_avro_package_name(runtime: str) -> str:

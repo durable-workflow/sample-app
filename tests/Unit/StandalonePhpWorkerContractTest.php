@@ -5,12 +5,46 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use DurableWorkflow\Client;
+use DurableWorkflow\Codec\AvroBinaryValue;
 use DurableWorkflow\Transport\Transport;
 use DurableWorkflow\Worker;
 use PHPUnit\Framework\TestCase;
 
 final class StandalonePhpWorkerContractTest extends TestCase
 {
+    public function test_type_roundtrip_constructs_and_checks_native_binary_values(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $payload = [
+            'binary_base64' => 'cG9seWdsb3QtYmluYXJ5AP8B',
+            'binary_text' => 'polyglot-binary',
+        ];
+        $wirePayload = \nativeBinaryPayload($payload);
+        $binary = $wirePayload['binary_native'] ?? null;
+
+        $this->assertInstanceOf(AvroBinaryValue::class, $binary);
+        $this->assertSame("polyglot-binary\x00\xFF\x01", $binary->bytes);
+        $codec = (new Client('http://server:8080'))->payloadCodec();
+        $activityInput = $codec->decodeEnvelope($codec->envelope([$wirePayload]))[0];
+        $activityEcho = $codec->decodeEnvelope($codec->envelope(\echoValue($activityInput)));
+        $roundtrip = \completeNativeBinaryRoundtrip($payload, $activityEcho);
+
+        $this->assertSame([
+            'runtime' => 'php',
+            'native_type' => 'AvroBinaryValue',
+            'base64' => $payload['binary_base64'],
+            'byte_length' => 18,
+            'matches_expected' => true,
+            'text_type' => 'string',
+            'text_value' => 'polyglot-binary',
+            'text_and_bytes_distinct' => true,
+        ], \nativeBinaryEvidence($wirePayload, 'php'));
+        $this->assertSame($payload, $roundtrip['echo']['value']);
+        $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['activity']['base64']);
+        $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['workflow']['base64']);
+    }
+
     public function test_registration_declares_the_signal_consumed_during_replay(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
