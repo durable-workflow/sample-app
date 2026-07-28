@@ -21,7 +21,10 @@ jobs:
       matrix:
         cache_mode: [cold-cache, warm-cache]
     env:
-      DURABLE_WORKFLOW_ARTIFACT_SOURCE: current
+      # This source imports the synchronized RC3 protocol API. Keep its
+      # qualification on that exact tuple while the public docs tuple advances
+      # only after the release train has completed validation.
+      DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
       POLYGLOT_BUILD_CACHE_MODE: ${{ matrix.cache_mode }}
 
     steps:
@@ -39,7 +42,7 @@ jobs:
           echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
           echo "Polyglot Compose project: $project"
 
-      - name: Resolve current artifact tuple
+      - name: Resolve qualified artifact tuple
         shell: bash
         run: |
           while IFS= read -r assignment; do

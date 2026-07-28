@@ -969,7 +969,7 @@ SH,
         );
     }
 
-    public function test_polyglot_validation_exercises_current_artifacts_for_push_and_pull_requests(): void
+    public function test_polyglot_validation_exercises_qualified_artifacts_for_push_and_pull_requests(): void
     {
         $workflowPath = $this->repoPath('.github/workflows/polyglot-validation.yml');
         $workflow = Yaml::parseFile($workflowPath);
@@ -978,12 +978,12 @@ SH,
         $steps = $job['steps'] ?? [];
         $resolveSteps = array_values(array_filter(
             $steps,
-            static fn (array $step): bool => ($step['name'] ?? null) === 'Resolve current artifact tuple',
+            static fn (array $step): bool => ($step['name'] ?? null) === 'Resolve qualified artifact tuple',
         ));
 
         $this->assertArrayHasKey('push', $triggers);
         $this->assertArrayHasKey('pull_request', $triggers);
-        $this->assertSame('current', $job['env']['DURABLE_WORKFLOW_ARTIFACT_SOURCE'] ?? null);
+        $this->assertSame('pinned', $job['env']['DURABLE_WORKFLOW_ARTIFACT_SOURCE'] ?? null);
 
         $this->assertCount(1, $resolveSteps);
         $resolution = (string) ($resolveSteps[0]['run'] ?? '');
