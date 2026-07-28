@@ -25,10 +25,9 @@ class TravelAgentActivity extends Activity
             return json_encode($bookingPlan, JSON_THROW_ON_ERROR);
         }
 
-        // Activity arguments are Avro-serialized under the v2 default codec,
-        // which strips PHP class info from UserMessage/AssistantMessage and
-        // hands us plain associative arrays. Rehydrate the typed Message
-        // objects so TravelAgent + Prism see the shape they expect.
+        // The workflow keeps durable history in language-neutral maps so its
+        // arguments and result stay inside the fixed Avro Value protocol.
+        // Rehydrate typed messages only at the Laravel AI boundary.
         $rehydrated = array_map(static fn ($message) => self::rehydrate($message), $messages);
 
         $history = array_slice($rehydrated, 0, -1);

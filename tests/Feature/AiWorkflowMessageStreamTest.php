@@ -198,6 +198,16 @@ class AiWorkflowMessageStreamTest extends TestCase
                 'content' => $bookingText,
             ]);
             $this->assertTrue($workflow->refresh()->completed());
+            $this->assertSame([
+                [
+                    'role' => 'user',
+                    'content' => 'Book the scripted San Francisco trip.',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => $bookingText,
+                ],
+            ], $workflow->output());
 
             Carbon::setTestNow(now()->addSecond());
             $this->drainReadyWorkflowTasks();

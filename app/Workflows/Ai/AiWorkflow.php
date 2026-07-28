@@ -6,8 +6,6 @@ namespace App\Workflows\Ai;
 
 use App\Models\AiWorkflowMessage;
 use Exception;
-use Laravel\Ai\Messages\AssistantMessage;
-use Laravel\Ai\Messages\UserMessage;
 use RuntimeException;
 use Throwable;
 use Workflow\UpdateMethod;
@@ -60,8 +58,7 @@ class AiWorkflow extends Workflow
         ?string $injectFailure = null,
         ?int $inactivityTimeoutSeconds = null,
         ?array $bookingPlan = null,
-    ): array
-    {
+    ): array {
         // The durable agent pattern combines signals for user input, activities
         // for LLM/booking work, compensation for rollback, and a stream for replies.
         $messages = [];
@@ -81,7 +78,10 @@ class AiWorkflow extends Workflow
                     break;
                 }
 
-                $messages[] = new UserMessage((string) $userMessage);
+                $messages[] = [
+                    'role' => 'user',
+                    'content' => (string) $userMessage,
+                ];
                 $result = activity(TravelAgentActivity::class, $messages, $bookingPlan);
                 $data = json_decode($result, true);
 
@@ -89,7 +89,10 @@ class AiWorkflow extends Workflow
                     $this->handleBooking($booking, $injectFailure);
                 }
 
-                $messages[] = new AssistantMessage($data['text']);
+                $messages[] = [
+                    'role' => 'assistant',
+                    'content' => (string) $data['text'],
+                ];
                 $this->publishAssistantMessage($data['text']);
 
                 if ($scriptedSingleTurn) {
