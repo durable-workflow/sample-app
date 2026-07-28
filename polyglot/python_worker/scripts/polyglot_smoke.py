@@ -347,12 +347,23 @@ def artifact_versions_match(artifact: str, actual: str, expected: str) -> bool:
     if artifact != "sdk-python":
         return False
 
-    expected_beta = re.fullmatch(r"(\d+\.\d+\.\d+)-beta\.(\d+)", expected)
-    actual_beta = re.fullmatch(r"(\d+\.\d+\.\d+)b(\d+)", actual)
+    expected_prerelease = re.fullmatch(
+        r"(\d+\.\d+\.\d+)-(beta|rc)\.(\d+)",
+        expected,
+    )
+    actual_prerelease = re.fullmatch(
+        r"(\d+\.\d+\.\d+)(b|rc)(\d+)",
+        actual,
+    )
     return bool(
-        expected_beta
-        and actual_beta
-        and expected_beta.groups() == actual_beta.groups()
+        expected_prerelease
+        and actual_prerelease
+        and expected_prerelease.group(1) == actual_prerelease.group(1)
+        and expected_prerelease.group(3) == actual_prerelease.group(3)
+        and {
+            "beta": "b",
+            "rc": "rc",
+        }[expected_prerelease.group(2)] == actual_prerelease.group(2)
     )
 
 

@@ -14,7 +14,7 @@ REQUIRED_ENV = {
     "DURABLE_SERVER_IMAGE": "durableworkflow/server:0.2.0",
     "DURABLE_WORKFLOW_CLI_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_PHP_SDK_VERSION": "0.2.0",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-beta.17",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.1",
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_WORKFLOW_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_WATERLINE_VERSION": "2.0.0-alpha.1",
@@ -115,24 +115,26 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         versions["sdk-python"] = python_version
         return versions
 
-    def test_accepts_python_pep_440_spelling_for_the_required_beta(self) -> None:
+    def test_accepts_python_pep_440_spelling_for_the_required_release_candidate(
+        self,
+    ) -> None:
         stale, missing = polyglot_smoke.artifact_version_findings(
-            self.versions("2.0.0b17")
+            self.versions("2.0.0rc1")
         )
 
         self.assertEqual({}, stale)
         self.assertEqual({}, missing)
 
-    def test_rejects_a_different_python_beta(self) -> None:
+    def test_rejects_a_different_python_release_candidate(self) -> None:
         stale, missing = polyglot_smoke.artifact_version_findings(
-            self.versions("2.0.0b4")
+            self.versions("2.0.0rc4")
         )
 
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-beta.17",
-                    "actual": "2.0.0b4",
+                    "expected": "2.0.0-rc.1",
+                    "actual": "2.0.0rc4",
                 }
             },
             stale,
@@ -147,7 +149,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-beta.17",
+                    "expected": "2.0.0-rc.1",
                     "actual": "0.4.0",
                 }
             },
@@ -155,22 +157,33 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         )
         self.assertEqual({}, missing)
 
-    def test_does_not_apply_python_beta_spelling_to_other_artifacts(self) -> None:
-        self.assertFalse(
+    def test_preserves_python_pep_440_beta_compatibility(self) -> None:
+        self.assertTrue(
             polyglot_smoke.artifact_versions_match(
-                "sdk-php",
+                "sdk-python",
                 "2.0.0b17",
                 "2.0.0-beta.17",
             )
         )
 
+    def test_does_not_apply_python_prerelease_spelling_to_other_artifacts(
+        self,
+    ) -> None:
+        self.assertFalse(
+            polyglot_smoke.artifact_versions_match(
+                "sdk-php",
+                "2.0.0rc1",
+                "2.0.0-rc.1",
+            )
+        )
+
     def test_rust_artifact_metadata_uses_cargo_exact_requirement_syntax(self) -> None:
-        versions = self.versions("2.0.0b17")
-        versions["sdk-rust"] = "2.0.0-beta.17"
+        versions = self.versions("2.0.0rc1")
+        versions["sdk-rust"] = "2.0.0-rc.1"
         rust = polyglot_smoke.artifact_metadata(versions)["sdk_rust"]
 
         self.assertEqual(
-            "cargo add durable-workflow@=2.0.0-beta.17",
+            "cargo add durable-workflow@=2.0.0-rc.1",
             rust["pin"],
         )
 
@@ -187,7 +200,7 @@ class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
             if len(calls) == expected_count:
                 all_started.set()
             await asyncio.wait_for(all_started.wait(), timeout=0.5)
-            return "2.0.0-beta.17" if arguments["runtime"] in {"php", "rust"} else None
+            return "2.0.0-rc.1" if arguments["runtime"] in {"php", "rust"} else None
 
         polyglot_smoke.wait_for_worker = wait_for_worker
         try:

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:2.0.0-beta.17"
-pinned_cli_version="2.0.0-beta.17"
-pinned_php_sdk_version="2.0.0-beta.17"
-pinned_python_sdk_version="2.0.0-beta.17"
-pinned_rust_sdk_version="2.0.0-beta.17"
-pinned_workflow_version="2.0.0-beta.17"
-pinned_waterline_version="2.0.0-beta.17"
+pinned_server_image="durableworkflow/server:2.0.0-rc.2"
+pinned_cli_version="2.0.0-rc.1"
+pinned_php_sdk_version="2.0.0-rc.1"
+pinned_python_sdk_version="2.0.0-rc.1"
+pinned_rust_sdk_version="2.0.0-rc.1"
+pinned_workflow_version="2.0.0-rc.1"
+pinned_waterline_version="2.0.0-rc.1"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
@@ -98,7 +98,7 @@ process.stdin.on("end", () => {
     throw new Error(`${label} must expose artifact_versions or artifacts`);
   }
 
-  const supportedTrainPattern = /^2\.0\.0-beta\.\d+$/;
+  const supportedTrainPattern = /^2\.0\.0-(?:beta|rc)\.\d+$/;
   const officialRequirements = Object.fromEntries(
     ["server", "cli", "sdk-php", "sdk-python", "sdk-rust", "workflow", "waterline"]
       .map(key => [key, supportedTrainPattern]),
@@ -117,8 +117,17 @@ process.stdin.on("end", () => {
     }
   }
 
+  // Qualified RC components may advance independently, but a resolved tuple
+  // must not cross prerelease channels. Beta trains remain version-coherent.
+  const channels = new Set(
+    emittedArtifacts.map(key => artifacts[key].split("-")[1].split(".")[0]),
+  );
+  if (channels.size !== 1) {
+    throw new Error(`${label} must expose one 2.0 beta or release-candidate channel across every artifact`);
+  }
+
   const versions = new Set(emittedArtifacts.map(key => artifacts[key]));
-  if (versions.size !== 1) {
+  if (channels.has("beta") && versions.size !== 1) {
     throw new Error(`${label} must expose one synchronized 2.0 beta version across every artifact`);
   }
 
