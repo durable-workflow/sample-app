@@ -51,22 +51,30 @@ def tally(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 @activity.defn(name="polyglot.php-to-python.echo")
 def echo_value(value: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "runtime": "python",
-        "value": value,
-        "binary_evidence": _native_binary_evidence(value),
-        "codec": _avro_observation(),
-    }
+    return _echo_value(value)
 
 
 @activity.defn(name="polyglot.rust-to-python.echo")
 def echo_rust_value(value: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return _echo_value(value)
+
+
+def _echo_value(value: dict[str, Any]) -> dict[str, Any]:
+    binary_evidence = _optional_native_binary_evidence(value)
+    result = {
         "runtime": "python",
         "value": value,
-        "binary_evidence": _native_binary_evidence(value),
         "codec": _avro_observation(),
     }
+    if binary_evidence is not None:
+        result["binary_evidence"] = binary_evidence
+    return result
+
+
+def _optional_native_binary_evidence(value: dict[str, Any]) -> dict[str, Any] | None:
+    if not any(key in value for key in ("binary_native", "binary_base64", "binary_text")):
+        return None
+    return _native_binary_evidence(value)
 
 
 def _native_binary_evidence(value: dict[str, Any]) -> dict[str, Any]:

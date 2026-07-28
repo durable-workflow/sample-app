@@ -88,6 +88,21 @@ class NativeBinaryWorkerTest(unittest.TestCase):
                 },
             )
 
+    def test_shared_echo_keeps_non_binary_greeter_payloads_compatible(self) -> None:
+        original_observation = activities._avro_observation
+        activities._avro_observation = lambda: {"implementation": "fastavro"}
+        try:
+            echo = activities.echo_rust_value({"name": "Ada"})
+        finally:
+            activities._avro_observation = original_observation
+
+        self.assertEqual({"name": "Ada"}, echo["value"])
+        self.assertNotIn("binary_evidence", echo)
+
+    def test_shared_echo_rejects_a_partial_binary_fixture(self) -> None:
+        with self.assertRaisesRegex(TypeError, "expected native Python bytes"):
+            activities.echo_value({"binary_base64": self.payload["binary_base64"]})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -193,10 +193,9 @@ function describeRuntime(string $activityType, array $marker): array
 /** @return array<string, mixed> */
 function echoValue(array $value): array
 {
-    return [
+    $result = [
         'runtime' => 'php',
         'value' => $value,
-        'binary_evidence' => nativeBinaryEvidence($value, 'php'),
         'codec' => [
             'codec' => 'avro',
             'implementation' => 'Apache Avro',
@@ -208,6 +207,13 @@ function echoValue(array $value): array
             'framing' => 'single_object',
         ],
     ];
+
+    $binaryEvidence = optionalNativeBinaryEvidence($value, 'php');
+    if ($binaryEvidence !== null) {
+        $result['binary_evidence'] = $binaryEvidence;
+    }
+
+    return $result;
 }
 
 /**
@@ -272,6 +278,21 @@ function nativeBinaryEvidence(array $value, string $runtime): array
         'text_value' => $text,
         'text_and_bytes_distinct' => true,
     ];
+}
+
+/**
+ * @param  array<string, mixed>  $value
+ * @return array<string, mixed>|null
+ */
+function optionalNativeBinaryEvidence(array $value, string $runtime): ?array
+{
+    foreach (['binary_native', 'binary_base64', 'binary_text'] as $key) {
+        if (array_key_exists($key, $value)) {
+            return nativeBinaryEvidence($value, $runtime);
+        }
+    }
+
+    return null;
 }
 
 /**

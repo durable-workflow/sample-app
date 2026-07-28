@@ -45,6 +45,27 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['workflow']['base64']);
     }
 
+    public function test_shared_echo_keeps_non_binary_greeter_payloads_compatible(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $echo = \echoValue(['name' => 'Ada']);
+
+        $this->assertSame(['name' => 'Ada'], $echo['value']);
+        $this->assertArrayNotHasKey('binary_evidence', $echo);
+        $this->assertSame('avro', $echo['codec']['codec'] ?? null);
+    }
+
+    public function test_shared_echo_rejects_a_partial_binary_fixture(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Expected native PHP AvroBinaryValue');
+
+        \echoValue(['binary_base64' => 'AA==']);
+    }
+
     public function test_registration_declares_the_signal_consumed_during_replay(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
