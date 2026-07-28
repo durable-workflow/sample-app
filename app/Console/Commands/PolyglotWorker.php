@@ -20,6 +20,7 @@ use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use RuntimeException;
 use Throwable;
+use Workflow\Serializers\Avro as WorkflowAvro;
 use Workflow\V2\Support\WorkerProtocolVersion;
 
 /**
@@ -684,6 +685,9 @@ class PolyglotWorker extends Command
                 'package' => 'apache/avro',
                 'version' => InstalledVersions::getPrettyVersion('apache/avro')
                     ?? InstalledVersions::getVersion('apache/avro'),
+                'schema' => 'durable_workflow.protocol.Value',
+                'fingerprint' => WorkflowAvro::VALUE_SCHEMA_FINGERPRINT_HEX,
+                'framing' => 'single_object',
             ],
         ];
     }

@@ -163,6 +163,12 @@ worker image. Waterline is likewise hosted in the separate `laravel` image,
 where `durable-workflow/workflow` retains its actual role as the embedded
 Laravel engine.
 
+Every PHP, Python, and Rust worker uses the same fixed recursive
+`durable_workflow.protocol.Value` schema with Avro single-object framing.
+Smoke evidence verifies the `c301` marker, schema fingerprint, and native type
+matrix at each language boundary; JSON is exercised only when explicitly
+selected as the fallback codec.
+
 ## Running locally
 
 ```bash

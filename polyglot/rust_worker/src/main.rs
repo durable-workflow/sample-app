@@ -239,6 +239,9 @@ fn avro_observation() -> Value {
         "implementation": "apache-avro",
         "package": "apache-avro",
         "version": required_env("APACHE_AVRO_RUST_VERSION"),
+        "schema": "durable_workflow.protocol.Value",
+        "fingerprint": durable_workflow::AVRO_VALUE_SCHEMA_FINGERPRINT_HEX,
+        "framing": "single_object",
     })
 }
 

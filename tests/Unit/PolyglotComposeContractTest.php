@@ -83,8 +83,8 @@ final class PolyglotComposeContractTest extends TestCase
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
             $this->assertSame($resolvedPythonVersion, $buildArgs['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
             $this->assertSame(
-                '${DURABLE_WORKFLOW_PYTHON_AVRO_VERSION:-1.12.1}',
-                $buildArgs['APACHE_AVRO_PYTHON_VERSION'] ?? null,
+                '${DURABLE_WORKFLOW_PYTHON_FASTAVRO_VERSION:-1.12.2}',
+                $buildArgs['FASTAVRO_PYTHON_VERSION'] ?? null,
             );
         }
 
@@ -527,7 +527,7 @@ SH,
 
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_CLI_VERSION\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION\n", $dockerfile);
-        $this->assertStringContainsString('ARG APACHE_AVRO_PYTHON_VERSION=1.12.1', $dockerfile);
+        $this->assertStringContainsString('ARG FASTAVRO_PYTHON_VERSION=1.12.2', $dockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_CLI_VERSION"', $dockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"', $dockerfile);
         $this->assertStringContainsString('https://durable-workflow.com/install.sh', $dockerfile);
@@ -537,7 +537,7 @@ SH,
             $dockerfile,
         );
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PYTHON_SDK_VERSION\n", $pythonWorkflowDockerfile);
-        $this->assertStringContainsString('ARG APACHE_AVRO_PYTHON_VERSION=1.12.1', $pythonWorkflowDockerfile);
+        $this->assertStringContainsString('ARG FASTAVRO_PYTHON_VERSION=1.12.2', $pythonWorkflowDockerfile);
         $this->assertStringContainsString('test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"', $pythonWorkflowDockerfile);
         $this->assertStringContainsString(
             'durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}',
@@ -608,7 +608,7 @@ SH,
         $this->assertStringNotContainsString('DURABLE_WORKFLOW_WATERLINE_VERSION:=2.0.0-', $smokeShell);
         $pinnedVersion = $composerJson['require']['durable-workflow/sdk'] ?? null;
         $this->assertIsString($pinnedVersion);
-        $this->assertSame('2.0.0-rc.1', $pinnedVersion);
+        $this->assertSame('2.0.0-rc.3', $pinnedVersion);
         $this->assertArrayNotHasKey('repositories', $composerJson);
         foreach ([
             'durable-workflow/sdk' => 'https://github.com/durable-workflow/sdk-php.git',
@@ -942,10 +942,10 @@ SH,
             flags: JSON_THROW_ON_ERROR,
         );
         $componentVersion = $composerJson['require']['durable-workflow/sdk'] ?? null;
-        $serverVersion = '2.0.0-rc.2';
+        $serverVersion = '2.0.0-rc.3';
 
         $this->assertIsString($componentVersion);
-        $this->assertSame('2.0.0-rc.1', $componentVersion);
+        $this->assertSame('2.0.0-rc.3', $componentVersion);
         $this->assertSame('durableworkflow/server:'.$serverVersion, $assignments['DURABLE_SERVER_IMAGE'] ?? null);
         $this->assertSame($serverVersion, $assignments['DURABLE_SERVER_VERSION'] ?? null);
         $this->assertSame($componentVersion, $assignments['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);

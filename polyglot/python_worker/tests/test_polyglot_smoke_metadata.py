@@ -14,12 +14,12 @@ REQUIRED_ENV = {
     "DURABLE_SERVER_IMAGE": "durableworkflow/server:0.2.0",
     "DURABLE_WORKFLOW_CLI_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_PHP_SDK_VERSION": "0.2.0",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.1",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.3",
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_WORKFLOW_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_WATERLINE_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_RUST_AVRO_VERSION": "0.21.0",
-    "DURABLE_WORKFLOW_PYTHON_AVRO_VERSION": "1.12.1",
+    "DURABLE_WORKFLOW_PYTHON_FASTAVRO_VERSION": "1.12.2",
 }
 os.environ.update(REQUIRED_ENV)
 
@@ -119,7 +119,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self,
     ) -> None:
         stale, missing = polyglot_smoke.artifact_version_findings(
-            self.versions("2.0.0rc1")
+            self.versions("2.0.0rc3")
         )
 
         self.assertEqual({}, stale)
@@ -133,7 +133,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-rc.1",
+                    "expected": "2.0.0-rc.3",
                     "actual": "2.0.0rc4",
                 }
             },
@@ -149,7 +149,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-rc.1",
+                    "expected": "2.0.0-rc.3",
                     "actual": "0.4.0",
                 }
             },
@@ -173,17 +173,17 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
             polyglot_smoke.artifact_versions_match(
                 "sdk-php",
                 "2.0.0rc1",
-                "2.0.0-rc.1",
+                "2.0.0-rc.3",
             )
         )
 
     def test_rust_artifact_metadata_uses_cargo_exact_requirement_syntax(self) -> None:
-        versions = self.versions("2.0.0rc1")
-        versions["sdk-rust"] = "2.0.0-rc.1"
+        versions = self.versions("2.0.0rc3")
+        versions["sdk-rust"] = "2.0.0-rc.3"
         rust = polyglot_smoke.artifact_metadata(versions)["sdk_rust"]
 
         self.assertEqual(
-            "cargo add durable-workflow@=2.0.0-rc.1",
+            "cargo add durable-workflow@=2.0.0-rc.3",
             rust["pin"],
         )
 
@@ -200,7 +200,7 @@ class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
             if len(calls) == expected_count:
                 all_started.set()
             await asyncio.wait_for(all_started.wait(), timeout=0.5)
-            return "2.0.0-rc.1" if arguments["runtime"] in {"php", "rust"} else None
+            return "2.0.0-rc.3" if arguments["runtime"] in {"php", "rust"} else None
 
         polyglot_smoke.wait_for_worker = wait_for_worker
         try:

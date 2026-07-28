@@ -69,9 +69,12 @@ def echo_rust_value(value: dict[str, Any]) -> dict[str, Any]:
 def _avro_observation() -> dict[str, str]:
     return {
         "codec": "avro",
-        "implementation": "Apache Avro",
-        "package": "avro",
-        "version": importlib.metadata.version("avro"),
+        "implementation": "fastavro",
+        "package": "fastavro",
+        "version": importlib.metadata.version("fastavro"),
+        "schema": "durable_workflow.protocol.Value",
+        "fingerprint": "e2a33dff55802237",
+        "framing": "single_object",
     }
 
 

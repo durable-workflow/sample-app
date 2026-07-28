@@ -226,9 +226,9 @@ dependencies = [
 
 [[package]]
 name = "durable-workflow"
-version = "2.0.0-rc.1"
+version = "2.0.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0b97b5e05369ce0a337b50ca39b3784002417e22ee2926d1d01de82b848ecb3"
+checksum = "d980614dc397396404a9e54536e32882011b867ac273b645ada8b240a285b49e"
 dependencies = [
  "apache-avro",
  "base64",
@@ -236,6 +236,7 @@ dependencies = [
  "futures-util",
  "reqwest",
  "serde",
+ "serde-value",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
@@ -704,6 +705,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "ordered-float"
+version = "2.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,6 +1019,16 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-value"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
+dependencies = [
+ "ordered-float",
+ "serde",
 ]
 
 [[package]]

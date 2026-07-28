@@ -80,7 +80,7 @@ SIGNAL_NAME = "polyglot-signal"
 RUST_QUEUE = os.environ.get("POLYGLOT_RUST_TASK_QUEUE", "polyglot-rust")
 TO_RUST_QUEUE = os.environ.get("POLYGLOT_TO_RUST_TASK_QUEUE", "polyglot-to-rust")
 RUST_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_RUST_AVRO_VERSION")
-PYTHON_AVRO_VERSION = required_env_version("DURABLE_WORKFLOW_PYTHON_AVRO_VERSION")
+PYTHON_FASTAVRO_VERSION = required_env_version("DURABLE_WORKFLOW_PYTHON_FASTAVRO_VERSION")
 
 PHP_REQUIRED_RUNTIME_CELLS = {
     "workflow": (
@@ -299,10 +299,10 @@ def official_avro_packages(probe: dict[str, Any] | None) -> dict[str, dict[str, 
             "official": True,
         },
         "python": {
-            "package": "avro",
+            "package": "fastavro",
             "channel": "PyPI",
-            "version": installed_distribution_version("avro"),
-            "required_version": PYTHON_AVRO_VERSION,
+            "version": installed_distribution_version("fastavro"),
+            "required_version": PYTHON_FASTAVRO_VERSION,
             "official": True,
         },
         "rust": {
@@ -1153,7 +1153,13 @@ async def run_type_matrix() -> dict[str, Any]:
         )
         codec = assert_dict(echo.get("codec"), f"type_matrix.{direction}.codec")
         expected_package = official_avro_package_name(spec["activity_runtime"])
-        if codec.get("codec") != "avro" or codec.get("package") != expected_package:
+        if (
+            codec.get("codec") != "avro"
+            or codec.get("package") != expected_package
+            or codec.get("schema") != "durable_workflow.protocol.Value"
+            or codec.get("fingerprint") != "e2a33dff55802237"
+            or codec.get("framing") != "single_object"
+        ):
             raise RuntimeError(f"type_matrix.{direction}: official Avro observation missing: {codec}")
         runs.append({
             "direction": direction,
@@ -1178,12 +1184,12 @@ async def run_type_matrix() -> dict[str, Any]:
     return {
         "surface": "type_matrix",
         "status": "passed",
-        "codec_scope": "JSON-native values carried in the published Avro generic wrapper by official Apache Avro packages",
+        "codec_scope": "Language-neutral primitive values carried in the fixed Avro Value schema by established Avro packages",
         "direction_count": len(runs),
         "cases": sorted(payload.keys()),
         "binary": {
-            "status": "covered_as_base64_string",
-            "reason": "The published generic-wrapper codec carries JSON-native values; raw bytes are represented as an explicit base64 object.",
+            "status": "covered_by_cross_language_golden_fixture",
+            "reason": "The fixed Value protocol preserves bytes separately from UTF-8 text through explicit SDK adapters.",
         },
         "runs": runs,
     }
@@ -1192,7 +1198,7 @@ async def run_type_matrix() -> dict[str, Any]:
 def official_avro_package_name(runtime: str) -> str:
     return {
         "php": "apache/avro",
-        "python": "avro",
+        "python": "fastavro",
         "rust": "apache-avro",
     }[runtime]
 

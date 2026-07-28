@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Composer\InstalledVersions;
 use DurableWorkflow\Client;
+use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Worker;
@@ -200,6 +201,9 @@ function echoValue(array $value): array
             'package' => 'apache/avro',
             'version' => InstalledVersions::getPrettyVersion('apache/avro')
                 ?? InstalledVersions::getVersion('apache/avro'),
+            'schema' => 'durable_workflow.protocol.Value',
+            'fingerprint' => AvroPayloadCodec::VALUE_SCHEMA_FINGERPRINT_HEX,
+            'framing' => 'single_object',
         ],
     ];
 }

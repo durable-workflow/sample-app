@@ -66,7 +66,7 @@ x-artifact-defaults:
   server-image: &durable-server-image "${DURABLE_SERVER_IMAGE:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   cli-version: &durable-cli-version "${DURABLE_WORKFLOW_CLI_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   python-sdk-version: &durable-python-sdk-version "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
-  python-avro-version: &durable-python-avro-version "${DURABLE_WORKFLOW_PYTHON_AVRO_VERSION:-1.12.1}"
+  python-fastavro-version: &durable-python-fastavro-version "${DURABLE_WORKFLOW_PYTHON_FASTAVRO_VERSION:-1.12.2}"
   rust-sdk-version: &durable-rust-sdk-version "${DURABLE_WORKFLOW_RUST_SDK_VERSION:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}"
   rust-avro-version: &durable-rust-avro-version "${DURABLE_WORKFLOW_RUST_AVRO_VERSION:-0.21.0}"
   php-sdk-pin: &durable-php-sdk-pin "${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
@@ -144,7 +144,7 @@ services:
       context: ./python_workflow
       args:
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
-        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
+        FASTAVRO_PYTHON_VERSION: *durable-python-fastavro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -164,7 +164,7 @@ services:
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
-        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
+        FASTAVRO_PYTHON_VERSION: *durable-python-fastavro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -345,7 +345,7 @@ services:
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
-        APACHE_AVRO_PYTHON_VERSION: *durable-python-avro-version
+        FASTAVRO_PYTHON_VERSION: *durable-python-fastavro-version
     environment:
       DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
@@ -354,7 +354,7 @@ services:
       DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
       DURABLE_WORKFLOW_CLI_PIN: "${DURABLE_WORKFLOW_CLI_PIN:-}"
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
-      DURABLE_WORKFLOW_PYTHON_AVRO_VERSION: *durable-python-avro-version
+      DURABLE_WORKFLOW_PYTHON_FASTAVRO_VERSION: *durable-python-fastavro-version
       DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
       DURABLE_WORKFLOW_RUST_AVRO_VERSION: *durable-rust-avro-version
       DURABLE_WORKFLOW_PHP_SDK_PIN: *durable-php-sdk-pin
