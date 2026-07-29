@@ -250,6 +250,7 @@ dependencies = [
  "apache-avro",
  "base64",
  "durable-workflow",
+ "serde_json",
  "tokio",
 ]
 

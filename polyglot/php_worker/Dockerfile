@@ -28,5 +28,8 @@ RUN test -n "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
     && ! composer show laravel/framework
 
 COPY worker.php ./
+COPY replay_fixtures ./replay_fixtures
+
+RUN php worker.php --mode=replay-fixtures
 
 CMD ["php", "/app/worker.php"]

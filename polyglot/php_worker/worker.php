@@ -11,6 +11,7 @@ use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
+use DurableWorkflow\Worker\Replayer;
 use DurableWorkflow\Worker\WorkflowCommand;
 use DurableWorkflow\Worker\WorkflowContext;
 
@@ -22,9 +23,11 @@ const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
     'polyglot.php-to-python.PhpToPythonWorkflow',
     'polyglot.php-to-python.type-roundtrip',
+    'polyglot.php-to-python.binary-type-roundtrip',
     'polyglot.php-to-python.typed-error',
     'polyglot.php-to-rust.greeter',
     'polyglot.php-to-rust.type-roundtrip',
+    'polyglot.php-to-rust.binary-type-roundtrip',
     'polyglot.php.signal-query',
 ];
 
@@ -294,13 +297,13 @@ function completeNativeBinaryRoundtrip(array $payload, mixed $echo): array
     if (! is_array($echo) || ! is_array($echo['value'] ?? null)) {
         throw new UnexpectedValueException('Activity did not return the native binary payload.');
     }
-    if (! is_array($echo['binary_evidence'] ?? null)) {
-        throw new UnexpectedValueException('Activity did not return executable native binary evidence.');
-    }
 
     $workflowEvidence = nativeBinaryEvidence($echo['value'], 'php');
-    $activityEvidence = $echo['binary_evidence'];
+    $activityEvidence = is_array($echo['binary_evidence'] ?? null)
+        ? $echo['binary_evidence']
+        : nativeBinaryEvidence($echo['value'], (string) ($echo['runtime'] ?? 'unknown'));
     $echo['value'] = $payload;
+    $echo['binary_evidence'] = $activityEvidence;
 
     return [
         'echo' => $echo,
@@ -309,6 +312,22 @@ function completeNativeBinaryRoundtrip(array $payload, mixed $echo): array
             'workflow' => $workflowEvidence,
         ],
     ];
+}
+
+function typeRoundtripWorkflow(string $activityType): Closure
+{
+    return static function (WorkflowContext $context, array $payload) use ($activityType): Generator {
+        $echo = yield $context->activity($activityType, [nativeBinaryPayload($payload)]);
+        $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
+
+        return [
+            'workflow_runtime' => 'php',
+            'activity_runtime' => is_array($echo) ? ($echo['runtime'] ?? null) : null,
+            'input' => $payload,
+            'echo' => $roundtrip['echo'],
+            'binary_evidence' => $roundtrip['binary_evidence'],
+        ];
+    };
 }
 
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
@@ -350,18 +369,12 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php-to-python.type-roundtrip',
-        static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-python.binary-echo', [nativeBinaryPayload($payload)]);
-            $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
+        typeRoundtripWorkflow('polyglot.php-to-python.echo'),
+    );
 
-            return [
-                'workflow_runtime' => 'php',
-                'activity_runtime' => is_array($echo) ? ($echo['runtime'] ?? null) : null,
-                'input' => $payload,
-                'echo' => $roundtrip['echo'],
-                'binary_evidence' => $roundtrip['binary_evidence'],
-            ];
-        },
+    $worker->registerWorkflow(
+        'polyglot.php-to-python.binary-type-roundtrip',
+        typeRoundtripWorkflow('polyglot.php-to-python.binary-echo'),
     );
 
     $worker->registerWorkflow(
@@ -403,18 +416,12 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php-to-rust.type-roundtrip',
-        static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-rust.binary-echo', [nativeBinaryPayload($payload)]);
-            $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
+        typeRoundtripWorkflow('polyglot.php-to-rust.echo'),
+    );
 
-            return [
-                'workflow_runtime' => 'php',
-                'activity_runtime' => is_array($echo) ? ($echo['runtime'] ?? null) : null,
-                'input' => $payload,
-                'echo' => $roundtrip['echo'],
-                'binary_evidence' => $roundtrip['binary_evidence'],
-            ];
-        },
+    $worker->registerWorkflow(
+        'polyglot.php-to-rust.binary-type-roundtrip',
+        typeRoundtripWorkflow('polyglot.php-to-rust.binary-echo'),
     );
 
     $worker->registerWorkflow(
@@ -603,10 +610,67 @@ function runQueryWorker(Client $client, string $workerId, string $taskQueue, int
     }
 }
 
+function verifyReplayFixtures(): void
+{
+    $fixture = json_decode(
+        (string) file_get_contents(__DIR__.'/replay_fixtures/pre-binary-activity-split.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $client = new Client('http://replay.invalid');
+    $codec = $client->payloadCodec();
+    $replayer = new Replayer($codec);
+
+    foreach ($fixture['cases'] ?? [] as $case) {
+        $scheduledType = $case['history'][0]['payload']['activity_type'] ?? null;
+        $result = $replayer->replay(
+            typeRoundtripWorkflow((string) $scheduledType),
+            $case['history'],
+            $case['input'],
+            $case['task_queue'],
+            [
+                'workflow_id' => 'upgrade-'.$case['direction'],
+                'run_id' => 'pre-binary-split-'.$case['direction'],
+            ],
+        );
+
+        if (($case['expected_state'] ?? null) === 'waiting') {
+            if ($result->commands !== []) {
+                throw new RuntimeException("{$case['name']}: unresolved activity emitted a duplicate command.");
+            }
+
+            continue;
+        }
+
+        $command = $result->commands[0] ?? null;
+        if (! is_array($command) || ($command['type'] ?? null) !== 'complete_workflow') {
+            throw new RuntimeException("{$case['name']}: completed history did not replay to completion.");
+        }
+        $output = $codec->decodeEnvelope($command['result'] ?? null);
+        if (($output['activity_runtime'] ?? null) !== ($case['expected_activity_runtime'] ?? null)) {
+            throw new RuntimeException("{$case['name']}: replayed activity runtime changed.");
+        }
+        if (($output['binary_evidence']['workflow']['base64'] ?? null) !== ($case['input'][0]['binary_base64'] ?? null)) {
+            throw new RuntimeException("{$case['name']}: replayed native bytes changed.");
+        }
+    }
+
+    fwrite(STDOUT, sprintf(
+        "php upgrade replay fixtures passed: %d\n",
+        count($fixture['cases'] ?? []),
+    ));
+}
+
 function runStandaloneWorker(): void
 {
     $options = commandOptions();
     $mode = option($options, 'mode', 'workflow');
+    if ($mode === 'replay-fixtures') {
+        verifyReplayFixtures();
+
+        return;
+    }
+
     $serverUrl = option($options, 'server-url', (string) getenv('DURABLE_WORKFLOW_SERVER_URL'));
     $token = option($options, 'token', (string) (getenv('DURABLE_WORKFLOW_AUTH_TOKEN') ?: 'test-token'));
     $namespace = option($options, 'namespace', (string) (getenv('DURABLE_WORKFLOW_NAMESPACE') ?: 'default'));
@@ -625,7 +689,7 @@ function runStandaloneWorker(): void
         throw new RuntimeException('Set DURABLE_WORKFLOW_SERVER_URL or pass --server-url.');
     }
     if (! in_array($mode, ['workflow', 'activity', 'query'], true)) {
-        throw new RuntimeException('Expected --mode=workflow, --mode=activity, or --mode=query.');
+        throw new RuntimeException('Expected --mode=workflow, --mode=activity, --mode=query, or --mode=replay-fixtures.');
     }
 
     $client = new Client($serverUrl, token: $token, namespace: $namespace);

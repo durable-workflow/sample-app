@@ -1,0 +1,128 @@
+{
+    "schema": "durable-workflow.polyglot-upgrade-history.v1",
+    "source": {
+        "sample_app_commit": "237b36c",
+        "activity_generation": "shared-echo"
+    },
+    "cases": [
+        {
+            "name": "php-to-python-completed",
+            "direction": "php_to_python",
+            "workflow_type": "polyglot.php-to-python.type-roundtrip",
+            "task_queue": "polyglot-php-to-python",
+            "payload_codec": "avro",
+            "input": [
+                {
+                    "string_non_ascii": "hello, こんにちは, café",
+                    "integer": 42,
+                    "float": 3.14159,
+                    "boolean": true,
+                    "null_value": null,
+                    "mixed_list": ["text", 7, 2.5, false, null, {"nested": "map"}],
+                    "nested_map": {"outer": {"inner": [1, "two", null], "flag": true}},
+                    "timestamp": "2026-05-17T00:00:00Z",
+                    "binary_base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+                    "binary_text": "polyglot-binary"
+                }
+            ],
+            "history": [
+                {
+                    "event_type": "ActivityScheduled",
+                    "payload": {
+                        "sequence": 1,
+                        "activity_type": "polyglot.php-to-python.echo"
+                    }
+                },
+                {
+                    "event_type": "ActivityCompleted",
+                    "payload": {
+                        "sequence": 1,
+                        "activity_type": "polyglot.php-to-python.echo",
+                        "payload_codec": "avro",
+                        "result": {
+                            "codec": "avro",
+                            "blob": "wwHioz3/VYAiNw4IDnJ1bnRpbWUKDHB5dGhvbgp2YWx1ZQ4WIHN0cmluZ19ub25fYXNjaWkKOmhlbGxvLCDjgZPjgpPjgavjgaHjga8sIGNhZsOpDmludGVnZXIEVApmbG9hdAZuhhvw+SEJQA5ib29sZWFuAgEUbnVsbF92YWx1ZQAUbWl4ZWRfbGlzdAwMCgh0ZXh0BA4GAAAAAAAABEACAAAOAgxuZXN0ZWQKBm1hcAAAFG5lc3RlZF9tYXAOAgpvdXRlcg4ECmlubmVyDAYEAgoGdHdvAAAIZmxhZwIBAAASdGltZXN0YW1wCigyMDI2LTA1LTE3VDAwOjAwOjAwWhpiaW5hcnlfYmFzZTY0CjBjRzlzZVdkc2IzUXRZbWx1WVhKNUFQOEIWYmluYXJ5X3RleHQKHnBvbHlnbG90LWJpbmFyeRpiaW5hcnlfbmF0aXZlCCRwb2x5Z2xvdC1iaW5hcnkA/wEACmNvZGVjDgQKY29kZWMKCGF2cm8caW1wbGVtZW50YXRpb24KInByZS1zcGxpdC1maXh0dXJlAB5iaW5hcnlfZXZpZGVuY2UOBA5ydW50aW1lCgxweXRob24gbWF0Y2hlc19leHBlY3RlZAIBAAA="
+                        }
+                    }
+                }
+            ],
+            "expected_state": "completed",
+            "expected_activity_runtime": "python"
+        },
+        {
+            "name": "php-to-rust-completed",
+            "direction": "php_to_rust",
+            "workflow_type": "polyglot.php-to-rust.type-roundtrip",
+            "task_queue": "polyglot-to-rust",
+            "payload_codec": "avro",
+            "input": [
+                {
+                    "string_non_ascii": "hello, こんにちは, café",
+                    "integer": 42,
+                    "float": 3.14159,
+                    "boolean": true,
+                    "null_value": null,
+                    "mixed_list": ["text", 7, 2.5, false, null, {"nested": "map"}],
+                    "nested_map": {"outer": {"inner": [1, "two", null], "flag": true}},
+                    "timestamp": "2026-05-17T00:00:00Z",
+                    "binary_base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+                    "binary_text": "polyglot-binary"
+                }
+            ],
+            "history": [
+                {
+                    "event_type": "ActivityScheduled",
+                    "payload": {
+                        "sequence": 1,
+                        "activity_type": "polyglot.php-to-rust.echo"
+                    }
+                },
+                {
+                    "event_type": "ActivityCompleted",
+                    "payload": {
+                        "sequence": 1,
+                        "activity_type": "polyglot.php-to-rust.echo",
+                        "payload_codec": "avro",
+                        "result": {
+                            "codec": "avro",
+                            "blob": "wwHioz3/VYAiNw4IDnJ1bnRpbWUKCHJ1c3QKdmFsdWUOFiBzdHJpbmdfbm9uX2FzY2lpCjpoZWxsbywg44GT44KT44Gr44Gh44GvLCBjYWbDqQ5pbnRlZ2VyBFQKZmxvYXQGboYb8PkhCUAOYm9vbGVhbgIBFG51bGxfdmFsdWUAFG1peGVkX2xpc3QMDAoIdGV4dAQOBgAAAAAAAARAAgAADgIMbmVzdGVkCgZtYXAAABRuZXN0ZWRfbWFwDgIKb3V0ZXIOBAppbm5lcgwGBAIKBnR3bwAACGZsYWcCAQAAEnRpbWVzdGFtcAooMjAyNi0wNS0xN1QwMDowMDowMFoaYmluYXJ5X2Jhc2U2NAowY0c5c2VXZHNiM1F0WW1sdVlYSjVBUDhCFmJpbmFyeV90ZXh0Ch5wb2x5Z2xvdC1iaW5hcnkaYmluYXJ5X25hdGl2ZQgkcG9seWdsb3QtYmluYXJ5AP8BAApjb2RlYw4ECmNvZGVjCghhdnJvHGltcGxlbWVudGF0aW9uCiJwcmUtc3BsaXQtZml4dHVyZQAeYmluYXJ5X2V2aWRlbmNlDgQOcnVudGltZQoIcnVzdCBtYXRjaGVzX2V4cGVjdGVkAgEAAA=="
+                        }
+                    }
+                }
+            ],
+            "expected_state": "completed",
+            "expected_activity_runtime": "rust"
+        },
+        {
+            "name": "php-to-python-unresolved",
+            "direction": "php_to_python",
+            "workflow_type": "polyglot.php-to-python.type-roundtrip",
+            "task_queue": "polyglot-php-to-python",
+            "payload_codec": "avro",
+            "input": [
+                {
+                    "string_non_ascii": "hello, こんにちは, café",
+                    "integer": 42,
+                    "float": 3.14159,
+                    "boolean": true,
+                    "null_value": null,
+                    "mixed_list": ["text", 7, 2.5, false, null, {"nested": "map"}],
+                    "nested_map": {"outer": {"inner": [1, "two", null], "flag": true}},
+                    "timestamp": "2026-05-17T00:00:00Z",
+                    "binary_base64": "cG9seWdsb3QtYmluYXJ5AP8B",
+                    "binary_text": "polyglot-binary"
+                }
+            ],
+            "history": [
+                {
+                    "event_type": "ActivityScheduled",
+                    "payload": {
+                        "sequence": 1,
+                        "activity_type": "polyglot.php-to-python.echo"
+                    }
+                }
+            ],
+            "expected_state": "waiting"
+        }
+    ]
+}

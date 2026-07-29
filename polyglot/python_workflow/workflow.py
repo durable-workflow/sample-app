@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import socket
+import sys
+from pathlib import Path
 from typing import Any
 
 from durable_workflow import Client, TransportRetryPolicy, Worker, activity, serializer, workflow
@@ -97,14 +100,16 @@ class PythonToPhpGreeterWorkflow:
         }
 
 
-@workflow.defn(name="polyglot.python-to-php.type-roundtrip")
-class PythonToPhpTypeRoundtripWorkflow:
+class _PythonTypeRoundtripWorkflow:
+    activity_type = ""
+    activity_queue = ""
+
     def run(self, ctx, payload):  # type: ignore[no-untyped-def]
         wire_payload = _native_binary_payload(payload)
         echo = yield ctx.schedule_activity(
-            "polyglot.python-to-php.binary-echo",
+            self.activity_type,
             [wire_payload],
-            queue=PHP_ACTIVITY_TASK_QUEUE,
+            queue=self.activity_queue,
         )
         normalized_echo, binary_evidence = _complete_native_binary_roundtrip(payload, echo)
         return {
@@ -114,6 +119,18 @@ class PythonToPhpTypeRoundtripWorkflow:
             "echo": normalized_echo,
             "binary_evidence": binary_evidence,
         }
+
+
+@workflow.defn(name="polyglot.python-to-php.type-roundtrip")
+class PythonToPhpTypeRoundtripWorkflow(_PythonTypeRoundtripWorkflow):
+    activity_type = "polyglot.python-to-php.echo"
+    activity_queue = PHP_ACTIVITY_TASK_QUEUE
+
+
+@workflow.defn(name="polyglot.python-to-php.binary-type-roundtrip")
+class PythonToPhpBinaryTypeRoundtripWorkflow(_PythonTypeRoundtripWorkflow):
+    activity_type = "polyglot.python-to-php.binary-echo"
+    activity_queue = PHP_ACTIVITY_TASK_QUEUE
 
 
 @workflow.defn(name="polyglot.python-to-php.typed-error")
@@ -157,22 +174,15 @@ class PythonToRustGreeterWorkflow:
 
 
 @workflow.defn(name="polyglot.python-to-rust.type-roundtrip")
-class PythonToRustTypeRoundtripWorkflow:
-    def run(self, ctx, payload):  # type: ignore[no-untyped-def]
-        wire_payload = _native_binary_payload(payload)
-        echo = yield ctx.schedule_activity(
-            "polyglot.python-to-rust.binary-echo",
-            [wire_payload],
-            queue=RUST_ACTIVITY_TASK_QUEUE,
-        )
-        normalized_echo, binary_evidence = _complete_native_binary_roundtrip(payload, echo)
-        return {
-            "workflow_runtime": "python",
-            "activity_runtime": echo.get("runtime") if isinstance(echo, dict) else None,
-            "input": payload,
-            "echo": normalized_echo,
-            "binary_evidence": binary_evidence,
-        }
+class PythonToRustTypeRoundtripWorkflow(_PythonTypeRoundtripWorkflow):
+    activity_type = "polyglot.python-to-rust.echo"
+    activity_queue = RUST_ACTIVITY_TASK_QUEUE
+
+
+@workflow.defn(name="polyglot.python-to-rust.binary-type-roundtrip")
+class PythonToRustBinaryTypeRoundtripWorkflow(_PythonTypeRoundtripWorkflow):
+    activity_type = "polyglot.python-to-rust.binary-echo"
+    activity_queue = RUST_ACTIVITY_TASK_QUEUE
 
 
 @workflow.defn(name="polyglot.python.signal-query")
@@ -262,11 +272,14 @@ def _complete_native_binary_roundtrip(
         raise TypeError("activity did not return the native binary payload")
     activity_evidence = echo.get("binary_evidence")
     if not isinstance(activity_evidence, dict):
-        raise TypeError("activity did not return executable native binary evidence")
+        activity_evidence = _native_binary_evidence(echo["value"])
+        if isinstance(echo.get("runtime"), str):
+            activity_evidence["runtime"] = echo["runtime"]
 
     workflow_evidence = _native_binary_evidence(echo["value"])
     normalized_echo = dict(echo)
     normalized_echo["value"] = payload
+    normalized_echo["binary_evidence"] = activity_evidence
 
     return normalized_echo, {
         "activity": activity_evidence,
@@ -329,6 +342,50 @@ def _localised_greeting(name: str, locale: str) -> str:
     return f"{table.get(locale, 'hello')}, {name}"
 
 
+def verify_replay_fixtures() -> int:
+    from durable_workflow.workflow import CompleteWorkflow, Replayer, ScheduleActivity
+
+    fixture_path = Path(__file__).with_name("replay_fixtures") / "pre-binary-activity-split.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    replayer = Replayer(
+        workflows=[
+            PythonToPhpTypeRoundtripWorkflow,
+            PythonToRustTypeRoundtripWorkflow,
+        ],
+    )
+
+    for case in fixture["cases"]:
+        outcome = replayer.replay(
+            case["history"],
+            case["input"],
+            workflow_type=case["workflow_type"],
+            workflow_id=f"upgrade-{case['direction']}",
+            run_id=f"pre-binary-split-{case['direction']}",
+            payload_codec=case["payload_codec"],
+        )
+        if case["expected_state"] == "waiting":
+            if len(outcome.commands) != 1 or not isinstance(
+                outcome.commands[0],
+                ScheduleActivity,
+            ):
+                raise RuntimeError(f"{case['name']}: unresolved activity did not replay as pending")
+            continue
+
+        if len(outcome.commands) != 1 or not isinstance(outcome.commands[0], CompleteWorkflow):
+            raise RuntimeError(f"{case['name']}: completed history did not replay to completion")
+        output = outcome.commands[0].result
+        if output.get("activity_runtime") != case["expected_activity_runtime"]:
+            raise RuntimeError(f"{case['name']}: replayed activity runtime changed")
+        if (
+            output.get("binary_evidence", {}).get("workflow", {}).get("base64")
+            != case["input"][0]["binary_base64"]
+        ):
+            raise RuntimeError(f"{case['name']}: replayed native bytes changed")
+
+    print(f"python upgrade replay fixtures passed: {len(fixture['cases'])}")
+    return 0
+
+
 async def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -358,9 +415,11 @@ async def main() -> int:
                 PythonGreeterWorkflow,
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,
+                PythonToPhpBinaryTypeRoundtripWorkflow,
                 PythonToPhpTypedErrorWorkflow,
                 PythonToRustGreeterWorkflow,
                 PythonToRustTypeRoundtripWorkflow,
+                PythonToRustBinaryTypeRoundtripWorkflow,
                 PythonSignalQueryWorkflow,
             ],
             activities=[greet, summarise],
@@ -369,7 +428,7 @@ async def main() -> int:
             shutdown_timeout=10.0,
         )
         log.info(
-            "polyglot python workflow worker starting: id=%s queue=%s types=[polyglot.python.greeter,polyglot.python-to-php.greeter,polyglot.python-to-php.type-roundtrip,polyglot.python-to-php.typed-error,polyglot.python-to-rust.greeter,polyglot.python-to-rust.type-roundtrip,polyglot.python.signal-query]",
+            "polyglot python workflow worker starting: id=%s queue=%s types=[polyglot.python.greeter,polyglot.python-to-php.greeter,polyglot.python-to-php.type-roundtrip,polyglot.python-to-php.binary-type-roundtrip,polyglot.python-to-php.typed-error,polyglot.python-to-rust.greeter,polyglot.python-to-rust.type-roundtrip,polyglot.python-to-rust.binary-type-roundtrip,polyglot.python.signal-query]",
             worker_id,
             TASK_QUEUE,
         )
@@ -383,4 +442,6 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--replay-fixtures" in sys.argv:
+        raise SystemExit(verify_replay_fixtures())
     raise SystemExit(asyncio.run(main()))

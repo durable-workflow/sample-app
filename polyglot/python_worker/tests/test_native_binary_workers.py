@@ -64,6 +64,7 @@ class NativeBinaryWorkerTest(unittest.TestCase):
         activities._avro_observation = lambda: {"implementation": "fastavro"}
         try:
             echo = activities.echo_native_binary_value(wire_payload)
+            legacy_echo = activities.echo_value(wire_payload)
         finally:
             activities._avro_observation = original_observation
         normalized_echo, evidence = workflows._complete_native_binary_roundtrip(
@@ -75,6 +76,16 @@ class NativeBinaryWorkerTest(unittest.TestCase):
         self.assertEqual("bytes", evidence["activity"]["native_type"])
         self.assertEqual(self.payload["binary_base64"], evidence["activity"]["base64"])
         self.assertEqual(self.payload["binary_base64"], evidence["workflow"]["base64"])
+        self.assertNotIn("binary_evidence", legacy_echo)
+        normalized_legacy_echo, legacy_evidence = workflows._complete_native_binary_roundtrip(
+            self.payload,
+            legacy_echo,
+        )
+        self.assertEqual(self.payload, normalized_legacy_echo["value"])
+        self.assertEqual(
+            self.payload["binary_base64"],
+            legacy_evidence["activity"]["base64"],
+        )
 
     def test_python_activity_rejects_a_base64_metadata_object(self) -> None:
         with self.assertRaisesRegex(TypeError, "expected native Python bytes"):
@@ -97,6 +108,12 @@ class NativeBinaryWorkerTest(unittest.TestCase):
                 "binary_native": "ordinary native field",
                 "binary_base64": "ordinary base64 field",
                 "binary_text": "ordinary text field",
+            },
+            {"binary_native": b"\x00\xff"},
+            {
+                "binary_native": b"\x00\xff",
+                "binary_base64": {"malformed": True},
+                "binary_text": 42,
             },
         ]
         original_observation = activities._avro_observation

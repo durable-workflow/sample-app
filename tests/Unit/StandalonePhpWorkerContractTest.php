@@ -8,6 +8,7 @@ use DurableWorkflow\Client;
 use DurableWorkflow\Codec\AvroBinaryValue;
 use DurableWorkflow\Transport\Transport;
 use DurableWorkflow\Worker;
+use DurableWorkflow\Worker\Replayer;
 use PHPUnit\Framework\TestCase;
 
 final class StandalonePhpWorkerContractTest extends TestCase
@@ -29,6 +30,8 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $activityInput = $codec->decodeEnvelope($codec->envelope([$wirePayload]))[0];
         $activityEcho = $codec->decodeEnvelope($codec->envelope(\echoNativeBinaryValue($activityInput)));
         $roundtrip = \completeNativeBinaryRoundtrip($payload, $activityEcho);
+        $legacyEcho = \echoValue($activityInput);
+        $legacyRoundtrip = \completeNativeBinaryRoundtrip($payload, $legacyEcho);
 
         $this->assertSame([
             'runtime' => 'php',
@@ -43,6 +46,11 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->assertSame($payload, $roundtrip['echo']['value']);
         $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['activity']['base64']);
         $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['workflow']['base64']);
+        $this->assertArrayNotHasKey('binary_evidence', $legacyEcho);
+        $this->assertSame(
+            $payload['binary_base64'],
+            $legacyRoundtrip['binary_evidence']['activity']['base64'],
+        );
     }
 
     public function test_shared_echo_round_trips_fixture_like_keys_as_ordinary_map_fields(): void
@@ -57,6 +65,12 @@ final class StandalonePhpWorkerContractTest extends TestCase
                 'binary_native' => 'ordinary native field',
                 'binary_base64' => 'ordinary base64 field',
                 'binary_text' => 'ordinary text field',
+            ],
+            ['binary_native' => AvroBinaryValue::fromBytes("\x00\xFF")],
+            [
+                'binary_native' => AvroBinaryValue::fromBytes("\x00\xFF"),
+                'binary_base64' => ['malformed' => true],
+                'binary_text' => 42,
             ],
         ];
 
@@ -77,6 +91,132 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->expectExceptionMessage('Expected native PHP AvroBinaryValue');
 
         \echoNativeBinaryValue(['binary_base64' => 'AA==']);
+    }
+
+    public function test_pre_split_php_histories_replay_with_the_current_worker_definitions(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $fixture = json_decode(
+            (string) file_get_contents(
+                dirname(__DIR__, 2).'/polyglot/php_worker/replay_fixtures/pre-binary-activity-split.json',
+            ),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $codec = (new Client('http://server:8080'))->payloadCodec();
+        $replayer = new Replayer($codec);
+
+        foreach ($fixture['cases'] as $case) {
+            $scheduledType = $case['history'][0]['payload']['activity_type'] ?? null;
+            $handler = \typeRoundtripWorkflow((string) $scheduledType);
+            $result = $replayer->replay(
+                $handler,
+                $case['history'],
+                $case['input'],
+                $case['task_queue'],
+                [
+                    'workflow_id' => 'upgrade-'.$case['direction'],
+                    'run_id' => 'pre-binary-split-'.$case['direction'],
+                ],
+            );
+
+            if ($case['expected_state'] === 'waiting') {
+                $this->assertSame([], $result->commands, $case['name']);
+
+                continue;
+            }
+
+            $this->assertCount(1, $result->commands, $case['name']);
+            $command = $result->commands[0];
+            $output = $codec->decodeEnvelope($command['result'] ?? null);
+            $this->assertSame('complete_workflow', $command['type'] ?? null, $case['name']);
+            $this->assertSame(
+                $case['expected_activity_runtime'],
+                $output['activity_runtime'] ?? null,
+                $case['name'],
+            );
+            $this->assertSame(
+                $case['input'][0]['binary_base64'],
+                $output['binary_evidence']['workflow']['base64'] ?? null,
+                $case['name'],
+            );
+        }
+    }
+
+    public function test_binary_workflow_names_schedule_the_dedicated_handlers_for_fresh_runs(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $payload = [
+            'binary_base64' => 'cG9seWdsb3QtYmluYXJ5AP8B',
+            'binary_text' => 'polyglot-binary',
+        ];
+        $codec = (new Client('http://server:8080'))->payloadCodec();
+        $replayer = new Replayer($codec);
+
+        foreach ([
+            'polyglot.php-to-python.binary-echo',
+            'polyglot.php-to-rust.binary-echo',
+        ] as $activityType) {
+            $result = $replayer->replay(
+                \typeRoundtripWorkflow($activityType),
+                [],
+                [$payload],
+                'fresh-binary',
+            );
+
+            $this->assertSame($activityType, $result->commands[0]['activity_type'] ?? null);
+        }
+    }
+
+    public function test_upgrade_fixtures_cover_every_direction_and_an_unresolved_activity(): void
+    {
+        $paths = [
+            dirname(__DIR__, 2).'/polyglot/php_worker/replay_fixtures/pre-binary-activity-split.json',
+            dirname(__DIR__, 2).'/polyglot/python_workflow/replay_fixtures/pre-binary-activity-split.json',
+            dirname(__DIR__, 2).'/polyglot/rust_worker/replay_fixtures/pre-binary-activity-split.json',
+        ];
+        $directions = [];
+        $completed = 0;
+        $waiting = 0;
+
+        foreach ($paths as $path) {
+            $fixture = json_decode(
+                (string) file_get_contents($path),
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+            $this->assertSame('durable-workflow.polyglot-upgrade-history.v1', $fixture['schema'] ?? null);
+            $this->assertSame('shared-echo', $fixture['source']['activity_generation'] ?? null);
+
+            foreach ($fixture['cases'] ?? [] as $case) {
+                $directions[] = $case['direction'];
+                $eventTypes = array_column($case['history'], 'event_type');
+                $this->assertContains('ActivityScheduled', $eventTypes, $case['name']);
+                $this->assertStringEndsWith('.echo', $case['history'][0]['payload']['activity_type']);
+                if ($case['expected_state'] === 'completed') {
+                    $completed++;
+                    $this->assertContains('ActivityCompleted', $eventTypes, $case['name']);
+                } else {
+                    $waiting++;
+                    $this->assertNotContains('ActivityCompleted', $eventTypes, $case['name']);
+                }
+            }
+        }
+
+        sort($directions);
+        $this->assertSame([
+            'php_to_python',
+            'php_to_python',
+            'php_to_rust',
+            'python_to_php',
+            'python_to_rust',
+            'rust_to_php',
+            'rust_to_python',
+        ], $directions);
+        $this->assertSame(6, $completed);
+        $this->assertSame(1, $waiting);
     }
 
     public function test_registration_declares_the_signal_consumed_during_replay(): void

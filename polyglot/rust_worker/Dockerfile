@@ -7,10 +7,12 @@ WORKDIR /build
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY replay_fixtures ./replay_fixtures
 
 RUN set -eux; \
     test -n "$DURABLE_WORKFLOW_RUST_SDK_VERSION"; \
     cargo add "durable-workflow@=${DURABLE_WORKFLOW_RUST_SDK_VERSION}"; \
+    cargo test --release --locked; \
     cargo build --release --locked; \
     cargo tree --locked -i "durable-workflow@${DURABLE_WORKFLOW_RUST_SDK_VERSION}"; \
     cargo tree --locked -i "apache-avro@${APACHE_AVRO_RUST_VERSION}"
