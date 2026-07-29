@@ -9,10 +9,12 @@ ARG DURABLE_WORKFLOW_WATERLINE_PIN=
 ARG DURABLE_WORKFLOW_WORKFLOW_VERSION
 ARG DURABLE_WORKFLOW_WATERLINE_VERSION
 
+COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
+
 RUN apt-get update && apt-get install -y \
     curl libpq-dev libzip-dev unzip git \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
-    && pecl install redis && docker-php-ext-enable redis \
+    && sh /usr/local/bin/install-phpredis \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
