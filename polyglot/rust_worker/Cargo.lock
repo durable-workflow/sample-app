@@ -226,9 +226,9 @@ dependencies = [
 
 [[package]]
 name = "durable-workflow"
-version = "2.0.0-rc.3"
+version = "2.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d980614dc397396404a9e54536e32882011b867ac273b645ada8b240a285b49e"
+checksum = "eaff8d0f77b48368e73781d79767a89d4e5dbc624943823cb5521f60ce9d0752"
 dependencies = [
  "apache-avro",
  "base64",

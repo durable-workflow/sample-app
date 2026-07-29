@@ -3,18 +3,37 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import os
+import re
 import sys
 import types
 import unittest
 from pathlib import Path
 
 
+def pinned_python_sdk_version() -> str:
+    resolver = Path(__file__).parents[3] / "scripts" / "resolve-current-artifacts.sh"
+    match = re.search(
+        r'^pinned_python_sdk_version="([^"]+)"$',
+        resolver.read_text(),
+        re.MULTILINE,
+    )
+    assert match is not None
+    return match.group(1)
+
+
+PYTHON_SDK_VERSION = pinned_python_sdk_version()
+PYTHON_PEP_440_VERSION = re.sub(
+    r"-(alpha|beta|rc)\.",
+    lambda match: {"alpha": "a", "beta": "b", "rc": "rc"}[match.group(1)],
+    PYTHON_SDK_VERSION,
+)
+
 REQUIRED_ENV = {
     "DURABLE_WORKFLOW_SERVER_URL": "http://server:8080",
     "DURABLE_SERVER_IMAGE": "durableworkflow/server:0.2.0",
     "DURABLE_WORKFLOW_CLI_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_PHP_SDK_VERSION": "0.2.0",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.3",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": PYTHON_SDK_VERSION,
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "0.2.0",
     "DURABLE_WORKFLOW_WORKFLOW_VERSION": "2.0.0-alpha.1",
     "DURABLE_WORKFLOW_WATERLINE_VERSION": "2.0.0-alpha.1",
@@ -119,7 +138,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self,
     ) -> None:
         stale, missing = polyglot_smoke.artifact_version_findings(
-            self.versions("2.0.0rc3")
+            self.versions(PYTHON_PEP_440_VERSION)
         )
 
         self.assertEqual({}, stale)
@@ -133,7 +152,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-rc.3",
+                    "expected": PYTHON_SDK_VERSION,
                     "actual": "2.0.0rc4",
                 }
             },
@@ -149,7 +168,7 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
         self.assertEqual(
             {
                 "sdk-python": {
-                    "expected": "2.0.0-rc.3",
+                    "expected": PYTHON_SDK_VERSION,
                     "actual": "0.4.0",
                 }
             },
@@ -173,17 +192,17 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
             polyglot_smoke.artifact_versions_match(
                 "sdk-php",
                 "2.0.0rc1",
-                "2.0.0-rc.3",
+                PYTHON_SDK_VERSION,
             )
         )
 
     def test_rust_artifact_metadata_uses_cargo_exact_requirement_syntax(self) -> None:
-        versions = self.versions("2.0.0rc3")
-        versions["sdk-rust"] = "2.0.0-rc.3"
+        versions = self.versions(PYTHON_PEP_440_VERSION)
+        versions["sdk-rust"] = PYTHON_SDK_VERSION
         rust = polyglot_smoke.artifact_metadata(versions)["sdk_rust"]
 
         self.assertEqual(
-            "cargo add durable-workflow@=2.0.0-rc.3",
+            f"cargo add durable-workflow@={PYTHON_SDK_VERSION}",
             rust["pin"],
         )
 
@@ -253,7 +272,7 @@ class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
             if len(calls) == expected_count:
                 all_started.set()
             await asyncio.wait_for(all_started.wait(), timeout=0.5)
-            return "2.0.0-rc.3" if arguments["runtime"] in {"php", "rust"} else None
+            return PYTHON_SDK_VERSION if arguments["runtime"] in {"php", "rust"} else None
 
         polyglot_smoke.wait_for_worker = wait_for_worker
         try:

@@ -1,6 +1,6 @@
 # Durable Workflow Sample App
 
-This is a sample Laravel 13 application built on **Durable Workflow 2.0 (beta)** with example workflows that you can run inside a GitHub Codespace.
+This is a sample Laravel 13 application built on the **Durable Workflow 2.0 release candidate** with example workflows that you can run inside a GitHub Codespace. Stable Durable Workflow 2.0 has not been released yet.
 
 > **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
@@ -62,7 +62,7 @@ For this Laravel-only sample, Waterline proves that the durable run exists and s
 Minimal Python worker Prometheus wiring looks like this:
 
 ```bash
-pip install 'durable-workflow[prometheus]==2.0.0b17'
+pip install 'durable-workflow[prometheus]==2.0.0rc5'
 ```
 
 ```python
@@ -174,12 +174,23 @@ The PHP SDK variable selects the framework-neutral `durable-workflow/sdk`
 package used by `polyglot/`; the Workflow variable selects the separate
 `durable-workflow/workflow` engine used by this Laravel application.
 By default, the wrapper calls
-`scripts/resolve-current-artifacts.sh`, which resolves one synchronized 2.0 beta
-tuple from the public docs release-audit manifest, rejects mixed prerelease
-generations, emits the result as shell assignments, and preserves explicit
-overrides. The wrapper rebuilds the app and worker containers with the resolved
-PHP SDK, Workflow, and Waterline pins before running the harness, so the
-recorded versions come from installed packages rather than the committed
+`scripts/resolve-current-artifacts.sh`, which resolves one 2.0 prerelease
+channel from the public docs release-audit manifest. Beta tuples remain
+synchronized, while release-candidate tuples may contain component-specific
+increments as long as every component stays in the `rc` channel.
+
+<!-- durable-workflow-artifact-channel-policy:start -->
+| Prerelease channel | Component-version policy |
+|--------------------|--------------------------|
+| `beta` | `synchronized` |
+| `rc` | `component-specific` |
+| `mixed` | `rejected` |
+<!-- durable-workflow-artifact-channel-policy:end -->
+
+The resolver emits the accepted tuple as shell assignments and preserves
+explicit overrides. The wrapper rebuilds the app and worker containers with the
+resolved PHP SDK, Workflow, and Waterline pins before running the harness, so
+the recorded versions come from installed packages rather than the committed
 fallback lock. The polyglot Rust image likewise applies the resolved SDK version
 to its build-local manifest, leaving the committed Cargo manifest and lock as
 the pinned fallback. The standalone PHP stack independently installs and

@@ -71,13 +71,16 @@ class ConformanceHarnessContractTest extends TestCase
         $this->assertStringContainsString('https://durable-workflow.com/docs-page-release-audit.json', $artifactResolver);
         $this->assertStringNotContainsString('latest_dockerhub_server_version', $artifactResolver);
         $this->assertStringNotContainsString('latest_github_release_version durable-workflow/cli', $artifactResolver);
-        $this->assertStringContainsString('pinned_server_image="durableworkflow/server:2.0.0-rc.3"', $artifactResolver);
-        $this->assertStringContainsString('pinned_python_sdk_version="2.0.0-rc.3"', $artifactResolver);
         $this->assertStringNotContainsString('latest_pypi_version durable-workflow', $artifactResolver);
-        $this->assertStringContainsString('pinned_workflow_version="2.0.0-rc.3"', $artifactResolver);
-        $this->assertStringContainsString('pinned_waterline_version="2.0.0-rc.3"', $artifactResolver);
         $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
+        $this->assertSame(7, preg_match_all(
+            '/^pinned_(?:server_image|cli_version|php_sdk_version|python_sdk_version|rust_sdk_version|workflow_version|waterline_version)="'
+                .'(?:durableworkflow\/server:)?(?<version>2\.0\.0-rc\.\d+)"$/m',
+            $artifactResolver,
+            $pinnedVersions,
+        ));
+        $this->assertCount(1, array_unique($pinnedVersions['version']));
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_RUST_SDK_VERSION', $script);
