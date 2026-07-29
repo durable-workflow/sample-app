@@ -1067,7 +1067,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "python",
             "workers": [
                 {"task_queue": PHP2PY_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-python.type-roundtrip"},
-                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.php-to-python.echo"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.php-to-python.binary-echo"},
             ],
         },
         {
@@ -1078,7 +1078,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "php",
             "workers": [
                 {"task_queue": PY_QUEUE, "runtime": "python", "workflow_type": "polyglot.python-to-php.type-roundtrip"},
-                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.python-to-php.echo"},
+                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.python-to-php.binary-echo"},
             ],
         },
         {
@@ -1089,7 +1089,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "python",
             "workers": [
                 {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-python.type-roundtrip"},
-                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.rust-to-python.echo"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.rust-to-python.binary-echo"},
             ],
         },
         {
@@ -1100,7 +1100,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "rust",
             "workers": [
                 {"task_queue": PY_QUEUE, "runtime": "python", "workflow_type": "polyglot.python-to-rust.type-roundtrip"},
-                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.python-to-rust.echo"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.python-to-rust.binary-echo"},
             ],
         },
         {
@@ -1111,7 +1111,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "php",
             "workers": [
                 {"task_queue": RUST_QUEUE, "runtime": "rust", "workflow_type": "polyglot.rust-to-php.type-roundtrip"},
-                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.rust-to-php.echo"},
+                {"task_queue": PY2PHP_QUEUE, "runtime": "php", "activity_type": "polyglot.rust-to-php.binary-echo"},
             ],
         },
         {
@@ -1122,7 +1122,7 @@ async def run_type_matrix() -> dict[str, Any]:
             "activity_runtime": "rust",
             "workers": [
                 {"task_queue": TO_RUST_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-rust.type-roundtrip", "worker_id": "php-to-rust-workflow-worker"},
-                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.php-to-rust.echo"},
+                {"task_queue": TO_RUST_QUEUE, "runtime": "rust", "activity_type": "polyglot.php-to-rust.binary-echo"},
             ],
         },
     ]

@@ -102,7 +102,7 @@ class PythonToPhpTypeRoundtripWorkflow:
     def run(self, ctx, payload):  # type: ignore[no-untyped-def]
         wire_payload = _native_binary_payload(payload)
         echo = yield ctx.schedule_activity(
-            "polyglot.python-to-php.echo",
+            "polyglot.python-to-php.binary-echo",
             [wire_payload],
             queue=PHP_ACTIVITY_TASK_QUEUE,
         )
@@ -161,7 +161,7 @@ class PythonToRustTypeRoundtripWorkflow:
     def run(self, ctx, payload):  # type: ignore[no-untyped-def]
         wire_payload = _native_binary_payload(payload)
         echo = yield ctx.schedule_activity(
-            "polyglot.python-to-rust.echo",
+            "polyglot.python-to-rust.binary-echo",
             [wire_payload],
             queue=RUST_ACTIVITY_TASK_QUEUE,
         )

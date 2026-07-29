@@ -27,7 +27,7 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->assertSame("polyglot-binary\x00\xFF\x01", $binary->bytes);
         $codec = (new Client('http://server:8080'))->payloadCodec();
         $activityInput = $codec->decodeEnvelope($codec->envelope([$wirePayload]))[0];
-        $activityEcho = $codec->decodeEnvelope($codec->envelope(\echoValue($activityInput)));
+        $activityEcho = $codec->decodeEnvelope($codec->envelope(\echoNativeBinaryValue($activityInput)));
         $roundtrip = \completeNativeBinaryRoundtrip($payload, $activityEcho);
 
         $this->assertSame([
@@ -45,25 +45,38 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->assertSame($payload['binary_base64'], $roundtrip['binary_evidence']['workflow']['base64']);
     }
 
-    public function test_shared_echo_keeps_non_binary_greeter_payloads_compatible(): void
+    public function test_shared_echo_round_trips_fixture_like_keys_as_ordinary_map_fields(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
 
-        $echo = \echoValue(['name' => 'Ada']);
+        $payloads = [
+            ['binary_native' => 'ordinary native field'],
+            ['binary_base64' => 'ordinary base64 field'],
+            ['binary_text' => 'ordinary text field'],
+            [
+                'binary_native' => 'ordinary native field',
+                'binary_base64' => 'ordinary base64 field',
+                'binary_text' => 'ordinary text field',
+            ],
+        ];
 
-        $this->assertSame(['name' => 'Ada'], $echo['value']);
-        $this->assertArrayNotHasKey('binary_evidence', $echo);
-        $this->assertSame('avro', $echo['codec']['codec'] ?? null);
+        foreach ($payloads as $payload) {
+            $echo = \echoValue($payload);
+
+            $this->assertSame($payload, $echo['value']);
+            $this->assertArrayNotHasKey('binary_evidence', $echo);
+            $this->assertSame('avro', $echo['codec']['codec'] ?? null);
+        }
     }
 
-    public function test_shared_echo_rejects_a_partial_binary_fixture(): void
+    public function test_native_binary_echo_rejects_a_partial_binary_fixture(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
 
         $this->expectException(\UnexpectedValueException::class);
         $this->expectExceptionMessage('Expected native PHP AvroBinaryValue');
 
-        \echoValue(['binary_base64' => 'AA==']);
+        \echoNativeBinaryValue(['binary_base64' => 'AA==']);
     }
 
     public function test_registration_declares_the_signal_consumed_during_replay(): void

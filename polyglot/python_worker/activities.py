@@ -59,22 +59,29 @@ def echo_rust_value(value: dict[str, Any]) -> dict[str, Any]:
     return _echo_value(value)
 
 
+@activity.defn(name="polyglot.php-to-python.binary-echo")
+def echo_native_binary_value(value: dict[str, Any]) -> dict[str, Any]:
+    return _echo_native_binary_value(value)
+
+
+@activity.defn(name="polyglot.rust-to-python.binary-echo")
+def echo_rust_native_binary_value(value: dict[str, Any]) -> dict[str, Any]:
+    return _echo_native_binary_value(value)
+
+
 def _echo_value(value: dict[str, Any]) -> dict[str, Any]:
-    binary_evidence = _optional_native_binary_evidence(value)
-    result = {
+    return {
         "runtime": "python",
         "value": value,
         "codec": _avro_observation(),
     }
-    if binary_evidence is not None:
-        result["binary_evidence"] = binary_evidence
+
+
+def _echo_native_binary_value(value: dict[str, Any]) -> dict[str, Any]:
+    binary_evidence = _native_binary_evidence(value)
+    result = _echo_value(value)
+    result["binary_evidence"] = binary_evidence
     return result
-
-
-def _optional_native_binary_evidence(value: dict[str, Any]) -> dict[str, Any] | None:
-    if not any(key in value for key in ("binary_native", "binary_base64", "binary_text")):
-        return None
-    return _native_binary_evidence(value)
 
 
 def _native_binary_evidence(value: dict[str, Any]) -> dict[str, Any]:
@@ -245,7 +252,14 @@ async def main() -> int:
             client,
             task_queue=TASK_QUEUE,
             workflows=[],
-            activities=[reverse_string, tally, echo_value, echo_rust_value],
+            activities=[
+                reverse_string,
+                tally,
+                echo_value,
+                echo_rust_value,
+                echo_native_binary_value,
+                echo_rust_native_binary_value,
+            ],
             poll_timeout=POLL_TIMEOUT_SECONDS,
             shutdown_timeout=10.0,
         )

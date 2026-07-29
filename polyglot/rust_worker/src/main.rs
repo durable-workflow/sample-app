@@ -100,7 +100,7 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
             let wire_payload = native_binary_payload(&payload)?;
             let echo = ctx
                 .activity_avro_value_with_options(
-                    "polyglot.rust-to-python.echo",
+                    "polyglot.rust-to-python.binary-echo",
                     ActivityOptions::new().task_queue(task_queue),
                     AvroValue::Array(vec![wire_payload]),
                 )
@@ -117,7 +117,7 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
             let wire_payload = native_binary_payload(&payload)?;
             let echo = ctx
                 .activity_avro_value_with_options(
-                    "polyglot.rust-to-php.echo",
+                    "polyglot.rust-to-php.binary-echo",
                     ActivityOptions::new().task_queue(task_queue),
                     AvroValue::Array(vec![wire_payload]),
                 )
@@ -189,6 +189,14 @@ async fn run_activity_worker(client: Client) -> Result<()> {
             native_runtime_echo(first_avro_argument(args))
         });
     }
+    for activity_type in [
+        "polyglot.php-to-rust.binary-echo",
+        "polyglot.python-to-rust.binary-echo",
+    ] {
+        worker.register_activity_avro_value(activity_type, |_ctx, args| async move {
+            native_binary_runtime_echo(first_avro_argument(args))
+        });
+    }
 
     println!(
         "polyglot rust activity worker starting: id=rust-activity-worker queue={task_queue} sdk={} avro={}",
@@ -244,15 +252,19 @@ fn runtime_echo(value: Value) -> Value {
 }
 
 fn native_runtime_echo(value: AvroValue) -> Result<AvroValue> {
-    let evidence = optional_native_binary_evidence(&value, "rust")?;
-    let mut result = BTreeMap::from([
+    Ok(AvroValue::Map(BTreeMap::from([
         ("runtime".into(), AvroValue::String("rust".into())),
         ("value".into(), value),
         ("codec".into(), json_to_avro_value(&avro_observation())?),
-    ]);
-    if let Some(evidence) = evidence {
-        result.insert("binary_evidence".into(), evidence);
-    }
+    ])))
+}
+
+fn native_binary_runtime_echo(value: AvroValue) -> Result<AvroValue> {
+    let evidence = native_binary_evidence(&value, "rust")?;
+    let AvroValue::Map(mut result) = native_runtime_echo(value)? else {
+        unreachable!("native runtime echo always returns a map");
+    };
+    result.insert("binary_evidence".into(), evidence);
 
     Ok(AvroValue::Map(result))
 }
@@ -359,20 +371,6 @@ fn native_binary_evidence(value: &AvroValue, runtime: &str) -> Result<AvroValue>
         ("text_value".into(), AvroValue::String(text.into())),
         ("text_and_bytes_distinct".into(), AvroValue::Boolean(true)),
     ])))
-}
-
-fn optional_native_binary_evidence(value: &AvroValue, runtime: &str) -> Result<Option<AvroValue>> {
-    let AvroValue::Map(value_map) = value else {
-        return Ok(None);
-    };
-    if !["binary_native", "binary_base64", "binary_text"]
-        .iter()
-        .any(|key| value_map.contains_key(*key))
-    {
-        return Ok(None);
-    }
-
-    native_binary_evidence(value, runtime).map(Some)
 }
 
 fn complete_native_binary_roundtrip(
@@ -539,24 +537,53 @@ mod tests {
     }
 
     #[test]
-    fn shared_echo_keeps_non_binary_greeter_payloads_compatible() {
-        let input = AvroValue::Map(BTreeMap::from([(
-            "name".into(),
-            AvroValue::String("Ada".into()),
-        )]));
-        assert_eq!(
-            optional_native_binary_evidence(&input, "rust").expect("plain echo"),
-            None
-        );
+    fn shared_echo_round_trips_fixture_like_keys_as_ordinary_map_fields() {
+        env::set_var("APACHE_AVRO_RUST_VERSION", "0.21.0");
+
+        for input in [
+            BTreeMap::from([(
+                "binary_native".into(),
+                AvroValue::String("ordinary native field".into()),
+            )]),
+            BTreeMap::from([(
+                "binary_base64".into(),
+                AvroValue::String("ordinary base64 field".into()),
+            )]),
+            BTreeMap::from([(
+                "binary_text".into(),
+                AvroValue::String("ordinary text field".into()),
+            )]),
+            BTreeMap::from([
+                (
+                    "binary_native".into(),
+                    AvroValue::String("ordinary native field".into()),
+                ),
+                (
+                    "binary_base64".into(),
+                    AvroValue::String("ordinary base64 field".into()),
+                ),
+                (
+                    "binary_text".into(),
+                    AvroValue::String("ordinary text field".into()),
+                ),
+            ]),
+        ] {
+            let echo = native_runtime_echo(AvroValue::Map(input.clone())).expect("plain echo");
+            let AvroValue::Map(echo) = echo else {
+                panic!("echo must be a map");
+            };
+            assert_eq!(echo.get("value"), Some(&AvroValue::Map(input)));
+            assert!(!echo.contains_key("binary_evidence"));
+        }
     }
 
     #[test]
-    fn shared_echo_rejects_a_partial_binary_fixture() {
+    fn native_binary_echo_rejects_a_partial_binary_fixture() {
         let input = AvroValue::Map(BTreeMap::from([(
             "binary_base64".into(),
             AvroValue::String("AA==".into()),
         )]));
 
-        assert!(optional_native_binary_evidence(&input, "rust").is_err());
+        assert!(native_binary_runtime_echo(input).is_err());
     }
 }

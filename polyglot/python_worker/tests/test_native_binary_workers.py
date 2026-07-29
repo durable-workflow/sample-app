@@ -63,7 +63,7 @@ class NativeBinaryWorkerTest(unittest.TestCase):
         original_observation = activities._avro_observation
         activities._avro_observation = lambda: {"implementation": "fastavro"}
         try:
-            echo = activities.echo_value(wire_payload)
+            echo = activities.echo_native_binary_value(wire_payload)
         finally:
             activities._avro_observation = original_observation
         normalized_echo, evidence = workflows._complete_native_binary_roundtrip(
@@ -78,7 +78,7 @@ class NativeBinaryWorkerTest(unittest.TestCase):
 
     def test_python_activity_rejects_a_base64_metadata_object(self) -> None:
         with self.assertRaisesRegex(TypeError, "expected native Python bytes"):
-            activities.echo_value(
+            activities.echo_native_binary_value(
                 {
                     **self.payload,
                     "binary_native": {
@@ -88,20 +88,34 @@ class NativeBinaryWorkerTest(unittest.TestCase):
                 },
             )
 
-    def test_shared_echo_keeps_non_binary_greeter_payloads_compatible(self) -> None:
+    def test_shared_echo_round_trips_fixture_like_keys_as_ordinary_map_fields(self) -> None:
+        payloads = [
+            {"binary_native": "ordinary native field"},
+            {"binary_base64": "ordinary base64 field"},
+            {"binary_text": "ordinary text field"},
+            {
+                "binary_native": "ordinary native field",
+                "binary_base64": "ordinary base64 field",
+                "binary_text": "ordinary text field",
+            },
+        ]
         original_observation = activities._avro_observation
         activities._avro_observation = lambda: {"implementation": "fastavro"}
         try:
-            echo = activities.echo_rust_value({"name": "Ada"})
+            for handler in (activities.echo_value, activities.echo_rust_value):
+                for payload in payloads:
+                    with self.subTest(handler=handler.__name__, payload=payload):
+                        echo = handler(payload)
+                        self.assertEqual(payload, echo["value"])
+                        self.assertNotIn("binary_evidence", echo)
         finally:
             activities._avro_observation = original_observation
 
-        self.assertEqual({"name": "Ada"}, echo["value"])
-        self.assertNotIn("binary_evidence", echo)
-
-    def test_shared_echo_rejects_a_partial_binary_fixture(self) -> None:
+    def test_native_binary_echo_rejects_a_partial_binary_fixture(self) -> None:
         with self.assertRaisesRegex(TypeError, "expected native Python bytes"):
-            activities.echo_value({"binary_base64": self.payload["binary_base64"]})
+            activities.echo_native_binary_value(
+                {"binary_base64": self.payload["binary_base64"]}
+            )
 
 
 if __name__ == "__main__":

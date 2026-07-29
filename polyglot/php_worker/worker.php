@@ -34,7 +34,9 @@ const ACTIVITY_TYPES = [
     'polyglot.python-to-php.marker',
     'polyglot.python-to-php.describe',
     'polyglot.python-to-php.echo',
+    'polyglot.python-to-php.binary-echo',
     'polyglot.rust-to-php.echo',
+    'polyglot.rust-to-php.binary-echo',
     'polyglot.python-to-php.typed-error',
 ];
 
@@ -193,7 +195,7 @@ function describeRuntime(string $activityType, array $marker): array
 /** @return array<string, mixed> */
 function echoValue(array $value): array
 {
-    $result = [
+    return [
         'runtime' => 'php',
         'value' => $value,
         'codec' => [
@@ -207,11 +209,14 @@ function echoValue(array $value): array
             'framing' => 'single_object',
         ],
     ];
+}
 
-    $binaryEvidence = optionalNativeBinaryEvidence($value, 'php');
-    if ($binaryEvidence !== null) {
-        $result['binary_evidence'] = $binaryEvidence;
-    }
+/** @param array<string, mixed> $value */
+function echoNativeBinaryValue(array $value): array
+{
+    $binaryEvidence = nativeBinaryEvidence($value, 'php');
+    $result = echoValue($value);
+    $result['binary_evidence'] = $binaryEvidence;
 
     return $result;
 }
@@ -281,21 +286,6 @@ function nativeBinaryEvidence(array $value, string $runtime): array
 }
 
 /**
- * @param  array<string, mixed>  $value
- * @return array<string, mixed>|null
- */
-function optionalNativeBinaryEvidence(array $value, string $runtime): ?array
-{
-    foreach (['binary_native', 'binary_base64', 'binary_text'] as $key) {
-        if (array_key_exists($key, $value)) {
-            return nativeBinaryEvidence($value, $runtime);
-        }
-    }
-
-    return null;
-}
-
-/**
  * @param  array<string, mixed>  $payload
  * @return array{echo: array<string, mixed>, binary_evidence: array<string, mixed>}
  */
@@ -361,7 +351,7 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
     $worker->registerWorkflow(
         'polyglot.php-to-python.type-roundtrip',
         static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-python.echo', [nativeBinaryPayload($payload)]);
+            $echo = yield $context->activity('polyglot.php-to-python.binary-echo', [nativeBinaryPayload($payload)]);
             $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
 
             return [
@@ -414,7 +404,7 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
     $worker->registerWorkflow(
         'polyglot.php-to-rust.type-roundtrip',
         static function (WorkflowContext $context, array $payload): Generator {
-            $echo = yield $context->activity('polyglot.php-to-rust.echo', [nativeBinaryPayload($payload)]);
+            $echo = yield $context->activity('polyglot.php-to-rust.binary-echo', [nativeBinaryPayload($payload)]);
             $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
 
             return [
@@ -543,6 +533,7 @@ function runActivityWorker(Client $client, string $workerId, string $taskQueue, 
                 'polyglot.python-to-php.marker' => runtimeMarker($activityType, $request),
                 'polyglot.python-to-php.describe' => describeRuntime($activityType, $request),
                 'polyglot.python-to-php.echo', 'polyglot.rust-to-php.echo' => echoValue($request),
+                'polyglot.python-to-php.binary-echo', 'polyglot.rust-to-php.binary-echo' => echoNativeBinaryValue($request),
                 default => throw new RuntimeException("No PHP activity is registered for {$activityType}."),
             };
             $client->completeActivityTask($taskId, $attemptId, $leaseOwner, $result);
