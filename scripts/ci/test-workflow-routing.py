@@ -63,6 +63,7 @@ class WorkflowRoutingTest(unittest.TestCase):
             self.assert_main_source_triggers(workflow)
 
         php = self.assert_job_condition(ci, "test", GITHUB_ONLY)
+        microservice = self.assert_job_condition(ci, "microservice-test", GITHUB_ONLY)
         php_qualification = job_block(ci, "target-branch-qualification")
         polyglot_matrix = self.assert_job_condition(polyglot, "smoke", GITHUB_ONLY)
         polyglot_qualification = self.assert_job_condition(
@@ -74,10 +75,37 @@ class WorkflowRoutingTest(unittest.TestCase):
         public_boundary = self.assert_job_condition(boundary, "scan", GITHUB_ONLY)
 
         self.assertIn("php: ['8.4', '8.5']", php)
+        self.assertIn("hashFiles('composer.lock')", php)
+        self.assertNotIn("hashFiles('**/composer.lock')", php)
         self.assertIn("run: php artisan test", php)
+        self.assertIn(
+            "name: microservice composer and tests (php ${{ matrix.php }})",
+            microservice,
+        )
+        self.assertIn("working-directory: microservice", microservice)
+        self.assertIn("php: ['8.4', '8.5']", microservice)
+        self.assertIn("MYSQL_DATABASE: microservice", microservice)
+        self.assertIn("DB_CONNECTION: mysql", microservice)
+        self.assertIn("SHARED_DB_DATABASE: microservice", microservice)
+        self.assertIn(
+            "composer validate --strict --check-lock --no-check-all",
+            microservice,
+        )
+        self.assertIn(
+            "composer install --prefer-dist --no-progress --no-interaction",
+            microservice,
+        )
+        self.assertIn("composer audit --locked", microservice)
+        self.assertIn("run: php artisan test", microservice)
+        self.assertNotIn("actions/cache", microservice)
         self.assertIn("name: Target branch qualification", php_qualification)
+        self.assertIn("needs: [test, microservice-test]", php_qualification)
         self.assertIn(f"if: {GITHUB_ONLY}", php_qualification)
         self.assertIn('run: test "$TEST_RESULT" = success', php_qualification)
+        self.assertIn(
+            'run: test "$MICROSERVICE_TEST_RESULT" = success',
+            php_qualification,
+        )
 
         self.assertIn("cache_mode: [cold-cache, warm-cache]", polyglot_matrix)
         self.assertIn("scripts/polyglot-validation.sh", polyglot_matrix)
@@ -115,6 +143,7 @@ class WorkflowRoutingTest(unittest.TestCase):
 
         broad_jobs = (
             ("ci.yml", "test"),
+            ("ci.yml", "microservice-test"),
             ("polyglot-validation.yml", "smoke"),
             ("polyglot-validation.yml", "polyglot-qualification"),
             ("smoke.yml", "compose"),
