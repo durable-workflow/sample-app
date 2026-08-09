@@ -56,6 +56,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backend Mode
+    |--------------------------------------------------------------------------
+    |
+    | Embedded mode observes the Laravel workflow integration directly. Service
+    | mode uses the published PHP SDK to read the standalone Server API.
+    |
+    */
+
+    'backend' => env('WATERLINE_BACKEND', 'embedded'),
+
+    'service' => [
+        'endpoint' => env('WATERLINE_SERVER_ENDPOINT'),
+        'token' => env('WATERLINE_SERVER_TOKEN'),
+        'namespace' => env('WATERLINE_NAMESPACE', 'default'),
+        'access_mode' => env('WATERLINE_ACCESS_MODE', 'read_only'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Workflow Engine Source
     |--------------------------------------------------------------------------
     |

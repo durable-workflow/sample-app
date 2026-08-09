@@ -1,17 +1,41 @@
 # Polyglot Sample
 
-This directory is the runnable polyglot demonstration that ships with the
-sample app. It proves the Durable Workflow control plane is language-neutral
-by running a conformance smoke around a complete three-language runtime matrix against one
-standalone server, with real workers in different languages registered on
-coordinated task queues. The smoke drives workflow start, signal, query, and
-result retrieval through the published `dw` CLI and checks the same run through
-Waterline.
+This directory contains the direct service-mode journey and the complete
+PHP/Python/Rust validation stack. Both run against a standalone Durable
+Workflow Server and use published 2.0 artifacts.
 
-The main sample app (`docker-compose.yml` at the repository root) is the
-single-language, in-process Laravel demo. This directory is a **separate**
-demonstration — its own `docker-compose.yml`, its own services, its own
-smoke — so the simple Laravel-only path stays simple.
+## Service-mode quickstart
+
+From a Sample App Codespace, run:
+
+```bash
+scripts/service-mode.sh
+```
+
+The command uses `polyglot/service-mode.yml` and the prepared development image;
+there is no local image build. Laravel runs the framework-neutral
+`durable-workflow/sdk` bridge, resolves attributed handlers through its service
+container, writes worker lifecycle events to its normal logger, and starts a
+workflow through an injected `WorkflowClientInterface`. That workflow executes
+`sample.service-mode.php.prepare` in the Laravel worker and
+`sample.service-mode.python.decorate` in a Python worker before returning one
+combined result.
+
+The output names what started, prints the PHP and Python results, and links to
+the matching run in Waterline. Startup, result, and browser-check timings plus a
+browser screenshot are retained under `storage/app/`. The isolated Compose
+volumes remain available for inspection, and generated workflow IDs make repeat
+runs safe.
+
+## Complete runtime matrix
+
+The full `docker-compose.yml` demonstration proves the control plane is
+language-neutral across nine PHP, Python, and Rust workflow/activity cells. It
+drives workflow start, signal, query, result retrieval, replay, and codec checks
+through the published `dw` CLI and inspects the same runs through Waterline.
+
+The root app's embedded Laravel path, this service-mode quickstart, and the full
+matrix each use separate Compose projects and state.
 
 ## What it exercises
 
@@ -121,6 +145,9 @@ language boundary cleanly is documented in the workflow package:
 
 ```
 polyglot/
+├── service-mode.yml                   no-build Laravel + Python quickstart stack
+├── service_mode/
+│   └── python_worker.py               quickstart cross-language activity
 ├── docker-compose.yml                  full stack (server + workers + smoke)
 ├── python_workflow/
 │   ├── workflow.py                     Python-authored workflow + activities

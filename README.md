@@ -1,72 +1,103 @@
 # Durable Workflow Sample App
 
-This is a sample Laravel 13 application built on the **Durable Workflow 2.0 release candidate** with example workflows that you can run inside a GitHub Codespace. Stable Durable Workflow 2.0 has not been released yet.
+This Laravel 13 application has two first-class ways to run Durable Workflow
+2.0: an embedded Laravel engine and a standalone service with PHP and Python
+workers. Both paths run in a GitHub Codespace on the supported 2.0 prerelease
+train. Stable Durable Workflow 2.0 has not been released yet.
 
 > **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
-### Step 1
-Create a codespace from the main branch of this repo.
+## Start in Codespaces
+
+Create a Codespace from the main branch of this repository.
 
 <img src="https://user-images.githubusercontent.com/1130888/233664377-f300ad50-5436-4bb8-b172-c52e12047264.png" alt="image" width="300">
 
-### Step 2
 Wait while Codespaces pulls the prepared Sample App development image and
 installs the repository's Composer and npm dependencies. PHP, Node, Composer,
 Chromium, and operating-system packages are already in the image, so they are
 not rebuilt for each Codespace.
 
+When setup finishes, choose either runnable path:
 
-### Step 3
-Once it is done. You will see the editor and the terminal at the bottom.
+| Path | Best fit | Runtime |
+| --- | --- | --- |
+| [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
+| [Service mode](#service-mode) | A Laravel application calling a standalone Server with language-neutral workers | Server + Laravel SDK worker + Python SDK worker |
 
-<img src="https://user-images.githubusercontent.com/1130888/233665550-1a4f2098-2919-4108-ac9f-bef1a9f2f47c.png" alt="image" width="400">
+### Embedded Laravel
 
-### Step 4
-Run the init command to set up the app, install its locked npm dependencies,
-verify the preinstalled Chromium runtime, and run the migrations.
+Initialize the app and start Laravel's web, queue, log, and asset processes:
 
 ```bash
 php artisan app:init
-```
-
-### Step 5
-Start the server. This will enable the processing of workflows and activities.
-
-```bash
 composer run dev
 ```
 
-### Step 6
-Create a new terminal window.
-
-<img src="https://user-images.githubusercontent.com/1130888/233666917-029247c7-9e6c-46de-b304-27473fd34517.png" alt="image" width="200">
-
-### Step 7
-Start the example workflow inside the new terminal window.
+In a second terminal, start the example workflow:
 
 ```bash
 php artisan app:workflow
 ```
 
-### Step 8
-You can view the waterline dashboard at https://[your-codespace-name]-18080.preview.app.github.dev/waterline/dashboard.
+Open Waterline at the forwarded port 18080 URL under `/waterline`. The workflow
+result also appears in the terminal. Run the workflow and activity tests with:
 
-<img src="https://user-images.githubusercontent.com/1130888/233669600-3340ada6-5f73-4602-8d82-a81a9d43f883.png" alt="image" width="600">
+```bash
+php artisan test
+```
 
-### Step 8a
+The embedded stack uses the Codespace's `sample-app` Compose state. Workflow
+instances receive generated identities, so the command is safe to run again.
+
+### Service mode
+
+From the same Codespace checkout, run one command:
+
+```bash
+scripts/service-mode.sh
+```
+
+The command resolves the current supported 2.0 artifact tuple, pulls the
+published Server and prepared runtime images, and starts an isolated
+`sample-app-service-mode` Compose project without building an SDK or runtime
+image. The Laravel SDK bridge resolves its workflow and PHP activity through
+the service container, sends worker diagnostics to Laravel's logger, and then
+routes a second activity to the Python worker.
+
+The terminal reports the generated workflow ID, both activity results, startup,
+result, and browser-check timing, and a Waterline URL for that exact run. It also
+retains a browser screenshot beside the timing record. The stack remains
+available at forwarded port 18081 for inspection. Run the command again at any
+time; each journey uses a new workflow ID and does not share database or Redis
+state with embedded mode.
+
+The implementation is intentionally application-shaped:
+
+- `config/durable-workflow.php` configures the Laravel bridge and handler services;
+- `app/Workflows/ServiceMode/` contains the attributed workflow and injected PHP activity;
+- `app:service-mode` injects `WorkflowClientInterface`, waits for the result, and supports the SDK test fake;
+- `polyglot/service_mode/python_worker.py` handles the cross-language activity.
+
+For the full PHP/Python/Rust runtime matrix, replay fixtures, signals, queries,
+and codec checks, continue to the [`polyglot/` guide](polyglot/README.md).
+
+## Observe a run
+
 Check the two observability surfaces separately:
 
 | Surface | Use it for | Where to look |
 |---------|------------|---------------|
-| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | `/waterline/dashboard`, selected run detail, and `php artisan workflow:v2:history-export` |
-| Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for this PHP sample app; SDK metrics endpoints for external workers |
+| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | The exact run URL printed by either path, or `/waterline` |
+| Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for PHP workers; SDK metrics endpoints for external workers |
 
-For this Laravel-only sample, Waterline proves that the durable run exists and shows what the engine committed. If you add a Python or other external worker, enable that worker's SDK metrics as a separate endpoint; those metrics will not appear inside Waterline unless you scrape them with your metrics stack.
-
-Minimal Python worker Prometheus wiring looks like this:
+Waterline proves that the durable run exists and shows what the engine or
+standalone Server committed. Worker metrics remain a separate runtime surface.
+Minimal Python worker Prometheus wiring uses the moving 2.0 prerelease
+constraint rather than a copied release-candidate number:
 
 ```bash
-pip install 'durable-workflow[prometheus]==2.0.0rc5'
+python -m pip install --pre 'durable-workflow[prometheus]~=2.0'
 ```
 
 ```python
@@ -92,16 +123,7 @@ Replace `GreeterWorkflow` and `greet` with the workflow and activity handlers re
 
 Scrape `:9102/metrics` for `durable_workflow_worker_*` and `durable_workflow_client_*` series. Use Waterline for the matching workflow history and status.
 
-### Step 9
-Run the workflow and activity tests.
-
-```bash
-php artisan test
-```
-
-That's it! You can now create and test workflows.
-
-### Prebuilt development image
+## Prebuilt development image
 
 The default devcontainer Compose file pulls
 `ghcr.io/durable-workflow/sample-app-devcontainer:main`. The same image is
@@ -143,7 +165,7 @@ editability, and records fresh and warm startup timings.
 
 ----
 
-### Run Locally With Docker
+## Run Locally With Docker
 
 Prefer a local workstation over Codespaces? The repository ships a
 `docker-compose.yml` that builds and runs the app, worker, MySQL, and Redis on

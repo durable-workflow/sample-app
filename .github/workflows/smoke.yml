@@ -38,3 +38,71 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down -v --remove-orphans
+
+  service-mode:
+    name: service-mode onboarding (fresh and repeat)
+    if: ${{ github.server_url == 'https://github.com' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      COMPOSE_PROJECT_NAME: >-
+        sample-app-service-${{ github.run_id }}-${{ github.run_attempt }}
+      SERVICE_MODE_PORT: "18081"
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+
+      - name: Export the supported artifact tuple for diagnostics and cleanup
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+
+      - name: Run the documented service-mode path from a clean project
+        env:
+          SERVICE_MODE_EVIDENCE_PATH: service-mode-first.json
+        run: scripts/service-mode.sh
+
+      - name: Run the documented command again without cleanup
+        env:
+          SERVICE_MODE_EVIDENCE_PATH: service-mode-repeat.json
+        run: scripts/service-mode.sh
+
+      - name: Validate timings, runtime results, versions, and unique identities
+        run: >-
+          python3 scripts/ci/validate-service-mode-evidence.py
+          service-mode-first.json
+          service-mode-repeat.json
+
+      - name: Open the matching Waterline route
+        run: |
+          waterline_url="$(
+            python3 -c '
+          import json
+          data = json.load(open("service-mode-repeat.json"))
+          print(data["workflow"]["waterline_url"])
+          '
+          )"
+          curl --fail --silent --show-error --location "$waterline_url" \
+            | grep -E 'Waterline|waterline'
+
+      - name: Retain startup and result timing evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: service-mode-onboarding-evidence
+          path: |
+            service-mode-*.json
+            service-mode-*-waterline.png
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Dump service-mode logs
+        if: failure()
+        run: >-
+          docker compose -f polyglot/service-mode.yml logs
+          --no-color --timestamps
+
+      - name: Tear down isolated service-mode state
+        if: always()
+        run: >-
+          docker compose -f polyglot/service-mode.yml down
+          -v --remove-orphans

@@ -1,0 +1,293 @@
+---
+x-development-image: &development-image
+  ${SAMPLE_APP_DEVCONTAINER_IMAGE:-ghcr.io/durable-workflow/sample-app-devcontainer:main}
+
+x-server-environment: &server-environment
+  APP_NAME: "Durable Workflow Server"
+  APP_ENV: testing
+  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
+  APP_DEBUG: "false"
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: durable_workflow_service
+  DB_USERNAME: workflow
+  DB_PASSWORD: workflow
+  REDIS_HOST: redis
+  QUEUE_CONNECTION: redis
+  CACHE_STORE: redis
+  DW_WORKER_POLL_TIMEOUT: "3"
+  WORKFLOW_SERVER_AUTH_DRIVER: token
+  WORKFLOW_SERVER_AUTH_TOKEN: test-token
+
+x-laravel-environment: &laravel-environment
+  APP_ENV: local
+  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
+  APP_DEBUG: "false"
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: durable_workflow_service
+  DB_USERNAME: workflow
+  DB_PASSWORD: workflow
+  SHARED_DB_HOST: mysql
+  SHARED_DB_PORT: 3306
+  SHARED_DB_DATABASE: durable_workflow_service
+  SHARED_DB_USERNAME: workflow
+  SHARED_DB_PASSWORD: workflow
+  REDIS_HOST: redis
+  QUEUE_CONNECTION: redis
+  CACHE_STORE: redis
+  DURABLE_WORKFLOW_ENDPOINT: http://server:8080
+  DURABLE_WORKFLOW_NAMESPACE: default
+  DURABLE_WORKFLOW_TASK_QUEUE: sample-service-php
+  DURABLE_WORKFLOW_TOKEN: test-token
+
+x-app-setup: &app-setup
+  image: *development-image
+  user: root
+  working_dir: /app
+  entrypoint: ["/bin/bash", "-lc"]
+  command:
+    - >-
+      find /app -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' +
+      && tar -C /source
+      --exclude=.git
+      --exclude=vendor
+      --exclude=node_modules
+      --exclude=storage/logs
+      -cf - .
+      | tar -C /app -xf -
+      && bash scripts/setup-service-mode-app.sh "$$SERVICE_MODE_APP_ROLE"
+      && chown -R 1000:1000 /app
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: durable_workflow_service
+      MYSQL_USER: workflow
+      MYSQL_PASSWORD: workflow
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - service-mysql:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - 127.0.0.1
+        - --protocol=TCP
+        - --silent
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - service-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  worker-app-setup:
+    <<: *app-setup
+    environment:
+      COMPOSER_HOME: /composer-cache
+      SERVICE_MODE_APP_ROLE: worker
+      DURABLE_WORKFLOW_PHP_SDK_VERSION: >-
+        ${DURABLE_WORKFLOW_PHP_SDK_VERSION:?resolve artifacts first}
+      DURABLE_WORKFLOW_WORKFLOW_VERSION: >-
+        ${DURABLE_WORKFLOW_WORKFLOW_VERSION:?resolve artifacts first}
+      DURABLE_WORKFLOW_WATERLINE_VERSION: >-
+        ${DURABLE_WORKFLOW_WATERLINE_VERSION:?resolve artifacts first}
+    volumes:
+      - ..:/source:ro
+      - service-worker-app:/app
+      - service-worker-composer-cache:/composer-cache
+
+  observer-app-setup:
+    <<: *app-setup
+    environment:
+      COMPOSER_HOME: /composer-cache
+      SERVICE_MODE_APP_ROLE: observer
+      DURABLE_WORKFLOW_PHP_SDK_VERSION: >-
+        ${DURABLE_WORKFLOW_PHP_SDK_VERSION:?resolve artifacts first}
+      DURABLE_WORKFLOW_WORKFLOW_VERSION: >-
+        ${DURABLE_WORKFLOW_WORKFLOW_VERSION:?resolve artifacts first}
+      DURABLE_WORKFLOW_WATERLINE_VERSION: >-
+        ${DURABLE_WORKFLOW_WATERLINE_VERSION:?resolve artifacts first}
+    volumes:
+      - ..:/source:ro
+      - service-observer-app:/app
+      - service-observer-composer-cache:/composer-cache
+
+  python-setup:
+    image: python:3.12-slim
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        installed="";
+        if [ -x /runtime/bin/python ]; then
+          installed="$$(/runtime/bin/python -c
+          'import importlib.metadata as m; print(m.version("durable-workflow"))'
+          2>/dev/null || true)";
+        fi;
+        if [ "$$installed" != "$$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" ]; then
+          find /runtime -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' +;
+          python -m venv /runtime;
+          /runtime/bin/pip install --no-input --disable-pip-version-check
+          "durable-workflow==$$DURABLE_WORKFLOW_PYTHON_SDK_VERSION";
+        fi;
+        chmod -R a+rX /runtime
+    environment:
+      DURABLE_WORKFLOW_PYTHON_SDK_VERSION: >-
+        ${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?resolve artifacts first}
+      PIP_CACHE_DIR: /pip-cache
+    volumes:
+      - service-python:/runtime
+      - service-pip-cache:/pip-cache
+
+  bootstrap:
+    image: ${DURABLE_SERVER_IMAGE:?resolve the current artifact tuple first}
+    command: ["server-bootstrap"]
+    environment: *server-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  server:
+    image: ${DURABLE_SERVER_IMAGE:?resolve the current artifact tuple first}
+    environment: *server-environment
+    expose:
+      - "8080"
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  php-worker:
+    image: *development-image
+    user: "1000:1000"
+    working_dir: /var/www/html
+    entrypoint: ["php", "artisan", "durable-workflow:worker"]
+    environment: *laravel-environment
+    volumes:
+      - service-worker-app:/var/www/html
+    depends_on:
+      worker-app-setup:
+        condition: service_completed_successfully
+      server:
+        condition: service_healthy
+
+  python-worker:
+    image: python:3.12-slim
+    working_dir: /source
+    entrypoint:
+      - /runtime/bin/python
+      - /source/polyglot/service_mode/python_worker.py
+    environment:
+      DURABLE_WORKFLOW_ENDPOINT: http://server:8080
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_WORKFLOW_TASK_QUEUE: sample-service-python
+      DURABLE_WORKFLOW_TOKEN: test-token
+    volumes:
+      - ..:/source:ro
+      - service-python:/runtime:ro
+    depends_on:
+      python-setup:
+        condition: service_completed_successfully
+      server:
+        condition: service_healthy
+
+  waterline:
+    image: *development-image
+    user: "1000:1000"
+    working_dir: /var/www/html
+    entrypoint:
+      - php
+      - artisan
+      - serve
+      - --host=0.0.0.0
+      - --port=8081
+    environment:
+      <<: *laravel-environment
+      WATERLINE_ALLOW_UNAUTHENTICATED: "true"
+      WATERLINE_BACKEND: service
+      WATERLINE_SERVER_ENDPOINT: http://server:8080
+      WATERLINE_SERVER_TOKEN: test-token
+      WATERLINE_ACCESS_MODE: read_only
+      WATERLINE_NAMESPACE: default
+      WATERLINE_PATH: waterline
+    ports:
+      - "${SERVICE_MODE_PORT:-18081}:8081"
+    volumes:
+      - service-observer-app:/var/www/html
+    depends_on:
+      observer-app-setup:
+        condition: service_completed_successfully
+      server:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8081/waterline/api/v2/health
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  journey:
+    image: *development-image
+    user: "1000:1000"
+    working_dir: /var/www/html
+    entrypoint: ["php", "artisan", "app:service-mode"]
+    command: ["Codespace", "--json"]
+    environment:
+      <<: *laravel-environment
+      SERVICE_MODE_WATERLINE_URL: >-
+        ${SERVICE_MODE_WATERLINE_URL:-http://localhost:18081/waterline}
+    volumes:
+      - service-worker-app:/var/www/html
+    depends_on:
+      worker-app-setup:
+        condition: service_completed_successfully
+      server:
+        condition: service_healthy
+      php-worker:
+        condition: service_started
+      python-worker:
+        condition: service_started
+      waterline:
+        condition: service_healthy
+
+  browser-smoke:
+    image: *development-image
+    user: root
+    entrypoint: ["playwright"]
+    volumes:
+      - >-
+        ${SERVICE_MODE_EVIDENCE_DIR:?set evidence directory}:/evidence
+
+volumes:
+  service-mysql:
+  service-observer-app:
+  service-observer-composer-cache:
+  service-pip-cache:
+  service-python:
+  service-redis:
+  service-worker-app:
+  service-worker-composer-cache:
