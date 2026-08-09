@@ -78,13 +78,24 @@ class ConformanceHarnessContractTest extends TestCase
         $this->assertStringNotContainsString('latest_pypi_version durable-workflow', $artifactResolver);
         $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/workflow', $artifactResolver);
         $this->assertStringNotContainsString('latest_packagist_prerelease_version durable-workflow/waterline', $artifactResolver);
-        $this->assertSame(7, preg_match_all(
-            '/^pinned_(?:server_image|cli_version|php_sdk_version|python_sdk_version|rust_sdk_version|workflow_version|waterline_version)="'
-                .'(?:durableworkflow\/server:)?(?<version>2\.0\.0-rc\.\d+)"$/m',
+        $this->assertStringContainsString(
+            'pinned_artifact_tuple_file="${repo_root}/polyglot/qualified-artifact-tuple.json"',
             $artifactResolver,
-            $pinnedVersions,
-        ));
-        $this->assertCount(1, array_unique($pinnedVersions['version']));
+        );
+        $this->assertStringContainsString('load_artifact_tuple_file "$pinned_artifact_tuple_file"', $artifactResolver);
+
+        $pinnedArtifactTuple = json_decode(
+            (string) file_get_contents(__DIR__.'/../../polyglot/qualified-artifact-tuple.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $this->assertSame(
+            ['cli', 'sdk-php', 'sdk-python', 'sdk-rust', 'server', 'waterline', 'workflow'],
+            array_keys($pinnedArtifactTuple['artifacts'] ?? []),
+        );
+        foreach ($pinnedArtifactTuple['artifacts'] as $version) {
+            $this->assertMatchesRegularExpression('/^2\.0\.0-(?:beta|rc)\.\d+$/', $version);
+        }
         $this->assertStringContainsString('--allow-skips', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_PYTHON_SDK_VERSION', $script);
         $this->assertStringContainsString('-e DURABLE_WORKFLOW_RUST_SDK_VERSION', $script);
