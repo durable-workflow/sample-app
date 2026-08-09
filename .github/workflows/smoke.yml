@@ -48,6 +48,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: >-
         sample-app-service-${{ github.run_id }}-${{ github.run_attempt }}
+      DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
       SERVICE_MODE_PORT: "18081"
 
     steps:

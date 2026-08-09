@@ -130,27 +130,13 @@ services:
   python-setup:
     image: python:3.12-slim
     user: root
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        installed="";
-        if [ -x /runtime/bin/python ]; then
-          installed="$$(/runtime/bin/python -c
-          'import importlib.metadata as m; print(m.version("durable-workflow"))'
-          2>/dev/null || true)";
-        fi;
-        if [ "$$installed" != "$$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" ]; then
-          find /runtime -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' +;
-          python -m venv /runtime;
-          /runtime/bin/pip install --no-input --disable-pip-version-check
-          "durable-workflow==$$DURABLE_WORKFLOW_PYTHON_SDK_VERSION";
-        fi;
-        chmod -R a+rX /runtime
+    entrypoint: ["/bin/sh", "/source/scripts/setup-service-mode-python.sh"]
     environment:
       DURABLE_WORKFLOW_PYTHON_SDK_VERSION: >-
         ${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?resolve artifacts first}
       PIP_CACHE_DIR: /pip-cache
     volumes:
+      - ..:/source:ro
       - service-python:/runtime
       - service-pip-cache:/pip-cache
 

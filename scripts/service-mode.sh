@@ -17,9 +17,13 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
     exit 1
 fi
 
+artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-pinned}"
 while IFS= read -r assignment; do
     export "$assignment"
-done < <("${repo_root}/scripts/resolve-current-artifacts.sh")
+done < <(
+    DURABLE_WORKFLOW_ARTIFACT_SOURCE="$artifact_source" \
+        "${repo_root}/scripts/resolve-current-artifacts.sh"
+)
 
 if [[ -z "${SERVICE_MODE_WATERLINE_URL:-}" ]]; then
     if [[ -n "${CODESPACE_NAME:-}" ]]; then
