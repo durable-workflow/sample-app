@@ -268,9 +268,13 @@ load_conformance_env() {
   done
 }
 
-configure_ai_conformance() {
+configure_conformance() {
   local skip_ai="${SAMPLE_APP_CONFORMANCE_SKIP_AI:-1}"
+  local allow_skips="${SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS:-}"
   local argument
+  local strict_requested="0"
+  local allow_skips_requested="0"
+  local forwarded_args=()
 
   case "$skip_ai" in
     0|1)
@@ -281,28 +285,64 @@ configure_ai_conformance() {
       ;;
   esac
 
+  case "$allow_skips" in
+    ""|0|1)
+      ;;
+    *)
+      printf 'compose-conformance: SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS must be 0 or 1\n' >&2
+      return 2
+      ;;
+  esac
+
   for argument in "$@"; do
-    if [[ "$argument" == "--skip-ai" ]]; then
-      skip_ai="1"
-      break
-    fi
+    case "$argument" in
+      --skip-ai)
+        skip_ai="1"
+        ;;
+      --strict)
+        strict_requested="1"
+        ;;
+      --allow-skips)
+        allow_skips_requested="1"
+        ;;
+      *)
+        forwarded_args+=("$argument")
+        ;;
+    esac
   done
 
-  ai_conformance_skipped="$skip_ai"
-  provider_exec_args=()
+  if [[ "$strict_requested" == "1" && "$allow_skips_requested" == "1" ]]; then
+    printf 'compose-conformance: --strict and --allow-skips are mutually exclusive\n' >&2
+    return 2
+  fi
 
-  if [[ "$ai_conformance_skipped" == "1" ]]; then
+  if [[ "$skip_ai" == "1" && "$strict_requested" == "1" ]]; then
+    printf 'compose-conformance: --strict requires provider coverage; set SAMPLE_APP_CONFORMANCE_SKIP_AI=0\n' >&2
+    return 2
+  fi
+
+  provider_exec_args=()
+  conformance_args=()
+
+  if [[ "$skip_ai" == "1" ]]; then
     # An exported empty value overrides Compose's automatic .env interpolation,
     # including a credential inherited from the invoking shell. The conformance
     # command also omits its exec-level credential forwarding below.
     export OPENAI_API_KEY=""
-    printf 'compose-conformance: AI-backed surfaces are explicitly disabled\n'
+    conformance_args=(--skip-ai --allow-skips "${forwarded_args[@]}")
+    printf 'compose-conformance: AI-backed surfaces are explicitly disabled; intentional skips are allowed\n'
     return 0
   fi
 
   load_conformance_env
   provider_exec_args=(-e OPENAI_API_KEY)
-  printf 'compose-conformance: AI-backed surfaces explicitly enabled\n'
+  if [[ "$allow_skips_requested" == "1" || ( "$strict_requested" != "1" && "$allow_skips" == "1" ) ]]; then
+    conformance_args=(--allow-skips "${forwarded_args[@]}")
+    printf 'compose-conformance: AI-backed surfaces explicitly enabled; skipped coverage is allowed\n'
+  else
+    conformance_args=(--strict "${forwarded_args[@]}")
+    printf 'compose-conformance: AI-backed surfaces explicitly enabled; strict provider coverage is required\n'
+  fi
 }
 
 build_runtime_image_for_artifact_tuple() {
@@ -443,9 +483,9 @@ restart_worker_after_schema_refresh() {
     docker compose up -d --no-deps --force-recreate --wait worker
 }
 
-ai_conformance_skipped="1"
 provider_exec_args=()
-configure_ai_conformance "$@"
+conformance_args=()
+configure_conformance "$@"
 
 docker compose ps
 
@@ -515,16 +555,6 @@ if [[ "${SAMPLE_APP_CONFORMANCE_SMOKE_FIRST:-0}" == "1" ]]; then
 fi
 
 printf '\n==> full sample-app conformance\n'
-args=("$@")
-if [[ "$ai_conformance_skipped" == "1" ]]; then
-  args=(--skip-ai "${args[@]}")
-fi
-if [[ "${SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS:-0}" != "1" ]]; then
-  args=(--strict "${args[@]}")
-else
-  args=(--allow-skips "${args[@]}")
-fi
-
 app_url="${SAMPLE_APP_CONFORMANCE_URL:-http://sample-app:8000}"
 metadata_path="${SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
 metadata_container_path="${SAMPLE_APP_CONFORMANCE_CONTAINER_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json}"
@@ -549,7 +579,7 @@ timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -
   -e SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES \
   -e SAMPLE_APP_SETUP_STACK_REUSED \
   -e SAMPLE_APP_SETUP_BUILD_INVOCATIONS \
-  app php artisan app:conformance --app-url="${app_url}" --output="${metadata_container_path}" "${args[@]}"
+  app php artisan app:conformance --app-url="${app_url}" --output="${metadata_container_path}" "${conformance_args[@]}"
 status=$?
 set -e
 

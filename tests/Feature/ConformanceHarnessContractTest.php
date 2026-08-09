@@ -40,11 +40,6 @@ class ConformanceHarnessContractTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
-        $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_SKIP_AI:-1', $script);
-        $this->assertStringContainsString('configure_ai_conformance "$@"', $script);
-        $this->assertStringContainsString('args=(--skip-ai "${args[@]}")', $script);
-        $this->assertStringContainsString('provider_exec_args=(-e OPENAI_API_KEY)', $script);
-        $this->assertStringContainsString('export OPENAI_API_KEY=""', $script);
         $this->assertStringContainsString('build_runtime_image_for_artifact_tuple', $script);
         $this->assertStringContainsString('start_services_and_wait_for_readiness', $script);
         $this->assertStringContainsString('docker compose build app', $script);

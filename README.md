@@ -129,10 +129,12 @@ and the MCP server is at `http://localhost:${APP_PORT:-8000}/mcp/workflows`.
 For a release-style proof from a clean checkout, use the combined entry point
 instead of the manual build, migration, and sample commands above. It builds the
 resolved artifact tuple once, runs deterministic smoke, and continues through
-the full strict matrix on the same healthy stack and schema:
+the provider-free conformance matrix on the same healthy stack and schema. AI
+surfaces are recorded as intentional skips, so this command needs no provider
+credential:
 
 ```bash
-scripts/compose-smoke-conformance.sh --strict
+scripts/compose-smoke-conformance.sh
 ```
 
 The standalone full-conformance entry point remains self-contained for callers
@@ -141,8 +143,6 @@ by default, so this form cannot consume a provider credential discovered in the
 shell or an ancestor dotenv file:
 
 ```bash
-SAMPLE_APP_CONFORMANCE_SKIP_AI=1 \
-SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1 \
 scripts/compose-conformance.sh
 ```
 
@@ -169,17 +169,25 @@ the release-cohort version pin.
 `SAMPLE_APP_CONFORMANCE_SKIP_AI=1` is the safe release and automation mode. It
 passes `--skip-ai` to `app:conformance`, keeps `OPENAI_API_KEY` out of Compose
 exec arguments, and records every AI-backed surface as explicitly skipped while
-the deterministic and scripted agent-operability surfaces still run. Pair it
-with `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1` when an intentional skip should not
-make the command fail.
+the deterministic and scripted agent-operability surfaces still run. Intentional
+AI skips are allowed automatically in this mode; combining them with `--strict`
+is rejected as a contradictory coverage request.
 
 Provider-backed conformance requires an explicit opt-in, even when a credential
-is already present. Set `SAMPLE_APP_CONFORMANCE_SKIP_AI=0` and provide
-`OPENAI_API_KEY` to run it. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` only on that
-opt-in path when the key lives in a dotenv file outside the repository; the
-wrapper then checks local workspace-level dotenv files without printing
-credential values. Without AI credentials, `--strict` keeps the run non-passing
-and names the live Prism surface as uncovered. Set
+is already present. Its release proof is:
+
+```bash
+export OPENAI_API_KEY=your-provider-key
+SAMPLE_APP_CONFORMANCE_SKIP_AI=0 \
+scripts/compose-smoke-conformance.sh --strict
+```
+
+Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` only on that opt-in path when the key lives
+in a dotenv file outside the repository; the wrapper then checks local
+workspace-level dotenv files without printing credential values. Provider mode
+requires strict coverage by default, and `--strict` makes that requirement
+explicit. Without AI credentials, the run stays non-passing and names the live
+Prism surface as uncovered. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`,
 `DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_RUST_SDK_VERSION`,
 `DURABLE_WORKFLOW_PHP_SDK_VERSION`, `DURABLE_WORKFLOW_WORKFLOW_VERSION`, and
@@ -228,8 +236,10 @@ The app service has the browser-safe `sample-app` network alias, and the wrapper
 uses `http://sample-app:8000` inside the Compose network so browser activities
 running in the worker container can reach the app without an HTTPS upgrade. Set
 `SAMPLE_APP_CONFORMANCE_URL` when running against a different network address.
-The wrapper runs strict by default; set `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1`
-for local exploratory runs that should return zero while naming skipped surfaces.
+The wrapper derives one coverage policy from the AI mode: provider-free mode
+allows its intentional AI skips, while provider mode is strict by default. Set
+`SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1` only for exploratory provider-mode runs
+that should return zero while naming missing provider-backed evidence.
 `scripts/compose-smoke.sh` starts with the bounded deterministic preflight: it
 runs the deterministic samples and exits after printing the blocked step,
 container status, and recent app/worker logs on failure. By default, a passing
@@ -242,7 +252,8 @@ its self-contained rebuild and schema reset. Set `SAMPLE_APP_SMOKE_ONLY=1` when
 a caller intentionally wants only the deterministic path. Set
 `SAMPLE_APP_CONFORMANCE_AFTER_SMOKE=0` to disable the chained full surface for
 exploratory local runs, or run `scripts/compose-conformance.sh --strict`
-directly when the deterministic preflight is not needed.
+directly with `SAMPLE_APP_CONFORMANCE_SKIP_AI=0` when a strict provider run does
+not need the deterministic preflight.
 
 Tear the stack down with `docker compose down -v --remove-orphans` when
 finished. The deterministic Docker path is exercised on every push through the

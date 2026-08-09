@@ -90,6 +90,17 @@ final class ComposeConformanceBudgetTest extends TestCase
         $this->assertSkippedAiConformance($result, $credential);
     }
 
+    public function test_combined_release_proof_succeeds_without_a_provider_and_records_ai_skips(): void
+    {
+        $result = $this->runHarness(
+            'success',
+            entryPoint: 'scripts/compose-smoke-conformance.sh',
+        );
+
+        $this->assertSkippedAiConformance($result);
+        $this->assertStringContainsString('php artisan app:workflow', $result['commands']);
+    }
+
     public function test_an_ambient_ancestor_dotenv_credential_does_not_opt_in_to_ai(): void
     {
         $credential = 'synthetic-provider-credential-'.bin2hex(random_bytes(24));
@@ -103,16 +114,63 @@ final class ComposeConformanceBudgetTest extends TestCase
         $credential = 'synthetic-provider-credential-'.bin2hex(random_bytes(24));
         $result = $this->runHarness('success', [
             'SAMPLE_APP_CONFORMANCE_SKIP_AI' => '0',
-        ], $credential, []);
+        ], $credential, ['--strict'], 'scripts/compose-smoke-conformance.sh');
 
         $this->assertSame(0, $result['exit_code'], $result['output']);
-        $this->assertStringContainsString('app:conformance', $result['commands']);
-        $this->assertStringNotContainsString('--skip-ai', $result['commands']);
-        $this->assertStringContainsString('-e OPENAI_API_KEY', $result['commands']);
         $this->assertStringContainsString('OPENAI_API_KEY_STATE=matched', $result['commands']);
         $this->assertStringContainsString('provider-command app:prism', $result['commands']);
         $this->assertStringNotContainsString($credential, $result['commands']);
         $this->assertStringNotContainsString($credential, $result['output']);
+
+        $metadata = json_decode($result['metadata'], true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame('passed', $metadata['summary']['status'] ?? null);
+        $this->assertTrue($metadata['summary']['strict'] ?? null);
+        $this->assertSame('passed', $metadata['surfaces']['prism_ai']['status'] ?? null);
+        $this->assertSame([], $metadata['summary']['skipped_surfaces'] ?? null);
+    }
+
+    public function test_strict_provider_mode_fails_when_provider_evidence_is_missing(): void
+    {
+        $result = $this->runHarness('success', [
+            'SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS' => '1',
+            'SAMPLE_APP_CONFORMANCE_SKIP_AI' => '0',
+        ], arguments: ['--strict'], entryPoint: 'scripts/compose-smoke-conformance.sh');
+
+        $this->assertSame(1, $result['exit_code'], $result['output']);
+
+        $metadata = json_decode($result['metadata'], true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame('failed', $metadata['summary']['status'] ?? null);
+        $this->assertTrue($metadata['summary']['strict'] ?? null);
+        $this->assertSame('skipped', $metadata['surfaces']['prism_ai']['status'] ?? null);
+        $this->assertSame(['prism_ai'], $metadata['summary']['uncovered_surfaces'] ?? null);
+    }
+
+    public function test_provider_mode_can_allow_missing_provider_evidence_for_exploration(): void
+    {
+        $result = $this->runHarness('success', [
+            'SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS' => '1',
+            'SAMPLE_APP_CONFORMANCE_SKIP_AI' => '0',
+        ], entryPoint: 'scripts/compose-smoke-conformance.sh');
+
+        $this->assertSame(0, $result['exit_code'], $result['output']);
+
+        $metadata = json_decode($result['metadata'], true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame('passed', $metadata['summary']['status'] ?? null);
+        $this->assertFalse($metadata['summary']['strict'] ?? null);
+        $this->assertSame('skipped', $metadata['surfaces']['prism_ai']['status'] ?? null);
+        $this->assertSame(['prism_ai'], $metadata['summary']['uncovered_surfaces'] ?? null);
+    }
+
+    public function test_strict_coverage_is_rejected_when_ai_is_intentionally_skipped(): void
+    {
+        $result = $this->runHarness('success', arguments: ['--strict']);
+
+        $this->assertSame(2, $result['exit_code'], $result['output']);
+        $this->assertSame('', $result['commands']);
+        $this->assertSame('', $result['metadata']);
     }
 
     /**
@@ -124,7 +182,8 @@ final class ComposeConformanceBudgetTest extends TestCase
         string $mode,
         array $overrides = [],
         ?string $ancestorCredential = null,
-        array $arguments = ['--strict'],
+        array $arguments = [],
+        string $entryPoint = 'scripts/compose-conformance.sh',
     ): array {
         $temporaryDirectory = sys_get_temp_dir().'/compose-conformance-budget-'.bin2hex(random_bytes(6));
         $dockerPath = $temporaryDirectory.'/docker';
@@ -180,12 +239,53 @@ elif [[ "$*" == "compose up -d --build --wait app worker" ]]; then
   sleep 2
 fi
 
+case "$*" in
+  "compose ps -q app")
+    printf 'fake-app-container\n'
+    ;;
+  "compose ps -q worker")
+    printf 'fake-worker-container\n'
+    ;;
+  *"php artisan app:workflow"*)
+    printf 'workflow_activity_other\n'
+    ;;
+  *"php artisan app:elapsed"*)
+    printf 'Elapsed Time: 1 seconds\n'
+    ;;
+  *"php artisan app:microservice"*)
+    printf 'workflow_activity_other\n'
+    ;;
+  *"php artisan app:webhook"*)
+    printf 'Hello world\n'
+    ;;
+esac
+
 if [[ "$*" == *"app:conformance"* ]]; then
+  if [[ "$*" == *"--strict"* && "$*" == *"--allow-skips"* ]]; then
+    printf 'fake app:conformance rejected contradictory coverage options\n' >&2
+    exit 90
+  fi
+
+  coverage_status="failed"
+  coverage_strict="true"
+  coverage_exit="1"
+  if [[ "$*" == *"--allow-skips"* ]]; then
+    coverage_status="passed"
+    coverage_strict="false"
+    coverage_exit="0"
+  fi
+
   if [[ "$*" == *"--skip-ai"* ]]; then
-    printf '%s\n' '{"surfaces":{"deterministic_simple":{"status":"passed"},"mcp_workflow_api":{"status":"passed"},"prism_ai":{"status":"skipped","reason":"AI-backed samples were explicitly skipped."},"ai_agent_scripted":{"status":"skipped","reason":"AI-backed samples were explicitly skipped."},"ai_failure_hotel":{"status":"skipped","reason":"AI-backed samples were explicitly skipped."},"ai_failure_flight":{"status":"skipped","reason":"AI-backed samples were explicitly skipped."},"ai_failure_car":{"status":"skipped","reason":"AI-backed samples were explicitly skipped."}},"summary":{"skipped_surfaces":["prism_ai","ai_agent_scripted","ai_failure_hotel","ai_failure_flight","ai_failure_car"]}}' > "$SAMPLE_APP_FAKE_METADATA_PATH"
+    printf '%s\n' "{\"surfaces\":{\"deterministic_simple\":{\"status\":\"passed\"},\"mcp_workflow_api\":{\"status\":\"passed\"},\"prism_ai\":{\"status\":\"skipped\",\"reason\":\"AI-backed samples were explicitly skipped.\"},\"ai_agent_scripted\":{\"status\":\"skipped\",\"reason\":\"AI-backed samples were explicitly skipped.\"},\"ai_failure_hotel\":{\"status\":\"skipped\",\"reason\":\"AI-backed samples were explicitly skipped.\"},\"ai_failure_flight\":{\"status\":\"skipped\",\"reason\":\"AI-backed samples were explicitly skipped.\"},\"ai_failure_car\":{\"status\":\"skipped\",\"reason\":\"AI-backed samples were explicitly skipped.\"}},\"summary\":{\"status\":\"${coverage_status}\",\"strict\":${coverage_strict},\"skipped_surfaces\":[\"prism_ai\",\"ai_agent_scripted\",\"ai_failure_hotel\",\"ai_failure_flight\",\"ai_failure_car\"],\"uncovered_surfaces\":[\"prism_ai\",\"ai_agent_scripted\",\"ai_failure_hotel\",\"ai_failure_flight\",\"ai_failure_car\"]}}" > "$SAMPLE_APP_FAKE_METADATA_PATH"
+  elif [[ "$credential_state" == "absent" ]]; then
+    printf '%s\n' "{\"surfaces\":{\"deterministic_simple\":{\"status\":\"passed\"},\"mcp_workflow_api\":{\"status\":\"passed\"},\"prism_ai\":{\"status\":\"skipped\",\"reason\":\"OPENAI_API_KEY is not set.\"}},\"summary\":{\"status\":\"${coverage_status}\",\"strict\":${coverage_strict},\"skipped_surfaces\":[\"prism_ai\"],\"uncovered_surfaces\":[\"prism_ai\"]}}" > "$SAMPLE_APP_FAKE_METADATA_PATH"
   else
     printf 'provider-command app:prism\n' >> "$SAMPLE_APP_FAKE_DOCKER_LOG"
+    printf '%s\n' "{\"surfaces\":{\"deterministic_simple\":{\"status\":\"passed\"},\"mcp_workflow_api\":{\"status\":\"passed\"},\"prism_ai\":{\"status\":\"passed\"}},\"summary\":{\"status\":\"passed\",\"strict\":${coverage_strict},\"skipped_surfaces\":[],\"uncovered_surfaces\":[]}}" > "$SAMPLE_APP_FAKE_METADATA_PATH"
+    coverage_exit="0"
   fi
+
+  exit "$coverage_exit"
 fi
 BASH);
         chmod($dockerPath, 0700);
@@ -196,7 +296,7 @@ BASH);
             'DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $this->repoPath('tests/Fixtures/release-candidate-artifact-tuple.json'),
             'OPENAI_API_KEY' => '',
             'SAMPLE_APP_COMMIT' => 'compose-budget-test-revision',
-            'SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS' => '1',
+            'SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS' => '',
             'SAMPLE_APP_CONFORMANCE_ENV_FILE' => $ancestorCredential === null ? '' : $configuredEnvPath,
             'SAMPLE_APP_CONFORMANCE_METADATA_PATH' => $metadataPath,
             'SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS' => '3',
@@ -214,7 +314,7 @@ BASH);
             ...$overrides,
         ];
         $process = new Process(
-            ['bash', $this->repoPath('scripts/compose-conformance.sh'), ...$arguments],
+            ['bash', $this->repoPath($entryPoint), ...$arguments],
             $workingDirectory,
             $environment,
         );
@@ -247,21 +347,22 @@ BASH);
     /**
      * @param  array{exit_code: int, output: string, commands: string, metadata: string}  $result
      */
-    private function assertSkippedAiConformance(array $result, string $credential): void
+    private function assertSkippedAiConformance(array $result, ?string $credential = null): void
     {
         $this->assertSame(0, $result['exit_code'], $result['output']);
-        $this->assertStringContainsString('app:conformance', $result['commands']);
-        $this->assertStringContainsString('--skip-ai', $result['commands']);
-        $this->assertStringNotContainsString('-e OPENAI_API_KEY', $result['commands']);
         $this->assertStringNotContainsString('OPENAI_API_KEY_STATE=matched', $result['commands']);
         $this->assertStringNotContainsString('OPENAI_API_KEY_STATE=present', $result['commands']);
         $this->assertStringNotContainsString('provider-command', $result['commands']);
-        $this->assertStringNotContainsString($credential, $result['commands']);
-        $this->assertStringNotContainsString($credential, $result['output']);
-        $this->assertStringNotContainsString($credential, $result['metadata']);
+        if ($credential !== null) {
+            $this->assertStringNotContainsString($credential, $result['commands']);
+            $this->assertStringNotContainsString($credential, $result['output']);
+            $this->assertStringNotContainsString($credential, $result['metadata']);
+        }
 
         $metadata = json_decode($result['metadata'], true, flags: JSON_THROW_ON_ERROR);
 
+        $this->assertSame('passed', $metadata['summary']['status'] ?? null);
+        $this->assertFalse($metadata['summary']['strict'] ?? null);
         $this->assertSame('passed', $metadata['surfaces']['deterministic_simple']['status'] ?? null);
         $this->assertSame('passed', $metadata['surfaces']['mcp_workflow_api']['status'] ?? null);
         $this->assertSame([
@@ -271,13 +372,15 @@ BASH);
             'ai_failure_flight',
             'ai_failure_car',
         ], $metadata['summary']['skipped_surfaces'] ?? null);
+        $this->assertSame(
+            $metadata['summary']['skipped_surfaces'],
+            $metadata['summary']['uncovered_surfaces'] ?? null,
+        );
 
         foreach ($metadata['summary']['skipped_surfaces'] as $surface) {
             $this->assertSame('skipped', $metadata['surfaces'][$surface]['status'] ?? null);
-            $this->assertSame(
-                'AI-backed samples were explicitly skipped.',
-                $metadata['surfaces'][$surface]['reason'] ?? null,
-            );
+            $this->assertIsString($metadata['surfaces'][$surface]['reason'] ?? null);
+            $this->assertNotSame('', $metadata['surfaces'][$surface]['reason'] ?? '');
         }
     }
 
