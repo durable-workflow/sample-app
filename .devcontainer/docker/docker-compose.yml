@@ -62,7 +62,7 @@ services:
         networks:
             - laravel
         healthcheck:
-            test: ["CMD-SHELL", "MYSQL_PWD=$${MYSQL_PASSWORD} mysqladmin ping --host=127.0.0.1 --protocol=TCP --user=$${MYSQL_USER} --silent"]
+            test: ["CMD-SHELL", "MYSQL_PWD=$${MYSQL_ROOT_PASSWORD} mysqladmin ping --protocol=socket --user=root --silent"]
             interval: 5s
             retries: 30
             start_period: 30s

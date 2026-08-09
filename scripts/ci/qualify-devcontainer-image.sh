@@ -187,7 +187,7 @@ application_readiness_started_ms="$(timestamp_ms)"
     [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/up)" == 200 ]]
     [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/)" == 200 ]]
     php artisan migrate:status --no-interaction
-    [[ "$(redis-cli --host redis --raw ping)" == PONG ]]
+    [[ "$(redis-cli -h redis --raw ping)" == PONG ]]
 '
 application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"
 

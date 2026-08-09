@@ -49,6 +49,13 @@ final class DevcontainerImageContractTest extends TestCase
 
         $this->assertSame('mysql:8.0', $services['mysql']['image'] ?? null);
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
+        $this->assertSame(
+            [
+                'CMD-SHELL',
+                'MYSQL_PWD=$${MYSQL_ROOT_PASSWORD} mysqladmin ping --protocol=socket --user=root --silent',
+            ],
+            $services['mysql']['healthcheck']['test'] ?? null,
+        );
         $this->assertSame(30, $services['mysql']['healthcheck']['retries'] ?? null);
         $this->assertSame('30s', $services['mysql']['healthcheck']['start_period'] ?? null);
         $this->assertSame(30, $services['redis']['healthcheck']['retries'] ?? null);
@@ -217,7 +224,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]', $script);
         $this->assertStringContainsString('exec -T --user laravel laravel .devcontainer/post-create.sh', $script);
         $this->assertStringContainsString('php artisan migrate:status --no-interaction', $script);
-        $this->assertStringContainsString('redis-cli --host redis --raw ping', $script);
+        $this->assertStringContainsString('redis-cli -h redis --raw ping', $script);
         $this->assertStringContainsString('second_app_key', $script);
         $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);
         $this->assertStringContainsString('http://localhost/', $script);
