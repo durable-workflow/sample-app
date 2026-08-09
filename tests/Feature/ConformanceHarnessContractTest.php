@@ -40,10 +40,14 @@ class ConformanceHarnessContractTest extends TestCase
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_METADATA_PATH:-storage/app/sample-app-conformance-metadata.json', $script);
         $this->assertStringContainsString('load_conformance_env', $script);
         $this->assertStringContainsString('while [[ -n "$dir" && "$dir" != "/" ]]', $script);
-        $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
-        $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
+        $this->assertStringContainsString('build_runtime_image_for_artifact_tuple', $script);
+        $this->assertStringContainsString('start_services_and_wait_for_readiness', $script);
+        $this->assertStringContainsString('docker compose build app', $script);
+        $this->assertStringContainsString('docker compose up -d --no-build --wait app worker', $script);
         $this->assertStringContainsString('prepared_stack_is_reusable', $script);
         $this->assertStringContainsString('SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SETUP_BUILD_DURATION_MS', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SETUP_READINESS_DURATION_MS', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_SMOKE_FIRST=1', $combinedScript);
         $this->assertStringContainsString('exec scripts/compose-conformance.sh "$@"', $combinedScript);
         $this->assertStringContainsString('-e OPENAI_API_KEY', $script);

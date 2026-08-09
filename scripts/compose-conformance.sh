@@ -153,13 +153,17 @@ finish_setup_measurement() {
   SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES="$peak_growth"
   export SAMPLE_APP_SETUP_CACHE_STATE
   export SAMPLE_APP_SETUP_DURATION_MS
+  export SAMPLE_APP_SETUP_BUILD_DURATION_MS
+  export SAMPLE_APP_SETUP_READINESS_DURATION_MS
   export SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES
   export SAMPLE_APP_SETUP_STACK_REUSED
   export SAMPLE_APP_SETUP_BUILD_INVOCATIONS
 
-  printf 'compose-conformance: setup metrics cache_state=%s duration_ms=%s peak_disk_growth_bytes=%s stack_reused=%s build_invocations=%s\n' \
+  printf 'compose-conformance: setup metrics cache_state=%s duration_ms=%s build_duration_ms=%s readiness_duration_ms=%s peak_disk_growth_bytes=%s stack_reused=%s build_invocations=%s\n' \
     "$SAMPLE_APP_SETUP_CACHE_STATE" \
     "$SAMPLE_APP_SETUP_DURATION_MS" \
+    "$SAMPLE_APP_SETUP_BUILD_DURATION_MS" \
+    "$SAMPLE_APP_SETUP_READINESS_DURATION_MS" \
     "${SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES:-unavailable}" \
     "$SAMPLE_APP_SETUP_STACK_REUSED" \
     "$SAMPLE_APP_SETUP_BUILD_INVOCATIONS"
@@ -264,11 +268,18 @@ load_conformance_env() {
   done
 }
 
-rebuild_services_for_artifact_tuple() {
+build_runtime_image_for_artifact_tuple() {
   run_step \
-    "rebuilding app and worker containers with resolved artifact tuple" \
-    "${SAMPLE_APP_SERVICE_REBUILD_TIMEOUT_SECONDS:-600}" \
-    docker compose up -d --build --wait app worker
+    "building shared app and worker runtime image with resolved artifact tuple" \
+    "${SAMPLE_APP_RUNTIME_BUILD_TIMEOUT_SECONDS:-1200}" \
+    docker compose build app
+}
+
+start_services_and_wait_for_readiness() {
+  run_step \
+    "starting app and worker services and waiting for readiness" \
+    "${SAMPLE_APP_SERVICE_READINESS_TIMEOUT_SECONDS:-600}" \
+    docker compose up -d --no-build --wait app worker
 }
 
 container_is_ready() {
@@ -403,6 +414,8 @@ trap cleanup_setup_sampler EXIT
 start_setup_measurement
 SAMPLE_APP_SETUP_STACK_REUSED="false"
 SAMPLE_APP_SETUP_BUILD_INVOCATIONS="0"
+SAMPLE_APP_SETUP_BUILD_DURATION_MS="0"
+SAMPLE_APP_SETUP_READINESS_DURATION_MS="0"
 
 sample_app_commit="${SAMPLE_APP_COMMIT:-}"
 if [[ -z "${sample_app_commit}" ]]; then
@@ -425,7 +438,15 @@ else
   fi
 
   SAMPLE_APP_SETUP_BUILD_INVOCATIONS="1"
-  rebuild_services_for_artifact_tuple
+  build_started_ms="$(now_milliseconds)"
+  build_runtime_image_for_artifact_tuple
+  build_completed_ms="$(now_milliseconds)"
+  SAMPLE_APP_SETUP_BUILD_DURATION_MS="$((build_completed_ms - build_started_ms))"
+
+  readiness_started_ms="$(now_milliseconds)"
+  start_services_and_wait_for_readiness
+  readiness_completed_ms="$(now_milliseconds)"
+  SAMPLE_APP_SETUP_READINESS_DURATION_MS="$((readiness_completed_ms - readiness_started_ms))"
 
   printf '\n==> waiting for database to accept app connections\n'
   wait_for_db
@@ -481,6 +502,8 @@ timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -
   -e OPENAI_API_KEY \
   -e SAMPLE_APP_SETUP_CACHE_STATE \
   -e SAMPLE_APP_SETUP_DURATION_MS \
+  -e SAMPLE_APP_SETUP_BUILD_DURATION_MS \
+  -e SAMPLE_APP_SETUP_READINESS_DURATION_MS \
   -e SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES \
   -e SAMPLE_APP_SETUP_STACK_REUSED \
   -e SAMPLE_APP_SETUP_BUILD_INVOCATIONS \

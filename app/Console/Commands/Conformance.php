@@ -1239,6 +1239,8 @@ class Conformance extends Command
         return [
             'cache_state' => $this->envString('SAMPLE_APP_SETUP_CACHE_STATE') ?? 'unreported',
             'duration_ms' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_DURATION_MS'),
+            'build_duration_ms' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_BUILD_DURATION_MS'),
+            'readiness_duration_ms' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_READINESS_DURATION_MS'),
             'peak_disk_growth_bytes' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES'),
             'stack_reused' => $this->envBoolean('SAMPLE_APP_SETUP_STACK_REUSED'),
             'build_invocations' => $this->envUnsignedInteger('SAMPLE_APP_SETUP_BUILD_INVOCATIONS'),

@@ -155,7 +155,7 @@ final class PolyglotComposeContractTest extends TestCase
         $installScript = (string) file_get_contents($this->repoPath('scripts/install-composer-artifacts.sh'));
         $script = (string) file_get_contents($this->repoPath('scripts/compose-conformance.sh'));
 
-        foreach (['app', 'worker', 'seed'] as $serviceName) {
+        foreach (['app', 'seed'] as $serviceName) {
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
 
             $this->assertSame(
@@ -187,6 +187,9 @@ final class PolyglotComposeContractTest extends TestCase
                 $buildArgs['SAMPLE_APP_COMMIT'] ?? null,
             );
         }
+
+        $this->assertSame($services['app']['image'] ?? null, $services['worker']['image'] ?? null);
+        $this->assertArrayNotHasKey('build', $services['worker'] ?? []);
 
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_PIN=\n", $dockerfile);
         $this->assertStringContainsString("ARG DURABLE_WORKFLOW_PHP_SDK_VERSION=\n", $dockerfile);
@@ -244,8 +247,10 @@ composer require --no-update
 SH,
             $installScript,
         );
-        $this->assertStringContainsString('rebuild_services_for_artifact_tuple', $script);
-        $this->assertStringContainsString('docker compose up -d --build --wait app worker', $script);
+        $this->assertStringContainsString('build_runtime_image_for_artifact_tuple', $script);
+        $this->assertStringContainsString('start_services_and_wait_for_readiness', $script);
+        $this->assertStringContainsString('docker compose build app', $script);
+        $this->assertStringContainsString('docker compose up -d --no-build --wait app worker', $script);
         $this->assertStringContainsString('export SAMPLE_APP_COMMIT="$sample_app_commit"', $script);
         $this->assertStringContainsString('--output="${metadata_container_path}"', $script);
         $this->assertStringContainsString('docker compose cp "app:${metadata_container_abs}" "$metadata_path"', $script);
@@ -257,7 +262,8 @@ SH,
             $script,
             'export SAMPLE_APP_COMMIT="$sample_app_commit"',
             "printf '\\n==> resolving current published artifact tuple\\n'",
-            "\n  rebuild_services_for_artifact_tuple\n",
+            "\n  build_runtime_image_for_artifact_tuple\n",
+            "\n  start_services_and_wait_for_readiness\n",
             'app php artisan app:conformance',
             'docker compose cp "app:${metadata_container_abs}" "$metadata_path"',
         );

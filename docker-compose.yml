@@ -46,6 +46,7 @@ services:
       retries: 10
 
   app:
+    image: ${COMPOSE_PROJECT_NAME:-sample-app}-runtime
     build: *app-build
     depends_on:
       mysql:
@@ -99,7 +100,7 @@ services:
       start_period: 30s
 
   worker:
-    build: *app-build
+    image: ${COMPOSE_PROJECT_NAME:-sample-app}-runtime
     depends_on:
       app:
         condition: service_healthy

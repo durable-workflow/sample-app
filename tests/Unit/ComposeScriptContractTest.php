@@ -48,7 +48,8 @@ final class ComposeScriptContractTest extends TestCase
         $script = $this->script('scripts/compose-conformance.sh');
 
         $this->assertStringContainsString('compose_diagnostics()', $script);
-        $this->assertStringContainsString('SAMPLE_APP_SERVICE_REBUILD_TIMEOUT_SECONDS:-600', $script);
+        $this->assertStringContainsString('SAMPLE_APP_RUNTIME_BUILD_TIMEOUT_SECONDS:-1200', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SERVICE_READINESS_TIMEOUT_SECONDS:-600', $script);
         $this->assertStringContainsString('SAMPLE_APP_DB_PROBE_TIMEOUT_SECONDS:-10', $script);
         $this->assertStringContainsString('SAMPLE_APP_MIGRATION_TIMEOUT_SECONDS:-180', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800', $script);
@@ -65,6 +66,8 @@ final class ComposeScriptContractTest extends TestCase
         $this->assertStringContainsString('prepared_schema_is_current()', $script);
         $this->assertStringContainsString('if prepared_stack_is_reusable; then', $script);
         $this->assertStringContainsString('SAMPLE_APP_SETUP_BUILD_INVOCATIONS="1"', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SETUP_BUILD_DURATION_MS', $script);
+        $this->assertStringContainsString('SAMPLE_APP_SETUP_READINESS_DURATION_MS', $script);
         $this->assertStringContainsString('finish_setup_measurement', $script);
         $this->assertStringContainsString('SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_SMOKE_FIRST', $script);
@@ -75,7 +78,8 @@ final class ComposeScriptContractTest extends TestCase
             $script,
             'export SAMPLE_APP_COMMIT="$sample_app_commit"',
             "printf '\\n==> resolving current published artifact tuple\\n'",
-            "\n  rebuild_services_for_artifact_tuple\n",
+            "\n  build_runtime_image_for_artifact_tuple\n",
+            "\n  start_services_and_wait_for_readiness\n",
             'docker compose exec -T app php artisan migrate:fresh --force',
             "\n  restart_worker_after_schema_refresh\n",
             'timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -T \\',
@@ -90,9 +94,10 @@ final class ComposeScriptContractTest extends TestCase
 
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_SMOKE_FIRST=1', $script);
         $this->assertStringContainsString('exec scripts/compose-conformance.sh "$@"', $script);
+        $this->assertSame(1, substr_count($conformanceScript, 'docker compose build app'));
         $this->assertSame(1, substr_count(
             $conformanceScript,
-            'docker compose up -d --build --wait app worker',
+            'docker compose up -d --no-build --wait app worker',
         ));
     }
 

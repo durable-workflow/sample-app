@@ -17,6 +17,8 @@ final class ConformanceSetupMetricsTest extends TestCase
         $values = [
             'SAMPLE_APP_SETUP_CACHE_STATE' => 'clean-cache',
             'SAMPLE_APP_SETUP_DURATION_MS' => '1234',
+            'SAMPLE_APP_SETUP_BUILD_DURATION_MS' => '1000',
+            'SAMPLE_APP_SETUP_READINESS_DURATION_MS' => '200',
             'SAMPLE_APP_SETUP_PEAK_DISK_GROWTH_BYTES' => '5678',
             'SAMPLE_APP_SETUP_STACK_REUSED' => 'true',
             'SAMPLE_APP_SETUP_BUILD_INVOCATIONS' => '0',
@@ -32,6 +34,8 @@ final class ConformanceSetupMetricsTest extends TestCase
             $this->assertSame([
                 'cache_state' => 'clean-cache',
                 'duration_ms' => 1234,
+                'build_duration_ms' => 1000,
+                'readiness_duration_ms' => 200,
                 'peak_disk_growth_bytes' => 5678,
                 'stack_reused' => true,
                 'build_invocations' => 0,

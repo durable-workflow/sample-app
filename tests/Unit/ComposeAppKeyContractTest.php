@@ -66,6 +66,20 @@ final class ComposeAppKeyContractTest extends TestCase
         );
     }
 
+    public function test_app_and_worker_share_one_project_scoped_runtime_image_build(): void
+    {
+        $compose = Yaml::parse($this->composeSource());
+        $services = $compose['services'] ?? [];
+
+        $this->assertSame(
+            '${COMPOSE_PROJECT_NAME:-sample-app}-runtime',
+            $services['app']['image'] ?? null,
+        );
+        $this->assertSame($services['app']['image'] ?? null, $services['worker']['image'] ?? null);
+        $this->assertArrayHasKey('build', $services['app'] ?? []);
+        $this->assertArrayNotHasKey('build', $services['worker'] ?? []);
+    }
+
     /**
      * @return array<string, string>
      */
