@@ -1,0 +1,14 @@
+{
+  "schema": "durable-workflow.sample-app.polyglot-qualified-artifact-tuple",
+  "schemaVersion": 1,
+  "source": "https://durable-workflow.com/public-artifact-compatibility-evidence.json",
+  "artifacts": {
+    "cli": "2.0.0-rc.12",
+    "sdk-php": "2.0.0-rc.6",
+    "sdk-python": "2.0.0-rc.8",
+    "sdk-rust": "2.0.0-rc.7",
+    "server": "2.0.0-rc.13",
+    "waterline": "2.0.0-rc.9",
+    "workflow": "2.0.0-rc.12"
+  }
+}

@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pinned_server_image="durableworkflow/server:2.0.0-rc.5"
-pinned_cli_version="2.0.0-rc.5"
-pinned_php_sdk_version="2.0.0-rc.5"
-pinned_python_sdk_version="2.0.0-rc.5"
-pinned_rust_sdk_version="2.0.0-rc.5"
-pinned_workflow_version="2.0.0-rc.5"
-pinned_waterline_version="2.0.0-rc.5"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pinned_artifact_tuple_file="${repo_root}/polyglot/qualified-artifact-tuple.json"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
@@ -238,13 +233,7 @@ current_workflow_version=""
 current_waterline_version=""
 
 if [[ "$artifact_source" == "pinned" ]]; then
-  current_server_version="$(semantic_version_from_text "$pinned_server_image")"
-  current_cli_version="$pinned_cli_version"
-  current_php_sdk_version="$pinned_php_sdk_version"
-  current_python_sdk_version="$pinned_python_sdk_version"
-  current_rust_sdk_version="$pinned_rust_sdk_version"
-  current_workflow_version="$pinned_workflow_version"
-  current_waterline_version="$pinned_waterline_version"
+  load_artifact_tuple_file "$pinned_artifact_tuple_file"
 elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE:-}" ]]; then
   load_artifact_tuple_file "$DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE"
 elif [[ -n "${DURABLE_WORKFLOW_ARTIFACT_TUPLE_URL:-}" ]]; then

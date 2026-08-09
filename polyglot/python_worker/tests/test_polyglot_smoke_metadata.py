@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -11,14 +12,14 @@ from pathlib import Path
 
 
 def pinned_python_sdk_version() -> str:
-    resolver = Path(__file__).parents[3] / "scripts" / "resolve-current-artifacts.sh"
-    match = re.search(
-        r'^pinned_python_sdk_version="([^"]+)"$',
-        resolver.read_text(),
-        re.MULTILINE,
+    tuple_path = (
+        Path(__file__).parents[3]
+        / "polyglot"
+        / "qualified-artifact-tuple.json"
     )
-    assert match is not None
-    return match.group(1)
+    payload = json.loads(tuple_path.read_text())
+
+    return payload["artifacts"]["sdk-python"]
 
 
 PYTHON_SDK_VERSION = pinned_python_sdk_version()
