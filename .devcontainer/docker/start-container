@@ -2,7 +2,34 @@
 
 set -euo pipefail
 
+remap_laravel_uid() {
+    local requested_uid="${SAMPLE_APP_UID:-}"
+    local current_uid
+    local existing_account
+
+    [[ -n "$requested_uid" ]] || return 0
+
+    if [[ ! "$requested_uid" =~ ^[1-9][0-9]*$ ]] || (( 10#$requested_uid > 2147483647 )); then
+        echo "SAMPLE_APP_UID must be a positive, non-root decimal user ID." >&2
+        return 1
+    fi
+
+    current_uid="$(id -u laravel)"
+    [[ "$requested_uid" != "$current_uid" ]] || return 0
+
+    existing_account="$(getent passwd "$requested_uid" | cut -d: -f1 || true)"
+    if [[ -n "$existing_account" && "$existing_account" != "laravel" ]]; then
+        echo "SAMPLE_APP_UID ${requested_uid} belongs to account ${existing_account}." >&2
+        return 1
+    fi
+
+    usermod --uid "$requested_uid" laravel
+    chown -R laravel:laravel /home/laravel
+}
+
 if [[ "$(id -u)" == "0" ]]; then
+    remap_laravel_uid
+
     ssh-keygen -A
     sshd -t
 
