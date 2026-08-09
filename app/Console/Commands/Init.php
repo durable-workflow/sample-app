@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands;
 
+use Dotenv\Dotenv;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Process;
-use Dotenv\Dotenv;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 
 class Init extends Command
 {
@@ -42,11 +42,11 @@ class Init extends Command
         $this->info('Updating README.md with Codespace URL...');
         $this->updateReadme();
 
-        $this->info('Installing npm dependencies...');
-        Process::run('npm install');
+        $this->info('Installing locked npm dependencies...');
+        Process::run('npm ci --no-audit --no-fund')->throw();
 
-        $this->info('Installing Playwright components...');
-        $this->installPlaywright();
+        $this->info('Verifying the preinstalled Playwright browser...');
+        $this->verifyPlaywrightRuntime();
 
         $this->info('Done!');
     }
@@ -252,36 +252,8 @@ class Init extends Command
         return true;
     }
 
-    /**
-     * Install Playwright components with progress tracking.
-     */
-    protected function installPlaywright()
+    protected function verifyPlaywrightRuntime(): void
     {
-        $totalSteps = 5;
-        $bar = $this->output->createProgressBar($totalSteps);
-        $bar->start();
-
-        $completedSteps = 0;
-        $components = 5;
-        $stepsPerComponent = $totalSteps / $components;
-
-        Process::run('npx playwright install', function (string $type, string $output) use ($bar, &$completedSteps, $stepsPerComponent) {
-            if ($type === 'out') {
-                if (preg_match('/\|\s+(\d+)%\s+of/', $output, $matches)) {
-                    $percent = (int) $matches[1];
-                    $progressWithinComponent = ($percent / 100) * $stepsPerComponent;
-                    $newProgress = min($completedSteps + (int)$progressWithinComponent, 100);
-                    $bar->setProgress($newProgress);
-                }
-
-                if (preg_match('/downloaded to/', $output)) {
-                    $completedSteps += $stepsPerComponent;
-                    $bar->setProgress($completedSteps);
-                }
-            }
-        });
-
-        $bar->finish();
-        $this->newLine();
+        Process::run('node docker/playwright-smoke.js')->throw();
     }
 }

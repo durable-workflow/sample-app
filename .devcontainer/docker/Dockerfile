@@ -1,62 +1,102 @@
-FROM ubuntu:22.04
+FROM node:22-bookworm-slim AS node
 
-ARG NODE_VERSION=18
-ARG POSTGRES_VERSION=15
+FROM composer:2 AS composer
+
+FROM php:8.4-cli-bookworm
+
+ARG VCS_REF=unknown
+
+LABEL org.opencontainers.image.title="Durable Workflow Sample App development container" \
+    org.opencontainers.image.description="PHP, Node, Composer, and Chromium environment for the Durable Workflow Sample App" \
+    org.opencontainers.image.source="https://github.com/durable-workflow/sample-app" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.licenses="MIT"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /var/www/html
 
-ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
+COPY --from=node /usr/local/ /usr/local/
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
+COPY package-lock.json /tmp/sample-app-package-lock.json
 
-RUN set -eux && \
-    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
-    apt-get update && \
-    apt-get install -y \
-        gnupg gosu curl ca-certificates zip unzip git supervisor sqlite3 \
-        libcap2-bin libpng-dev python2 dnsutils && \
-    curl -sS 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x14aa40ec0831756756d7f66c4f4ea0aae5267a6c' | gpg --dearmor \
-        | tee /etc/apt/keyrings/ppa_ondrej_php.gpg > /dev/null && \
-    echo "deb [signed-by=/etc/apt/keyrings/ppa_ondrej_php.gpg] \
-        https://ppa.launchpadcontent.net/ondrej/php/ubuntu jammy main" \
-        > /etc/apt/sources.list.d/ppa_ondrej_php.list && \
-    curl -sS https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor \
-        | tee /etc/apt/keyrings/pgdg.gpg >/dev/null && \
-    echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] \
-        http://apt.postgresql.org/pub/repos/apt jammy-pgdg main" \
-        > /etc/apt/sources.list.d/pgdg.list && \
-    curl -sLS https://deb.nodesource.com/setup_$NODE_VERSION.x | bash - && \
-    curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor \
-        | tee /etc/apt/keyrings/yarn.gpg >/dev/null && \
-    echo "deb [signed-by=/etc/apt/keyrings/yarn.gpg] https://dl.yarnpkg.com/debian/ stable main" \
-        > /etc/apt/sources.list.d/yarn.list && \
-    apt-get update && \
-    apt-get install -y \
-        php8.4-cli php8.4-dev php8.4-pgsql php8.4-sqlite3 php8.4-gd php8.4-imagick \
-        php8.4-curl php8.4-imap php8.4-mysql php8.4-mbstring php8.4-xml \
-        php8.4-zip php8.4-bcmath php8.4-soap php8.4-intl php8.4-readline \
-        php8.4-ldap php8.4-mongodb php8.4-msgpack php8.4-igbinary php8.4-redis \
-        php8.4-swoole php8.4-memcached php8.4-pcov php8.4-xdebug && \
-    curl -sLS https://getcomposer.org/installer | php -- --install-dir=/usr/bin/ --filename=composer && \
-    apt-get install -y nodejs && \
-    npm install -g npm && \
-    apt-get install -y postgresql-client-$POSTGRES_VERSION && \
-    npx playwright install --with-deps && \
-    apt-get -y autoremove && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    setcap "cap_net_bind_service=+ep" /usr/bin/php8.4 && \
-    groupadd --force -g 1000 laravel && \
-    useradd -ms /bin/bash --no-user-group -g 1000 -u 1337 laravel
+RUN set -eux; \
+    ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
+    echo "${TZ}" > /etc/timezone; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        default-mysql-client \
+        ffmpeg \
+        git \
+        gosu \
+        libcap2-bin \
+        libcurl4-openssl-dev \
+        libfreetype6-dev \
+        libicu-dev \
+        libjpeg62-turbo-dev \
+        libonig-dev \
+        libpng-dev \
+        libsqlite3-dev \
+        libzip-dev \
+        openssh-server \
+        redis-tools \
+        sqlite3 \
+        supervisor \
+        unzip \
+        zip; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-install -j"$(nproc)" \
+        bcmath \
+        curl \
+        gd \
+        intl \
+        mbstring \
+        pcntl \
+        pdo_mysql \
+        pdo_sqlite \
+        zip; \
+    sh /usr/local/bin/install-phpredis; \
+    playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
+    test -n "$playwright_version"; \
+    npm install --global "playwright@${playwright_version}"; \
+    playwright install --with-deps chromium; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*; \
+    setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
+    getcap "$(command -v php)" | grep -F 'cap_net_bind_service=ep'; \
+    groupadd --gid 1000 laravel; \
+    useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
+    passwd --delete laravel; \
+    install -d -o laravel -g laravel /home/laravel/.composer /ms-playwright /var/www/html; \
+    install -d -m 0700 -o laravel -g laravel /home/laravel/.ssh; \
+    install -d -m 0755 /run/sshd; \
+    printf '%s\n' \
+        'KbdInteractiveAuthentication no' \
+        'PasswordAuthentication no' \
+        'PermitEmptyPasswords no' \
+        'PermitRootLogin no' \
+        'PubkeyAuthentication yes' \
+        > /etc/ssh/sshd_config.d/99-sample-app.conf; \
+    ssh-keygen -A; \
+    sshd -t; \
+    rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 
-COPY start-container /usr/local/bin/start-container
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY php.ini /etc/php/8.4/cli/conf.d/99-laravel.ini
+ENV COMPOSER_HOME=/home/laravel/.composer \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-RUN chmod +x /usr/local/bin/start-container
+COPY .devcontainer/docker/start-container /usr/local/bin/start-container
+COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image
+COPY .devcontainer/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY .devcontainer/docker/php.ini /usr/local/etc/php/conf.d/99-laravel.ini
 
-RUN phpdismod -v 8.4 xdebug
-RUN phpdismod -v 8.4 pcov
-RUN phpdismod -v 8.4 swoole
+RUN chmod +x /usr/local/bin/start-container /usr/local/bin/verify-devcontainer-image \
+    && DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image
 
-EXPOSE 8000
+EXPOSE 22 80 5173
 
 ENTRYPOINT ["start-container"]

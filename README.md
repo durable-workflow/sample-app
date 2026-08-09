@@ -10,7 +10,10 @@ Create a codespace from the main branch of this repo.
 <img src="https://user-images.githubusercontent.com/1130888/233664377-f300ad50-5436-4bb8-b172-c52e12047264.png" alt="image" width="300">
 
 ### Step 2
-Once the codespace has been created, wait for the codespace to build. This should take between 5 to 10 minutes.
+Wait while Codespaces pulls the prepared Sample App development image and
+installs the repository's Composer and npm dependencies. PHP, Node, Composer,
+Chromium, and operating-system packages are already in the image, so they are
+not rebuilt for each Codespace.
 
 
 ### Step 3
@@ -19,7 +22,8 @@ Once it is done. You will see the editor and the terminal at the bottom.
 <img src="https://user-images.githubusercontent.com/1130888/233665550-1a4f2098-2919-4108-ac9f-bef1a9f2f47c.png" alt="image" width="400">
 
 ### Step 4
-Run the init command to setup the app, install extra dependencies and run the migrations.
+Run the init command to set up the app, install its locked npm dependencies,
+verify the preinstalled Chromium runtime, and run the migrations.
 
 ```bash
 php artisan app:init
@@ -96,6 +100,46 @@ php artisan test
 ```
 
 That's it! You can now create and test workflows.
+
+### Prebuilt development image
+
+The default devcontainer Compose file pulls
+`ghcr.io/durable-workflow/sample-app-devcontainer:main`. The same image is
+available from Docker Hub as
+`durableworkflow/sample-app-devcontainer:main`; select it without changing the
+Compose file by setting `SAMPLE_APP_DEVCONTAINER_IMAGE` before opening the
+devcontainer. Both channels support Linux AMD64 and ARM64.
+
+`main` is the moving channel built from protected `main` pushes and the weekly
+refresh. The Chromium revision follows the exact Playwright version in
+`package-lock.json`, which is covered by the weekly dependency update path.
+Every publication is retained under an immutable
+`sha-<source-revision>-run-<workflow-run>-<attempt>` tag in both registries.
+Published indexes include OCI source/revision labels, BuildKit provenance, and
+an SPDX SBOM. The moving tags advance only after both registry copies and both
+architectures pass the unauthenticated Compose qualification.
+
+The prepared image also runs the OpenSSH server expected by Codespaces tooling,
+so remote shell and creation-log access do not require a per-Codespace feature
+install.
+
+There is deliberately no local Dockerfile fallback in the Codespaces Compose
+topology. A pull or qualification failure stops setup instead of reconstructing
+the old operating-system environment. To qualify a published image manually
+and write phase timings to a JSON file, run:
+
+```bash
+scripts/ci/qualify-devcontainer-image.sh \
+  ghcr.io/durable-workflow/sample-app-devcontainer:main \
+  linux/amd64 \
+  devcontainer-qualification-timing.json
+```
+
+The qualification pulls the selected image, starts the same MySQL/Redis and
+Laravel/microservice topology with `--no-build`, installs only repository
+dependencies, launches Chromium as the non-root `laravel` user, verifies the
+SSH endpoint, checks the application health endpoint and mounted-checkout
+editability, and records fresh and warm startup timings.
 
 ----
 

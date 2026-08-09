@@ -174,6 +174,49 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertEqual(1, joined.count("uses: actions/cache@"))
         self.assertIn("${{ github.event_name }}-", php)
 
+    def test_devcontainer_publication_isolated_from_untrusted_validation(self) -> None:
+        workflow = read_workflow("devcontainer-image.yml")
+        validate = job_block(workflow, "validate")
+        publish = job_block(workflow, "publish")
+        qualification = job_block(workflow, "qualify-published")
+        promotion = job_block(workflow, "promote-main")
+
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("github.event_name == 'pull_request'", validate)
+        self.assertIn("contents: read", validate)
+        self.assertNotIn("packages: write", validate)
+        self.assertNotIn("secrets.", validate)
+        self.assertNotIn("docker/login-action", validate)
+        self.assertNotIn("cache-from", validate)
+        self.assertNotIn("cache-to", validate)
+        self.assertIn("no-cache: true", validate)
+
+        self.assertIn("github.repository == 'durable-workflow/sample-app'", publish)
+        self.assertIn("github.ref == 'refs/heads/main'", publish)
+        self.assertIn("packages: write", publish)
+        self.assertIn("secrets.DOCKERHUB_TOKEN", publish)
+        self.assertIn("platforms: linux/amd64,linux/arm64", publish)
+        self.assertIn("provenance: mode=max", publish)
+        self.assertIn("sbom: true", publish)
+        self.assertNotIn("cache-from", publish)
+        self.assertNotIn("cache-to", publish)
+
+        self.assertIn("needs: [publish]", qualification)
+        self.assertNotIn("secrets.", qualification)
+        self.assertNotIn("docker/login-action", qualification)
+        self.assertIn("needs: [publish, qualify-published]", promotion)
+
+        action_refs = []
+        for line in workflow.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("uses: "):
+                continue
+            action_refs.append(stripped.split("@", maxsplit=1)[1].split()[0])
+
+        self.assertTrue(action_refs)
+        for ref in action_refs:
+            self.assertRegex(ref, r"^[0-9a-f]{40}$")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

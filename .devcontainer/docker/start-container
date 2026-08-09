@@ -1,20 +1,37 @@
 #!/usr/bin/env bash
 
-if [ ! -z "1000" ]; then
-    usermod -u 1000 laravel
-fi
+set -euo pipefail
 
-chown -R laravel:laravel /var/www/html
-composer install --prefer-dist --no-progress --no-interaction
+if [[ "$(id -u)" == "0" ]]; then
+    ssh-keygen -A
+    sshd -t
 
-if [ ! -d /.composer ]; then
-    mkdir /.composer
-fi
+    if ! gosu laravel bash -c '
+        test -w /var/www/html
+        test ! -e /var/www/html/composer.json || test -w /var/www/html/composer.json
+        test ! -d /var/www/html/vendor || test -w /var/www/html/vendor
+        test ! -d /var/www/html/node_modules || test -w /var/www/html/node_modules
+    '; then
+        chown -R laravel:laravel /var/www/html
+    fi
 
-chmod -R ugo+rw /.composer
+    if [[ -f composer.json ]]; then
+        gosu laravel composer install --prefer-dist --no-progress --no-interaction
+    fi
 
-if [ $# -gt 0 ]; then
-    exec gosu 1000 "$@"
-else
+    if (( $# > 0 )); then
+        exec gosu laravel "$@"
+    fi
+
     exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
 fi
+
+if [[ -f composer.json ]]; then
+    composer install --prefer-dist --no-progress --no-interaction
+fi
+
+if (( $# > 0 )); then
+    exec "$@"
+fi
+
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

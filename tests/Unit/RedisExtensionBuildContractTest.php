@@ -13,6 +13,7 @@ use SplFileInfo;
 final class RedisExtensionBuildContractTest extends TestCase
 {
     private const REDIS_DOCKERFILES = [
+        '.devcontainer/docker/Dockerfile',
         'Dockerfile',
         'polyglot/laravel/Dockerfile',
     ];

@@ -2,9 +2,8 @@ name: sample-app
 
 services:
     laravel:
-        build:
-            context: .
-            dockerfile: Dockerfile
+        image: '${SAMPLE_APP_DEVCONTAINER_IMAGE:-ghcr.io/durable-workflow/sample-app-devcontainer:main}'
+        pull_policy: '${SAMPLE_APP_DEVCONTAINER_PULL_POLICY:-always}'
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
@@ -17,10 +16,15 @@ services:
         depends_on:
             - mysql
             - redis
+        healthcheck:
+            test: ["CMD", "curl", "--fail", "--silent", "http://localhost/up"]
+            interval: 5s
+            retries: 60
+            start_period: 30s
+            timeout: 5s
     microservice:
-        build:
-            context: .
-            dockerfile: Dockerfile
+        image: '${SAMPLE_APP_DEVCONTAINER_IMAGE:-ghcr.io/durable-workflow/sample-app-devcontainer:main}'
+        pull_policy: '${SAMPLE_APP_DEVCONTAINER_PULL_POLICY:-always}'
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
@@ -34,7 +38,7 @@ services:
             - redis
         command: ["php", "artisan", "queue:listen", "shared", "--queue=activity"]
     mysql:
-        image: 'mysql/mysql-server:8.0'
+        image: 'mysql:8.0'
         ports:
             - '${FORWARD_DB_PORT:-13306}:3306'
         environment:
