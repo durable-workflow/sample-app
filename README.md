@@ -27,10 +27,11 @@ When setup finishes, choose either runnable path:
 
 ### Embedded Laravel
 
-Initialize the app and start Laravel's web, queue, log, and asset processes:
+Codespaces setup has already created the environment, generated the application
+key, migrated the database, and verified MySQL, Redis, and Playwright. Start
+Laravel's web, queue, log, and asset processes:
 
 ```bash
-php artisan app:init
 composer run dev
 ```
 

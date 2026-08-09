@@ -97,6 +97,13 @@ export FORWARD_DB_PORT=13306
 export FORWARD_REDIS_PORT=16379
 
 compose=(docker compose --file "$compose_file")
+tracked_status_before="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
+
+if [[ -n "$tracked_status_before" ]]; then
+    echo 'Devcontainer qualification requires a checkout with no tracked changes.' >&2
+    printf '%s\n' "$tracked_status_before" >&2
+    exit 1
+fi
 
 cleanup() {
     local status=$?
@@ -169,18 +176,38 @@ container_readiness_started_ms="$(timestamp_ms)"
 container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
-"${compose[@]}" run --rm --no-deps laravel php artisan app:init
+"${compose[@]}" up --detach --no-build laravel microservice
+"${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
 "${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
 dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
 
 application_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait
-"${compose[@]}" exec -T --user laravel laravel curl --fail --silent http://localhost/up >/dev/null
+"${compose[@]}" exec -T --user laravel laravel bash -euc '
+    [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/up)" == 200 ]]
+    [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/)" == 200 ]]
+    php artisan migrate:status --no-interaction
+    [[ "$(redis-cli --host redis --raw ping)" == PONG ]]
+'
 application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"
 
 "${compose[@]}" exec -T --user laravel laravel verify-devcontainer-image
 "${compose[@]}" exec -T laravel sshd -t
 "${compose[@]}" exec -T --user laravel laravel node docker/playwright-smoke.js
+first_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"
+[[ "$first_app_key" == base64:* ]]
+"${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
+second_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"
+[[ "$second_app_key" == "$first_app_key" ]]
+
+tracked_status_after="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
+
+if [[ -n "$tracked_status_after" ]]; then
+    echo 'Codespaces setup modified tracked source files.' >&2
+    printf '%s\n' "$tracked_status_after" >&2
+    exit 1
+fi
+
 "${compose[@]}" exec -T laravel bash -euc '
     exec 3<>/dev/tcp/127.0.0.1/22
     IFS= read -r -t 5 ssh_banner <&3

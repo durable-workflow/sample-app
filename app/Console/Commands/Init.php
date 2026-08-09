@@ -2,11 +2,13 @@
 
 namespace App\Console\Commands;
 
-use Dotenv\Dotenv;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Redis;
+use RuntimeException;
+use Throwable;
 
 class Init extends Command
 {
@@ -27,28 +29,53 @@ class Init extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
-        $this->info('Ensuring .env file exists and APP_KEY is set...');
-        $this->ensureEnv();
+        try {
+            $this->info('Ensuring .env file exists...');
+            $this->ensureEnv();
 
-        $this->info('Seeding .env with recommended defaults...');
-        $this->seedEnvDefaults();
+            $this->info('Seeding .env with recommended defaults...');
+            $this->seedEnvDefaults();
 
-        $this->info('Running migrations...');
-        
-        Artisan::call('migrate', ['--force' => true]);
+            $this->info('Ensuring APP_KEY is set...');
+            $this->ensureApplicationKey();
 
-        $this->info('Updating README.md with Codespace URL...');
-        $this->updateReadme();
+            $this->info('Running migrations...');
+            $migrationStatus = $this->call('migrate', [
+                '--force' => true,
+                '--no-interaction' => true,
+            ]);
 
-        $this->info('Installing locked npm dependencies...');
-        Process::run('npm ci --no-audit --no-fund')->throw();
+            if ($migrationStatus !== self::SUCCESS) {
+                throw new RuntimeException('MySQL migrations failed. Check the MySQL container health and credentials.');
+            }
 
-        $this->info('Verifying the preinstalled Playwright browser...');
-        $this->verifyPlaywrightRuntime();
+            $this->verifyDependencies();
 
-        $this->info('Done!');
+            $this->info('Installing locked npm dependencies...');
+            $this->runProcess(
+                'npm ci --no-audit --no-fund',
+                'Locked npm dependency installation',
+                300,
+            );
+
+            $this->info('Verifying the preinstalled Playwright browser...');
+            $this->runProcess(
+                'node docker/playwright-smoke.js',
+                'Playwright Chromium verification',
+                60,
+            );
+
+            $this->info('Done!');
+
+            return self::SUCCESS;
+        } catch (Throwable $exception) {
+            $this->newLine();
+            $this->error("Setup failed: {$exception->getMessage()}");
+
+            return self::FAILURE;
+        }
     }
 
     /**
@@ -71,27 +98,10 @@ class Init extends Command
             'SHARED_DB_PASSWORD' => 'password',
         ];
 
-        // Ensure APP_KEY exists in the file; if key:generate already ran, keep it.
-        $envFile = $this->laravel->environmentFilePath();
-        $envContents = file_exists($envFile) ? file_get_contents($envFile) : '';
-
-        if (preg_match('/^APP_KEY=(.+)$/m', $envContents, $matches) && !empty(trim($matches[1]))) {
-            $defaults['APP_KEY'] = trim($matches[1]);
-        } else {
-            // If APP_KEY wasn't generated for some reason, leave it blank so existing logic can generate it.
-            $defaults['APP_KEY'] = '';
-        }
-
         foreach ($defaults as $key => $value) {
-            // Don't overwrite an existing non-empty value for APP_KEY
-            if ($key === 'APP_KEY' && $value === '') {
-                continue;
-            }
-
             $this->setEnvVariable($key, $value);
         }
 
-        // After modifying the .env file, reload env and update runtime config values
         $this->reloadEnvConfig();
     }
 
@@ -135,8 +145,11 @@ class Init extends Command
 
         $config = $this->laravel->make('config');
 
-        // Use parsed values (fallback to existing config)
+        $config->set('app.key', $pairs['APP_KEY'] ?? $config->get('app.key'));
+        $config->set('cache.default', $pairs['CACHE_STORE'] ?? $config->get('cache.default'));
         $config->set('database.default', $pairs['DB_CONNECTION'] ?? $config->get('database.default'));
+        $config->set('queue.default', $pairs['QUEUE_CONNECTION'] ?? $config->get('queue.default'));
+        $config->set('session.driver', $pairs['SESSION_DRIVER'] ?? $config->get('session.driver'));
 
         $config->set('database.connections.mysql.host', $pairs['DB_HOST'] ?? $config->get('database.connections.mysql.host'));
         $config->set('database.connections.mysql.port', $pairs['DB_PORT'] ?? $config->get('database.connections.mysql.port'));
@@ -150,16 +163,17 @@ class Init extends Command
         $config->set('database.connections.shared.username', $pairs['SHARED_DB_USERNAME'] ?? $config->get('database.connections.shared.username'));
         $config->set('database.connections.shared.password', $pairs['SHARED_DB_PASSWORD'] ?? $config->get('database.connections.shared.password'));
 
-        try {
-            DB::purge('mysql');
-            DB::purge('shared');
-        } catch (\Throwable $e) {
-            // ignore
+        foreach (['default', 'cache'] as $connection) {
+            $config->set("database.redis.{$connection}.host", $pairs['REDIS_HOST'] ?? $config->get("database.redis.{$connection}.host"));
+            $config->set("database.redis.{$connection}.port", $pairs['REDIS_PORT'] ?? $config->get("database.redis.{$connection}.port"));
         }
+
+        DB::purge('mysql');
+        DB::purge('shared');
     }
 
     /**
-     * Ensure an .env file exists (copy from .env.example if needed) and generate APP_KEY.
+     * Ensure an .env file exists by copying the tracked example when needed.
      */
     protected function ensureEnv(): void
     {
@@ -167,78 +181,56 @@ class Init extends Command
         $exampleFile = base_path('.env.example');
 
         if (! file_exists($envFile) && file_exists($exampleFile)) {
-            copy($exampleFile, $envFile);
-            $this->info('.env created from .env.example');
-            try {
-                if (class_exists(Dotenv::class)) {
-                    Dotenv::createImmutable(base_path())->safeLoad();
-                }
-            } catch (\Throwable $e) {
-                // If we can't reload env here, continue; later steps may still work.
+            if (! copy($exampleFile, $envFile)) {
+                throw new RuntimeException('Unable to create .env from .env.example. Check checkout permissions.');
             }
+
+            $this->info('.env created from .env.example');
         }
 
-        // If .env exists but APP_KEY is empty or missing, run key:generate
-        $envContents = file_exists($envFile) ? file_get_contents($envFile) : '';
-        $hasKey = preg_match('/^APP_KEY=(.+)$/m', $envContents, $matches) && !empty(trim($matches[1]));
-
-        if (! $hasKey) {
-            Artisan::call('key:generate', ['--ansi' => true]);
-            $this->info('Application key generated.');
-            try {
-                if (class_exists(Dotenv::class)) {
-                    Dotenv::createImmutable(base_path())->safeLoad();
-                }
-            } catch (\Throwable $e) {
-                // ignore
-            }
+        if (! file_exists($envFile)) {
+            throw new RuntimeException('.env.example is missing; unable to create the Laravel environment.');
         }
     }
 
     /**
-     * Update README.md with the correct Codespace URL.
+     * Generate an application key only when the environment does not have one.
      */
-    protected function updateReadme()
+    protected function ensureApplicationKey(): void
     {
-        $codespaceName = env('CODESPACE_NAME');
-        $portDomain = env('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN');
+        $envFile = $this->laravel->environmentFilePath();
+        $envContents = file_get_contents($envFile);
 
-        if (!$codespaceName || !$portDomain) {
-            $this->info('GitHub Codespaces variables not found; skipping README Codespace URL update.');
+        if (! is_string($envContents)) {
+            throw new RuntimeException('Unable to read .env while checking APP_KEY.');
+        }
+
+        if (preg_match('/^APP_KEY=(.+)$/m', $envContents, $matches) === 1 && trim($matches[1]) !== '') {
+            $this->reloadEnvConfig();
+
             return;
         }
 
-        $realUrl = "https://{$codespaceName}-18080.{$portDomain}";
-
-        $readmeFile = base_path('README.md');
-        if (!file_exists($readmeFile)) {
-            $this->error('README.md file not found.');
-            return;
+        if (Artisan::call('key:generate', ['--ansi' => true]) !== self::SUCCESS) {
+            throw new RuntimeException('Laravel could not generate APP_KEY. Check .env permissions.');
         }
 
-        $readmeContents = file_get_contents($readmeFile);
-        $updatedReadme = preg_replace(
-            '/https:\/\/\[your-codespace-name\]-18080\.preview\.app\.github\.dev/',
-            $realUrl,
-            $readmeContents
-        );
-
-        file_put_contents($readmeFile, $updatedReadme);
-
-        $this->info('README.md updated successfully.');
+        $this->reloadEnvConfig();
+        $this->info('Application key generated.');
     }
 
     /**
      * Set a given key-value pair in the .env file.
-     *
-     * @param string $key
-     * @param string $value
-     * @return bool
      */
-    protected function setEnvVariable($key, $value)
+    protected function setEnvVariable(string $key, string $value): void
     {
         $envFile = $this->laravel->environmentFilePath();
         $envContents = file_get_contents($envFile);
+
+        if (! is_string($envContents)) {
+            throw new RuntimeException("Unable to read {$envFile} while setting {$key}.");
+        }
+
         $pattern = "/^{$key}=.*/m";
         $replacement = "{$key}={$value}";
 
@@ -248,12 +240,42 @@ class Init extends Command
             $envContents .= "\n{$replacement}";
         }
 
-        file_put_contents($envFile, $envContents);
-        return true;
+        if (file_put_contents($envFile, $envContents) === false) {
+            throw new RuntimeException("Unable to update {$key} in {$envFile}.");
+        }
     }
 
-    protected function verifyPlaywrightRuntime(): void
+    protected function verifyDependencies(): void
     {
-        Process::run('node docker/playwright-smoke.js')->throw();
+        $migrationTable = config('database.migrations.table', 'migrations');
+        $migrationCount = DB::connection('mysql')->table($migrationTable)->count();
+        $this->info("MySQL is ready; {$migrationCount} migrations are recorded.");
+
+        $reply = Redis::connection()->command('ping');
+
+        if ($reply !== true && $reply !== 'PONG') {
+            throw new RuntimeException('Redis returned an unexpected response to PING.');
+        }
+
+        $this->info('Redis is ready; PING returned PONG.');
+    }
+
+    protected function runProcess(string $command, string $label, int $timeout): void
+    {
+        $result = Process::timeout($timeout)->run($command);
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $details = trim($result->errorOutput());
+
+        if ($details === '') {
+            $details = trim($result->output());
+        }
+
+        $suffix = $details === '' ? '' : " Output: {$details}";
+
+        throw new RuntimeException("{$label} failed with exit code {$result->exitCode()}.{$suffix}");
     }
 }

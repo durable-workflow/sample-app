@@ -23,7 +23,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertSame('laravel', $devcontainer['service'] ?? null);
         $this->assertSame('laravel', $devcontainer['remoteUser'] ?? null);
         $this->assertSame(
-            'npm ci --no-audit --no-fund && node docker/playwright-smoke.js',
+            '.devcontainer/post-create.sh',
             $devcontainer['postCreateCommand'] ?? null,
         );
 
@@ -38,10 +38,21 @@ final class DevcontainerImageContractTest extends TestCase
                 '${SAMPLE_APP_UID:-}',
                 $services[$serviceName]['environment']['SAMPLE_APP_UID'] ?? null,
             );
+            $this->assertSame(
+                [
+                    'mysql' => ['condition' => 'service_healthy'],
+                    'redis' => ['condition' => 'service_healthy'],
+                ],
+                $services[$serviceName]['depends_on'] ?? null,
+            );
         }
 
         $this->assertSame('mysql:8.0', $services['mysql']['image'] ?? null);
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
+        $this->assertSame(30, $services['mysql']['healthcheck']['retries'] ?? null);
+        $this->assertSame('30s', $services['mysql']['healthcheck']['start_period'] ?? null);
+        $this->assertSame(30, $services['redis']['healthcheck']['retries'] ?? null);
+        $this->assertSame('5s', $services['redis']['healthcheck']['start_period'] ?? null);
     }
 
     public function test_image_bakes_and_verifies_the_supported_toolchain(): void
@@ -50,6 +61,7 @@ final class DevcontainerImageContractTest extends TestCase
         $supervisor = $this->contents('.devcontainer/docker/supervisord.conf');
         $verification = $this->contents('.devcontainer/docker/verify-image.sh');
         $initCommand = $this->contents('app/Console/Commands/Init.php');
+        $postCreate = $this->contents('.devcontainer/post-create.sh');
 
         $this->assertStringContainsString('FROM php:8.4-cli-bookworm', $dockerfile);
         $this->assertStringContainsString('FROM node:22-bookworm-slim', $dockerfile);
@@ -91,9 +103,16 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString("compgen -G '/etc/ssh/ssh_host_*_key'", $verification);
         $this->assertStringContainsString('must not contain shared SSH host private keys', $verification);
 
-        $this->assertStringContainsString("Process::run('npm ci --no-audit --no-fund')->throw()", $initCommand);
-        $this->assertStringContainsString("Process::run('node docker/playwright-smoke.js')->throw()", $initCommand);
+        $this->assertStringContainsString("'npm ci --no-audit --no-fund'", $initCommand);
+        $this->assertStringContainsString("'node docker/playwright-smoke.js'", $initCommand);
+        $this->assertStringContainsString("DB::connection('mysql')->table", $initCommand);
+        $this->assertStringContainsString("Redis::connection()->command('ping')", $initCommand);
         $this->assertStringNotContainsString('npx playwright install', $initCommand);
+        $this->assertStringNotContainsString('README.md', $initCommand);
+        $this->assertStringContainsString('php artisan app:init --no-interaction', $postCreate);
+        $this->assertStringContainsString('http://127.0.0.1/up', $postCreate);
+        $this->assertStringContainsString('http://127.0.0.1/', $postCreate);
+        $this->assertTrue(is_executable($this->repoPath('.devcontainer/post-create.sh')));
     }
 
     public function test_publication_separates_untrusted_builds_from_protected_registry_jobs(): void
@@ -196,6 +215,12 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('runner', $script);
         $this->assertStringContainsString('export SAMPLE_APP_UID="$(id -u)"', $script);
         $this->assertStringContainsString('[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]', $script);
+        $this->assertStringContainsString('exec -T --user laravel laravel .devcontainer/post-create.sh', $script);
+        $this->assertStringContainsString('php artisan migrate:status --no-interaction', $script);
+        $this->assertStringContainsString('redis-cli --host redis --raw ping', $script);
+        $this->assertStringContainsString('second_app_key', $script);
+        $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);
+        $this->assertStringContainsString('http://localhost/', $script);
         $this->assertStringContainsString('exec -T laravel sshd -t', $script);
         $this->assertStringContainsString('/dev/tcp/127.0.0.1/22', $script);
         $this->assertStringContainsString('laravel@127.0.0.1 id -u', $script);

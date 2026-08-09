@@ -16,8 +16,10 @@ services:
         networks:
             - laravel
         depends_on:
-            - mysql
-            - redis
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
         healthcheck:
             test: ["CMD", "curl", "--fail", "--silent", "http://localhost/up"]
             interval: 5s
@@ -38,8 +40,10 @@ services:
         networks:
             - laravel
         depends_on:
-            - mysql
-            - redis
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
         command: ["php", "artisan", "queue:listen", "shared", "--queue=activity"]
     mysql:
         image: 'mysql:8.0'
@@ -58,8 +62,10 @@ services:
         networks:
             - laravel
         healthcheck:
-            test: ["CMD", "mysqladmin", "ping", "-p${DB_PASSWORD:-password}"]
-            retries: 3
+            test: ["CMD-SHELL", "MYSQL_PWD=$${MYSQL_PASSWORD} mysqladmin ping --host=127.0.0.1 --protocol=TCP --user=$${MYSQL_USER} --silent"]
+            interval: 5s
+            retries: 30
+            start_period: 30s
             timeout: 5s
     redis:
         image: 'redis:alpine'
@@ -70,8 +76,10 @@ services:
         networks:
             - laravel
         healthcheck:
-            test: ["CMD", "redis-cli", "ping"]
-            retries: 3
+            test: ["CMD-SHELL", "redis-cli --raw ping | grep -Fx PONG"]
+            interval: 5s
+            retries: 30
+            start_period: 5s
             timeout: 5s
 networks:
     laravel:

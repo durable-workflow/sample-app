@@ -6,6 +6,6 @@
 	"service": "laravel",
 	"workspaceFolder": "/var/www/html",
 	"remoteUser": "laravel",
-	"postCreateCommand": "npm ci --no-audit --no-fund && node docker/playwright-smoke.js",
+	"postCreateCommand": ".devcontainer/post-create.sh",
 	"forwardPorts": [18080]
 }
