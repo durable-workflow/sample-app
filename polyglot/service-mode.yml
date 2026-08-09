@@ -39,6 +39,7 @@ x-laravel-environment: &laravel-environment
   REDIS_HOST: redis
   QUEUE_CONNECTION: redis
   CACHE_STORE: redis
+  SESSION_DRIVER: file
   DURABLE_WORKFLOW_ENDPOINT: http://server:8080
   DURABLE_WORKFLOW_NAMESPACE: default
   DURABLE_WORKFLOW_TASK_QUEUE: sample-service-php
