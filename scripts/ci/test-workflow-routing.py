@@ -177,12 +177,39 @@ class WorkflowRoutingTest(unittest.TestCase):
     def test_devcontainer_publication_isolated_from_untrusted_validation(self) -> None:
         workflow = read_workflow("devcontainer-image.yml")
         validate = job_block(workflow, "validate")
-        publish = job_block(workflow, "publish")
+        candidate_evidence = job_block(workflow, "candidate-evidence")
+        publish = job_block(workflow, "publish-architecture")
+        assembly = job_block(workflow, "assemble-indexes")
         qualification = job_block(workflow, "qualify-published")
         promotion = job_block(workflow, "promote-main")
+        moving_channel = job_block(workflow, "verify-main")
+        publication_evidence = job_block(workflow, "publication-evidence")
+
+        matrix_runner = (
+            "runs-on: ${{ github.server_url == 'https://github.com' "
+            "&& matrix.runner || 'ubuntu-latest' }}"
+        )
+        aggregation_runner = (
+            "runs-on: ${{ github.server_url == 'https://github.com' "
+            "&& 'ubuntu-24.04' || 'ubuntu-latest' }}"
+        )
 
         self.assertNotIn("pull_request_target", workflow)
+        self.assertNotIn("setup-qemu-action", workflow)
+        self.assertNotIn("QEMU", workflow)
         self.assertIn("github.event_name == 'pull_request'", validate)
+        self.assertIn("runner: ubuntu-24.04", validate)
+        self.assertIn("runner: ubuntu-24.04-arm", validate)
+        for block in (validate, publish, qualification):
+            self.assertIn(matrix_runner, block)
+        for block in (
+            candidate_evidence,
+            assembly,
+            promotion,
+            moving_channel,
+            publication_evidence,
+        ):
+            self.assertIn(aggregation_runner, block)
         self.assertIn("contents: read", validate)
         self.assertNotIn("packages: write", validate)
         self.assertNotIn("secrets.", validate)
@@ -190,21 +217,35 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertNotIn("cache-from", validate)
         self.assertNotIn("cache-to", validate)
         self.assertIn("no-cache: true", validate)
+        self.assertIn("needs: [validate]", candidate_evidence)
+        self.assertIn("summarize-devcontainer-evidence.py", candidate_evidence)
 
         self.assertIn("github.repository == 'durable-workflow/sample-app'", publish)
         self.assertIn("github.ref == 'refs/heads/main'", publish)
+        self.assertIn("runner: ubuntu-24.04", publish)
+        self.assertIn("runner: ubuntu-24.04-arm", publish)
         self.assertIn("packages: write", publish)
         self.assertIn("secrets.DOCKERHUB_TOKEN", publish)
-        self.assertIn("platforms: linux/amd64,linux/arm64", publish)
+        self.assertIn("platforms: ${{ matrix.platform }}", publish)
+        self.assertIn("${{ env.REVISION_TAG }}-${{ matrix.suffix }}", publish)
         self.assertIn("provenance: mode=max", publish)
         self.assertIn("sbom: true", publish)
         self.assertNotIn("cache-from", publish)
         self.assertNotIn("cache-to", publish)
 
-        self.assertIn("needs: [publish]", qualification)
+        self.assertIn("needs: [publish-architecture]", assembly)
+        self.assertIn("imagetools create", assembly)
+        self.assertIn("cmp ghcr-index.json dockerhub-index.json", assembly)
+        self.assertIn("needs: [assemble-indexes]", qualification)
+        self.assertIn("runner: ubuntu-24.04-arm", qualification)
+        self.assertIn("DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1", qualification)
         self.assertNotIn("secrets.", qualification)
         self.assertNotIn("docker/login-action", qualification)
-        self.assertIn("needs: [publish, qualify-published]", promotion)
+        self.assertIn("needs: [assemble-indexes, qualify-published]", promotion)
+        self.assertIn("needs: [promote-main]", moving_channel)
+        self.assertIn("anonymous-docker-config", moving_channel)
+        self.assertIn("needs: [verify-main]", publication_evidence)
+        self.assertIn("summarize-devcontainer-evidence.py", publication_evidence)
 
         action_refs = []
         for line in workflow.splitlines():

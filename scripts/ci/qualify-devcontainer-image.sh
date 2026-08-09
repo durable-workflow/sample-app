@@ -10,8 +10,13 @@ timing_output="${3:-${repo_root}/devcontainer-qualification-timing.json}"
 max_fresh_seconds="${DEVCONTAINER_MAX_FRESH_SECONDS:-300}"
 max_warm_seconds="${DEVCONTAINER_MAX_WARM_SECONDS:-120}"
 require_attestations="${DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS:-1}"
+require_anonymous_pull="${DEVCONTAINER_REQUIRE_ANONYMOUS_PULL:-0}"
 skip_image_pull="${DEVCONTAINER_SKIP_IMAGE_PULL:-0}"
 expected_revision="${DEVCONTAINER_EXPECTED_REVISION:-}"
+evidence_type="${DEVCONTAINER_EVIDENCE_TYPE:-qualification}"
+image_build_ms="${DEVCONTAINER_IMAGE_BUILD_MS:-0}"
+registry="${DEVCONTAINER_REGISTRY:-local}"
+runner_label="${DEVCONTAINER_RUNNER_LABEL:-unknown}"
 
 case "$platform" in
     linux/amd64|linux/arm64) ;;
@@ -29,6 +34,55 @@ duration_ms() {
     local started_ms="$1"
     echo $(( $(timestamp_ms) - started_ms ))
 }
+
+normalize_architecture() {
+    case "$1" in
+        amd64|x86_64) echo amd64 ;;
+        arm64|aarch64) echo arm64 ;;
+        *)
+            echo "Unsupported runner architecture: $1" >&2
+            return 1
+            ;;
+    esac
+}
+
+expected_architecture="${platform#linux/}"
+host_machine="$(uname -m)"
+host_architecture="$(normalize_architecture "$host_machine")"
+docker_architecture="$(normalize_architecture "$(docker info --format '{{.Architecture}}')")"
+
+if [[ "$host_architecture" != "$expected_architecture" || "$docker_architecture" != "$expected_architecture" ]]; then
+    echo "Qualification for ${platform} requires a native runner; host=${host_architecture}, docker=${docker_architecture}." >&2
+    exit 1
+fi
+
+run_started_ms="${DEVCONTAINER_RUN_STARTED_MS:-$(timestamp_ms)}"
+anonymous_credentials_absent=0
+
+if [[ "$require_anonymous_pull" == "1" ]]; then
+    if [[ "$skip_image_pull" == "1" ]]; then
+        echo 'Anonymous pull verification cannot skip the image pull.' >&2
+        exit 1
+    fi
+
+    docker_config="${DOCKER_CONFIG:-${HOME}/.docker}"
+    python3 - "${docker_config}/config.json" <<'PY'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+if not os.path.exists(path):
+    raise SystemExit(f"anonymous pull requires an explicit credential-free Docker config: {path}")
+
+with open(path, encoding="utf-8") as source:
+    config = json.load(source)
+
+if config.get("auths") or config.get("credsStore") or config.get("credHelpers"):
+    raise SystemExit("anonymous pull Docker config contains registry credential sources")
+PY
+    anonymous_credentials_absent=1
+fi
 
 project_suffix="$(printf '%s-%s' "$image" "$platform" | sha256sum | cut -c1-12)"
 export COMPOSE_PROJECT_NAME="sample-app-devcontainer-${project_suffix}"
@@ -181,11 +235,22 @@ mkdir -p "$(dirname "$timing_output")"
 IMAGE="$image" \
 PLATFORM="$platform" \
 REVISION="$revision_label" \
+ANONYMOUS_CREDENTIALS_ABSENT="$anonymous_credentials_absent" \
+COMPLETED_MS="$(timestamp_ms)" \
+DOCKER_ARCHITECTURE="$docker_architecture" \
+EVIDENCE_TYPE="$evidence_type" \
+HOST_ARCHITECTURE="$host_architecture" \
+HOST_MACHINE="$host_machine" \
 IMAGE_PULL_MS="$image_pull_ms" \
+IMAGE_BUILD_MS="$image_build_ms" \
 CONTAINER_READINESS_MS="$container_readiness_ms" \
 DEPENDENCY_BOOTSTRAP_MS="$dependency_bootstrap_ms" \
 APPLICATION_READINESS_MS="$application_readiness_ms" \
 FRESH_TOTAL_MS="$fresh_total_ms" \
+REGISTRY="$registry" \
+REQUIRE_ANONYMOUS_PULL="$require_anonymous_pull" \
+RUNNER_LABEL="$runner_label" \
+RUN_STARTED_MS="$run_started_ms" \
 WARM_REBUILD_MS="$warm_rebuild_ms" \
 TIMING_OUTPUT="$timing_output" \
 python3 <<'PY'
@@ -193,10 +258,23 @@ import json
 import os
 
 payload = {
-    "schema_version": 1,
+    "schema_version": 2,
+    "evidence_type": os.environ["EVIDENCE_TYPE"],
     "image": os.environ["IMAGE"],
     "platform": os.environ["PLATFORM"],
+    "registry": os.environ["REGISTRY"],
     "source_revision": os.environ["REVISION"],
+    "runner": {
+        "label": os.environ["RUNNER_LABEL"],
+        "host_machine": os.environ["HOST_MACHINE"],
+        "host_architecture": os.environ["HOST_ARCHITECTURE"],
+        "docker_architecture": os.environ["DOCKER_ARCHITECTURE"],
+    },
+    "anonymous_pull_verification": {
+        "required": os.environ["REQUIRE_ANONYMOUS_PULL"] == "1",
+        "credentials_absent": os.environ["ANONYMOUS_CREDENTIALS_ABSENT"] == "1",
+        "pull_performed": os.environ["REQUIRE_ANONYMOUS_PULL"] == "1",
+    },
     "environment_builds": 0,
     "phases_ms": {
         "image_pull": int(os.environ["IMAGE_PULL_MS"]),
@@ -204,8 +282,18 @@ payload = {
         "dependency_bootstrap": int(os.environ["DEPENDENCY_BOOTSTRAP_MS"]),
         "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
     },
+    "stages_ms": {
+        "image_build": int(os.environ["IMAGE_BUILD_MS"]),
+        "image_pull": int(os.environ["IMAGE_PULL_MS"]),
+        "container_readiness": int(os.environ["CONTAINER_READINESS_MS"]),
+        "dependency_bootstrap": int(os.environ["DEPENDENCY_BOOTSTRAP_MS"]),
+        "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
+        "warm_rebuild": int(os.environ["WARM_REBUILD_MS"]),
+    },
     "fresh_total_ms": int(os.environ["FRESH_TOTAL_MS"]),
     "warm_rebuild_ms": int(os.environ["WARM_REBUILD_MS"]),
+    "run_started_epoch_ms": int(os.environ["RUN_STARTED_MS"]),
+    "completed_epoch_ms": int(os.environ["COMPLETED_MS"]),
 }
 
 with open(os.environ["TIMING_OUTPUT"], "w", encoding="utf-8") as output:
