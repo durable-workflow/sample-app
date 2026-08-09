@@ -96,12 +96,21 @@ final class DevcontainerImageContractTest extends TestCase
     {
         $workflow = $this->contents('.github/workflows/devcontainer-image.yml');
         $validate = $this->jobBlock($workflow, 'validate');
-        $publish = $this->jobBlock($workflow, 'publish');
+        $candidateEvidence = $this->jobBlock($workflow, 'candidate-evidence');
+        $publish = $this->jobBlock($workflow, 'publish-architecture');
+        $assembly = $this->jobBlock($workflow, 'assemble-indexes');
         $qualification = $this->jobBlock($workflow, 'qualify-published');
         $promotion = $this->jobBlock($workflow, 'promote-main');
         $movingChannel = $this->jobBlock($workflow, 'verify-main');
+        $publicationEvidence = $this->jobBlock($workflow, 'publication-evidence');
 
         $this->assertStringNotContainsString('pull_request_target', $workflow);
+        $this->assertStringNotContainsString('setup-qemu-action', $workflow);
+        $this->assertStringNotContainsString('QEMU', $workflow);
+        $this->assertStringContainsString('runner: ubuntu-24.04', $validate);
+        $this->assertStringContainsString('runner: ubuntu-24.04-arm', $validate);
+        $this->assertStringContainsString('runs-on: ${{ matrix.runner }}', $validate);
+        $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
         $this->assertStringContainsString('contents: read', $validate);
         $this->assertStringNotContainsString('packages: write', $validate);
         $this->assertStringNotContainsString('secrets.', $validate);
@@ -110,27 +119,42 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('cache-to', $validate);
         $this->assertStringContainsString('no-cache: true', $validate);
         $this->assertStringContainsString('push: false', $validate);
+        $this->assertStringContainsString('needs: [validate]', $candidateEvidence);
+        $this->assertStringContainsString('summarize-devcontainer-evidence.py', $candidateEvidence);
+        $this->assertStringContainsString('900', $candidateEvidence);
 
         $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $publish);
         $this->assertStringContainsString("github.ref == 'refs/heads/main'", $publish);
+        $this->assertStringContainsString('runner: ubuntu-24.04', $publish);
+        $this->assertStringContainsString('runner: ubuntu-24.04-arm', $publish);
+        $this->assertStringContainsString('runs-on: ${{ matrix.runner }}', $publish);
         $this->assertStringContainsString('packages: write', $publish);
         $this->assertStringContainsString('secrets.DOCKERHUB_TOKEN', $publish);
-        $this->assertStringContainsString('platforms: linux/amd64,linux/arm64', $publish);
+        $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $publish);
+        $this->assertStringContainsString('${{ env.REVISION_TAG }}-${{ matrix.suffix }}', $publish);
         $this->assertStringContainsString('provenance: mode=max', $publish);
         $this->assertStringContainsString('sbom: true', $publish);
-        $this->assertStringContainsString('${{ env.GHCR_IMAGE }}:${{ env.REVISION_TAG }}', $publish);
-        $this->assertStringContainsString('${{ env.DOCKERHUB_IMAGE }}:${{ env.REVISION_TAG }}', $publish);
         $this->assertStringContainsString('no-cache: true', $publish);
         $this->assertStringNotContainsString('cache-from', $publish);
         $this->assertStringNotContainsString('cache-to', $publish);
 
-        $this->assertStringContainsString('needs: [publish]', $qualification);
+        $this->assertStringContainsString('needs: [publish-architecture]', $assembly);
+        $this->assertStringContainsString('imagetools create', $assembly);
+        $this->assertStringContainsString('cmp ghcr-index.json dockerhub-index.json', $assembly);
+        $this->assertStringContainsString('needs: [assemble-indexes]', $qualification);
+        $this->assertStringContainsString('runner: ubuntu-24.04', $qualification);
+        $this->assertStringContainsString('runner: ubuntu-24.04-arm', $qualification);
+        $this->assertStringContainsString('DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1', $qualification);
         $this->assertStringContainsString('linux/amd64', $qualification);
         $this->assertStringContainsString('linux/arm64', $qualification);
         $this->assertStringNotContainsString('secrets.', $qualification);
         $this->assertStringNotContainsString('docker/login-action', $qualification);
-        $this->assertStringContainsString('needs: [publish, qualify-published]', $promotion);
+        $this->assertStringContainsString('needs: [assemble-indexes, qualify-published]', $promotion);
         $this->assertStringContainsString('needs: [promote-main]', $movingChannel);
+        $this->assertStringContainsString('anonymous-docker-config', $movingChannel);
+        $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
+        $this->assertStringContainsString('summarize-devcontainer-evidence.py', $publicationEvidence);
+        $this->assertStringContainsString('900', $publicationEvidence);
 
         preg_match_all('/^\s*uses:\s+[^@\s]+@([^\s#]+)/m', $workflow, $actionRefs);
         $this->assertNotEmpty($actionRefs[1]);
@@ -148,6 +172,9 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('up --detach --no-build --wait', $script);
         $this->assertStringContainsString('up --detach --no-build --force-recreate --wait', $script);
         $this->assertStringContainsString('environment_builds', $script);
+        $this->assertStringContainsString('normalize_architecture', $script);
+        $this->assertStringContainsString('anonymous_pull_verification', $script);
+        $this->assertStringContainsString('runner', $script);
         $this->assertStringContainsString('exec -T laravel sshd -t', $script);
         $this->assertStringContainsString('/dev/tcp/127.0.0.1/22', $script);
         $this->assertStringContainsString('laravel@127.0.0.1 id -u', $script);
