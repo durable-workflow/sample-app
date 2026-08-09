@@ -268,6 +268,43 @@ load_conformance_env() {
   done
 }
 
+configure_ai_conformance() {
+  local skip_ai="${SAMPLE_APP_CONFORMANCE_SKIP_AI:-1}"
+  local argument
+
+  case "$skip_ai" in
+    0|1)
+      ;;
+    *)
+      printf 'compose-conformance: SAMPLE_APP_CONFORMANCE_SKIP_AI must be 0 or 1\n' >&2
+      return 2
+      ;;
+  esac
+
+  for argument in "$@"; do
+    if [[ "$argument" == "--skip-ai" ]]; then
+      skip_ai="1"
+      break
+    fi
+  done
+
+  ai_conformance_skipped="$skip_ai"
+  provider_exec_args=()
+
+  if [[ "$ai_conformance_skipped" == "1" ]]; then
+    # An exported empty value overrides Compose's automatic .env interpolation,
+    # including a credential inherited from the invoking shell. The conformance
+    # command also omits its exec-level credential forwarding below.
+    export OPENAI_API_KEY=""
+    printf 'compose-conformance: AI-backed surfaces are explicitly disabled\n'
+    return 0
+  fi
+
+  load_conformance_env
+  provider_exec_args=(-e OPENAI_API_KEY)
+  printf 'compose-conformance: AI-backed surfaces explicitly enabled\n'
+}
+
 build_runtime_image_for_artifact_tuple() {
   run_step \
     "building shared app and worker runtime image with resolved artifact tuple" \
@@ -406,7 +443,9 @@ restart_worker_after_schema_refresh() {
     docker compose up -d --no-deps --force-recreate --wait worker
 }
 
-load_conformance_env
+ai_conformance_skipped="1"
+provider_exec_args=()
+configure_ai_conformance "$@"
 
 docker compose ps
 
@@ -477,6 +516,9 @@ fi
 
 printf '\n==> full sample-app conformance\n'
 args=("$@")
+if [[ "$ai_conformance_skipped" == "1" ]]; then
+  args=(--skip-ai "${args[@]}")
+fi
 if [[ "${SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS:-0}" != "1" ]]; then
   args=(--strict "${args[@]}")
 else
@@ -499,7 +541,7 @@ timeout "${SAMPLE_APP_CONFORMANCE_TIMEOUT_SECONDS:-1800}s" docker compose exec -
   -e DURABLE_WORKFLOW_PHP_SDK_VERSION \
   -e DURABLE_WORKFLOW_WORKFLOW_VERSION \
   -e DURABLE_WORKFLOW_WATERLINE_VERSION \
-  -e OPENAI_API_KEY \
+  "${provider_exec_args[@]}" \
   -e SAMPLE_APP_SETUP_CACHE_STATE \
   -e SAMPLE_APP_SETUP_DURATION_MS \
   -e SAMPLE_APP_SETUP_BUILD_DURATION_MS \

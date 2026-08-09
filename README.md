@@ -136,10 +136,14 @@ scripts/compose-smoke-conformance.sh --strict
 ```
 
 The standalone full-conformance entry point remains self-contained for callers
-that do not need the deterministic preflight:
+that do not need the deterministic preflight. AI-backed surfaces are disabled
+by default, so this form cannot consume a provider credential discovered in the
+shell or an ancestor dotenv file:
 
 ```bash
-scripts/compose-conformance.sh --strict
+SAMPLE_APP_CONFORMANCE_SKIP_AI=1 \
+SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1 \
+scripts/compose-conformance.sh
 ```
 
 The harness emits a JSON document with the sample-app commit, artifact versions,
@@ -153,8 +157,8 @@ artisan samples, browser checks for the app and Waterline, the MCP workflow API,
 an API documentation check that compares the README's documented MCP tools and
 workflow keys with the live endpoint, a Waterline/manual observation check using
 `workflow:v2:history-export`, local sandbox lifecycle variants, sandbox recovery
-injection, and the Prism/AI samples. The Prism check uses `OPENAI_API_KEY` for
-the live model-backed AI surface. The travel-agent success and failure-injection
+injection, and, in explicit provider mode, the Prism/AI samples. The Prism check
+uses `OPENAI_API_KEY` for the live model-backed AI surface. The travel-agent success and failure-injection
 checks reuse one deterministic booking plan so the run proves signals, durable
 assistant messages, booking activities, and compensation without spending extra
 model calls on each failure variant.
@@ -162,10 +166,20 @@ The polyglot harness builds the exact released Rust SDK from crates.io and
 executes Rust-authored workflows and activities across the PHP, Python, and
 Rust runtime matrix. Its report distinguishes registered Rust execution from
 the release-cohort version pin.
-Without AI credentials, `--strict` keeps the run non-passing and names the live
-Prism surface as uncovered. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` when the key
-lives in a dotenv file outside the repository; the wrapper also checks local
-workspace-level dotenv files without printing credential values. Set
+`SAMPLE_APP_CONFORMANCE_SKIP_AI=1` is the safe release and automation mode. It
+passes `--skip-ai` to `app:conformance`, keeps `OPENAI_API_KEY` out of Compose
+exec arguments, and records every AI-backed surface as explicitly skipped while
+the deterministic and scripted agent-operability surfaces still run. Pair it
+with `SAMPLE_APP_CONFORMANCE_ALLOW_SKIPS=1` when an intentional skip should not
+make the command fail.
+
+Provider-backed conformance requires an explicit opt-in, even when a credential
+is already present. Set `SAMPLE_APP_CONFORMANCE_SKIP_AI=0` and provide
+`OPENAI_API_KEY` to run it. Set `SAMPLE_APP_CONFORMANCE_ENV_FILE` only on that
+opt-in path when the key lives in a dotenv file outside the repository; the
+wrapper then checks local workspace-level dotenv files without printing
+credential values. Without AI credentials, `--strict` keeps the run non-passing
+and names the live Prism surface as uncovered. Set
 `DURABLE_SERVER_IMAGE`, `DURABLE_WORKFLOW_CLI_VERSION`,
 `DURABLE_WORKFLOW_PYTHON_SDK_VERSION`, `DURABLE_WORKFLOW_RUST_SDK_VERSION`,
 `DURABLE_WORKFLOW_PHP_SDK_VERSION`, `DURABLE_WORKFLOW_WORKFLOW_VERSION`, and
