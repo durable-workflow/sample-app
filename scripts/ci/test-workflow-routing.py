@@ -185,13 +185,31 @@ class WorkflowRoutingTest(unittest.TestCase):
         moving_channel = job_block(workflow, "verify-main")
         publication_evidence = job_block(workflow, "publication-evidence")
 
+        matrix_runner = (
+            "runs-on: ${{ github.server_url == 'https://github.com' "
+            "&& matrix.runner || 'ubuntu-latest' }}"
+        )
+        aggregation_runner = (
+            "runs-on: ${{ github.server_url == 'https://github.com' "
+            "&& 'ubuntu-24.04' || 'ubuntu-latest' }}"
+        )
+
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("setup-qemu-action", workflow)
         self.assertNotIn("QEMU", workflow)
         self.assertIn("github.event_name == 'pull_request'", validate)
         self.assertIn("runner: ubuntu-24.04", validate)
         self.assertIn("runner: ubuntu-24.04-arm", validate)
-        self.assertIn("runs-on: ${{ matrix.runner }}", validate)
+        for block in (validate, publish, qualification):
+            self.assertIn(matrix_runner, block)
+        for block in (
+            candidate_evidence,
+            assembly,
+            promotion,
+            moving_channel,
+            publication_evidence,
+        ):
+            self.assertIn(aggregation_runner, block)
         self.assertIn("contents: read", validate)
         self.assertNotIn("packages: write", validate)
         self.assertNotIn("secrets.", validate)

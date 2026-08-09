@@ -103,13 +103,20 @@ final class DevcontainerImageContractTest extends TestCase
         $promotion = $this->jobBlock($workflow, 'promote-main');
         $movingChannel = $this->jobBlock($workflow, 'verify-main');
         $publicationEvidence = $this->jobBlock($workflow, 'publication-evidence');
+        $matrixRunner = "runs-on: \${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}";
+        $aggregationRunner = "runs-on: \${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}";
 
         $this->assertStringNotContainsString('pull_request_target', $workflow);
         $this->assertStringNotContainsString('setup-qemu-action', $workflow);
         $this->assertStringNotContainsString('QEMU', $workflow);
         $this->assertStringContainsString('runner: ubuntu-24.04', $validate);
         $this->assertStringContainsString('runner: ubuntu-24.04-arm', $validate);
-        $this->assertStringContainsString('runs-on: ${{ matrix.runner }}', $validate);
+        foreach ([$validate, $publish, $qualification] as $job) {
+            $this->assertStringContainsString($matrixRunner, $job);
+        }
+        foreach ([$candidateEvidence, $assembly, $promotion, $movingChannel, $publicationEvidence] as $job) {
+            $this->assertStringContainsString($aggregationRunner, $job);
+        }
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
         $this->assertStringContainsString('contents: read', $validate);
         $this->assertStringNotContainsString('packages: write', $validate);
@@ -127,7 +134,6 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString("github.ref == 'refs/heads/main'", $publish);
         $this->assertStringContainsString('runner: ubuntu-24.04', $publish);
         $this->assertStringContainsString('runner: ubuntu-24.04-arm', $publish);
-        $this->assertStringContainsString('runs-on: ${{ matrix.runner }}', $publish);
         $this->assertStringContainsString('packages: write', $publish);
         $this->assertStringContainsString('secrets.DOCKERHUB_TOKEN', $publish);
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $publish);

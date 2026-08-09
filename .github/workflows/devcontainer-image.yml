@@ -53,7 +53,7 @@ jobs:
   validate:
     name: Validate candidate natively (${{ matrix.platform }})
     if: ${{ github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -141,7 +141,7 @@ jobs:
     name: Enforce cold pull-request validation budget
     if: ${{ github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
     needs: [validate]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 2
     permissions:
       contents: read
@@ -181,7 +181,7 @@ jobs:
         github.ref == 'refs/heads/main' &&
         github.event_name != 'pull_request'
       }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -324,7 +324,7 @@ jobs:
     name: Assemble matching verified image indexes
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [publish-architecture]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -423,7 +423,7 @@ jobs:
     name: Qualify anonymously and natively (${{ matrix.registry }}, ${{ matrix.platform }})
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [assemble-indexes]
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -495,7 +495,7 @@ jobs:
     name: Promote qualified image to main
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [assemble-indexes, qualify-published]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -565,7 +565,7 @@ jobs:
     name: Inspect public main channel anonymously (${{ matrix.registry }})
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [promote-main]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -641,7 +641,7 @@ jobs:
     name: Enforce protected publication budget and evidence
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [verify-main]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 2
     permissions:
       contents: read
