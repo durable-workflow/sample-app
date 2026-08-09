@@ -182,6 +182,7 @@ class WorkflowRoutingTest(unittest.TestCase):
         assembly = job_block(workflow, "assemble-indexes")
         qualification = job_block(workflow, "qualify-published")
         promotion = job_block(workflow, "promote-main")
+        recovery = job_block(workflow, "recover-main")
         moving_channel = job_block(workflow, "verify-main")
         publication_evidence = job_block(workflow, "publication-evidence")
 
@@ -206,6 +207,7 @@ class WorkflowRoutingTest(unittest.TestCase):
             candidate_evidence,
             assembly,
             promotion,
+            recovery,
             moving_channel,
             publication_evidence,
         ):
@@ -242,6 +244,14 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertNotIn("secrets.", qualification)
         self.assertNotIn("docker/login-action", qualification)
         self.assertIn("needs: [assemble-indexes, qualify-published]", promotion)
+        self.assertIn("inputs.recover_revision_tag != ''", recovery)
+        self.assertIn("github.repository == 'durable-workflow/sample-app'", recovery)
+        self.assertIn("packages: write", recovery)
+        self.assertIn("secrets.DOCKERHUB_TOKEN", recovery)
+        self.assertIn("^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$", recovery)
+        self.assertIn("cmp ghcr-source.json dockerhub-source.json", recovery)
+        self.assertIn('architectures != {"amd64", "arm64"}', recovery)
+        self.assertIn("cmp ghcr-main.json dockerhub-main.json", recovery)
         self.assertIn("needs: [promote-main]", moving_channel)
         self.assertIn("anonymous-docker-config", moving_channel)
         self.assertIn("needs: [verify-main]", publication_evidence)

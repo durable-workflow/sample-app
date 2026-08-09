@@ -34,6 +34,10 @@ final class DevcontainerImageContractTest extends TestCase
                 $services[$serviceName]['pull_policy'] ?? null,
             );
             $this->assertArrayNotHasKey('build', $services[$serviceName] ?? []);
+            $this->assertSame(
+                '${SAMPLE_APP_UID:-}',
+                $services[$serviceName]['environment']['SAMPLE_APP_UID'] ?? null,
+            );
         }
 
         $this->assertSame('mysql:8.0', $services['mysql']['image'] ?? null);
@@ -101,6 +105,7 @@ final class DevcontainerImageContractTest extends TestCase
         $assembly = $this->jobBlock($workflow, 'assemble-indexes');
         $qualification = $this->jobBlock($workflow, 'qualify-published');
         $promotion = $this->jobBlock($workflow, 'promote-main');
+        $recovery = $this->jobBlock($workflow, 'recover-main');
         $movingChannel = $this->jobBlock($workflow, 'verify-main');
         $publicationEvidence = $this->jobBlock($workflow, 'publication-evidence');
         $matrixRunner = "runs-on: \${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}";
@@ -114,7 +119,7 @@ final class DevcontainerImageContractTest extends TestCase
         foreach ([$validate, $publish, $qualification] as $job) {
             $this->assertStringContainsString($matrixRunner, $job);
         }
-        foreach ([$candidateEvidence, $assembly, $promotion, $movingChannel, $publicationEvidence] as $job) {
+        foreach ([$candidateEvidence, $assembly, $promotion, $recovery, $movingChannel, $publicationEvidence] as $job) {
             $this->assertStringContainsString($aggregationRunner, $job);
         }
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
@@ -156,6 +161,14 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('secrets.', $qualification);
         $this->assertStringNotContainsString('docker/login-action', $qualification);
         $this->assertStringContainsString('needs: [assemble-indexes, qualify-published]', $promotion);
+        $this->assertStringContainsString("inputs.recover_revision_tag != ''", $recovery);
+        $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $recovery);
+        $this->assertStringContainsString('packages: write', $recovery);
+        $this->assertStringContainsString('secrets.DOCKERHUB_TOKEN', $recovery);
+        $this->assertStringContainsString('^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$', $recovery);
+        $this->assertStringContainsString('cmp ghcr-source.json dockerhub-source.json', $recovery);
+        $this->assertStringContainsString('architectures != {"amd64", "arm64"}', $recovery);
+        $this->assertStringContainsString('cmp ghcr-main.json dockerhub-main.json', $recovery);
         $this->assertStringContainsString('needs: [promote-main]', $movingChannel);
         $this->assertStringContainsString('anonymous-docker-config', $movingChannel);
         $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
@@ -181,12 +194,18 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('normalize_architecture', $script);
         $this->assertStringContainsString('anonymous_pull_verification', $script);
         $this->assertStringContainsString('runner', $script);
+        $this->assertStringContainsString('export SAMPLE_APP_UID="$(id -u)"', $script);
+        $this->assertStringContainsString('[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]', $script);
         $this->assertStringContainsString('exec -T laravel sshd -t', $script);
         $this->assertStringContainsString('/dev/tcp/127.0.0.1/22', $script);
         $this->assertStringContainsString('laravel@127.0.0.1 id -u', $script);
         $this->assertStringContainsString('-o BatchMode=yes', $script);
         $this->assertStringContainsString("if ! gosu laravel bash -c '", $entrypoint);
         $this->assertStringContainsString("ssh-keygen -A\n    sshd -t", $entrypoint);
+        $this->assertStringContainsString('remap_laravel_uid', $entrypoint);
+        $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
+        $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
+        $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
         $this->assertStringContainsString('chown -R laravel:laravel /var/www/html', $entrypoint);
 
         foreach ([

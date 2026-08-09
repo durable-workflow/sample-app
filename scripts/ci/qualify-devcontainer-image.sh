@@ -89,6 +89,7 @@ export COMPOSE_PROJECT_NAME="sample-app-devcontainer-${project_suffix}"
 export DOCKER_DEFAULT_PLATFORM="$platform"
 export SAMPLE_APP_DEVCONTAINER_IMAGE="$image"
 export SAMPLE_APP_DEVCONTAINER_PULL_POLICY=never
+export SAMPLE_APP_UID="$(id -u)"
 export APP_PORT=18080
 export MICROSERVICE_PORT=18001
 export VITE_PORT=15173
@@ -169,7 +170,7 @@ container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" run --rm --no-deps laravel php artisan app:init
-"${compose[@]}" run --rm --no-deps microservice true
+"${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
 dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
 
 application_readiness_started_ms="$(timestamp_ms)"
@@ -201,10 +202,10 @@ application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"
         -o UserKnownHostsFile=/dev/null \
         -i "$key_dir/id_ed25519" \
         laravel@127.0.0.1 id -u)"
-    [[ "$remote_uid" != "0" ]]
+    [[ "$remote_uid" == "$SAMPLE_APP_UID" ]]
 '
 "${compose[@]}" exec -T --user laravel laravel bash -euc '
-    [[ "$(id -u)" != "0" ]]
+    [[ "$(id -u)" == "$SAMPLE_APP_UID" ]]
     composer check-platform-reqs --no-dev
     probe=.devcontainer-qualification-write-test
     printf "editable\n" > "$probe"
