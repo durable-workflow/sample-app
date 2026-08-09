@@ -47,12 +47,14 @@ final class DevcontainerImageContractTest extends TestCase
             );
         }
 
-        $this->assertSame('mysql:8.0', $services['mysql']['image'] ?? null);
+        $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
         $this->assertSame(
             [
-                'CMD-SHELL',
-                'MYSQL_PWD=$${MYSQL_ROOT_PASSWORD} mysqladmin ping --protocol=socket --user=root --silent',
+                'CMD',
+                'healthcheck.sh',
+                '--connect',
+                '--innodb_initialized',
             ],
             $services['mysql']['healthcheck']['test'] ?? null,
         );
@@ -67,6 +69,7 @@ final class DevcontainerImageContractTest extends TestCase
         $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
         $supervisor = $this->contents('.devcontainer/docker/supervisord.conf');
         $verification = $this->contents('.devcontainer/docker/verify-image.sh');
+        $databaseInitialization = $this->contents('.devcontainer/docker/create-testing-database.sh');
         $initCommand = $this->contents('app/Console/Commands/Init.php');
         $postCreate = $this->contents('.devcontainer/post-create.sh');
 
@@ -109,6 +112,8 @@ final class DevcontainerImageContractTest extends TestCase
         }
         $this->assertStringContainsString("compgen -G '/etc/ssh/ssh_host_*_key'", $verification);
         $this->assertStringContainsString('must not contain shared SSH host private keys', $verification);
+        $this->assertStringContainsString('command -v mariadb', $databaseInitialization);
+        $this->assertStringContainsString('command -v mysql', $databaseInitialization);
 
         $this->assertStringContainsString("'npm ci --no-audit --no-fund'", $initCommand);
         $this->assertStringContainsString("'node docker/playwright-smoke.js'", $initCommand);

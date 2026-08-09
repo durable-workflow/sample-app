@@ -46,7 +46,7 @@ services:
                 condition: service_healthy
         command: ["php", "artisan", "queue:listen", "shared", "--queue=activity"]
     mysql:
-        image: 'mysql:8.0'
+        image: 'mariadb:11.4'
         ports:
             - '${FORWARD_DB_PORT:-13306}:3306'
         environment:
@@ -62,7 +62,7 @@ services:
         networks:
             - laravel
         healthcheck:
-            test: ["CMD-SHELL", "MYSQL_PWD=$${MYSQL_ROOT_PASSWORD} mysqladmin ping --protocol=socket --user=root --silent"]
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
             interval: 5s
             retries: 30
             start_period: 30s
