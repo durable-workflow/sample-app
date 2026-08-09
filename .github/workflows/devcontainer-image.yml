@@ -36,6 +36,11 @@ on:
   schedule:
     - cron: '17 6 * * 1'
   workflow_dispatch:
+    inputs:
+      recover_revision_tag:
+        description: Immutable revision tag to promote after registry verification
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -179,7 +184,8 @@ jobs:
         github.server_url == 'https://github.com' &&
         github.repository == 'durable-workflow/sample-app' &&
         github.ref == 'refs/heads/main' &&
-        github.event_name != 'pull_request'
+        github.event_name != 'pull_request' &&
+        (github.event_name != 'workflow_dispatch' || inputs.recover_revision_tag == '')
       }}
     runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 15
@@ -558,6 +564,105 @@ jobs:
         with:
           name: devcontainer-evidence-promotion
           path: devcontainer-promotion-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+  recover-main:
+    name: Recover main from a verified immutable image
+    if: >-
+      ${{
+        github.server_url == 'https://github.com' &&
+        github.repository == 'durable-workflow/sample-app' &&
+        github.event_name == 'workflow_dispatch' &&
+        inputs.recover_revision_tag != ''
+      }}
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_TAG: ${{ inputs.recover_revision_tag }}
+    steps:
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  # v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Sign in to Docker Hub
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3
+        with:
+          username: durableworkflow
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Verify immutable source and recover protected channels
+        run: |
+          if [[ ! "$SOURCE_TAG" =~ ^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$ ]]; then
+            echo "Recovery requires an immutable workflow revision tag." >&2
+            exit 1
+          fi
+
+          docker buildx imagetools inspect "${GHCR_IMAGE}:${SOURCE_TAG}" --raw > ghcr-source.json
+          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${SOURCE_TAG}" --raw > dockerhub-source.json
+          cmp ghcr-source.json dockerhub-source.json
+
+          ghcr_digest="$(docker buildx imagetools inspect "${GHCR_IMAGE}:${SOURCE_TAG}" --format '{{ .Manifest.Digest }}')"
+          dockerhub_digest="$(docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${SOURCE_TAG}" --format '{{ .Manifest.Digest }}')"
+          test "$ghcr_digest" = "$dockerhub_digest"
+
+          python3 - <<'PY'
+          import json
+
+          with open("ghcr-source.json", encoding="utf-8") as source:
+              manifest = json.load(source)
+          architectures = {
+              entry.get("platform", {}).get("architecture")
+              for entry in manifest.get("manifests", [])
+              if entry.get("platform", {}).get("architecture") not in (None, "unknown")
+          }
+          if architectures != {"amd64", "arm64"}:
+              raise SystemExit(f"recovery source platforms do not match: {sorted(architectures)}")
+          PY
+
+          docker buildx imagetools create \
+            --tag "${GHCR_IMAGE}:main" \
+            "${GHCR_IMAGE}:${SOURCE_TAG}"
+          docker buildx imagetools create \
+            --tag "${DOCKERHUB_IMAGE}:main" \
+            "${DOCKERHUB_IMAGE}:${SOURCE_TAG}"
+
+          docker buildx imagetools inspect "${GHCR_IMAGE}:main" --raw > ghcr-main.json
+          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:main" --raw > dockerhub-main.json
+          cmp ghcr-source.json ghcr-main.json
+          cmp dockerhub-source.json dockerhub-main.json
+          cmp ghcr-main.json dockerhub-main.json
+
+          SOURCE_DIGEST="$ghcr_digest" python3 - <<'PY'
+          import json
+          import os
+
+          payload = {
+              "schema_version": 2,
+              "evidence_type": "manual_channel_recovery",
+              "source_tag": os.environ["SOURCE_TAG"],
+              "manifest_digest": os.environ["SOURCE_DIGEST"],
+              "platforms": ["linux/amd64", "linux/arm64"],
+              "registries": ["ghcr", "dockerhub"],
+          }
+          with open("devcontainer-recovery-evidence.json", "w", encoding="utf-8") as output:
+              json.dump(payload, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+
+      - name: Retain recovery evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: devcontainer-evidence-recovery
+          path: devcontainer-recovery-evidence.json
           if-no-files-found: error
           retention-days: 90
 

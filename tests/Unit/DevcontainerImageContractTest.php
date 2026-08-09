@@ -105,6 +105,7 @@ final class DevcontainerImageContractTest extends TestCase
         $assembly = $this->jobBlock($workflow, 'assemble-indexes');
         $qualification = $this->jobBlock($workflow, 'qualify-published');
         $promotion = $this->jobBlock($workflow, 'promote-main');
+        $recovery = $this->jobBlock($workflow, 'recover-main');
         $movingChannel = $this->jobBlock($workflow, 'verify-main');
         $publicationEvidence = $this->jobBlock($workflow, 'publication-evidence');
         $matrixRunner = "runs-on: \${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}";
@@ -118,7 +119,7 @@ final class DevcontainerImageContractTest extends TestCase
         foreach ([$validate, $publish, $qualification] as $job) {
             $this->assertStringContainsString($matrixRunner, $job);
         }
-        foreach ([$candidateEvidence, $assembly, $promotion, $movingChannel, $publicationEvidence] as $job) {
+        foreach ([$candidateEvidence, $assembly, $promotion, $recovery, $movingChannel, $publicationEvidence] as $job) {
             $this->assertStringContainsString($aggregationRunner, $job);
         }
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
@@ -160,6 +161,14 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('secrets.', $qualification);
         $this->assertStringNotContainsString('docker/login-action', $qualification);
         $this->assertStringContainsString('needs: [assemble-indexes, qualify-published]', $promotion);
+        $this->assertStringContainsString("inputs.recover_revision_tag != ''", $recovery);
+        $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $recovery);
+        $this->assertStringContainsString('packages: write', $recovery);
+        $this->assertStringContainsString('secrets.DOCKERHUB_TOKEN', $recovery);
+        $this->assertStringContainsString('^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$', $recovery);
+        $this->assertStringContainsString('cmp ghcr-source.json dockerhub-source.json', $recovery);
+        $this->assertStringContainsString('architectures != {"amd64", "arm64"}', $recovery);
+        $this->assertStringContainsString('cmp ghcr-main.json dockerhub-main.json', $recovery);
         $this->assertStringContainsString('needs: [promote-main]', $movingChannel);
         $this->assertStringContainsString('anonymous-docker-config', $movingChannel);
         $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
