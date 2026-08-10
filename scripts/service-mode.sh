@@ -65,14 +65,56 @@ result_started_ms="$(date +%s%3N)"
 journey_json="$("${compose[@]}" run --no-deps --rm -T journey)"
 journey_elapsed_ms="$(( $(date +%s%3N) - result_started_ms ))"
 
-waterline_path="$(SERVICE_MODE_JOURNEY_JSON="$journey_json" node -e '
+readarray -t waterline_paths < <(SERVICE_MODE_JOURNEY_JSON="$journey_json" node -e '
 const lines = process.env.SERVICE_MODE_JOURNEY_JSON.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-process.stdout.write(new URL(JSON.parse(lines.at(-1)).waterline_url).pathname);
-')"
+const pagePath = new URL(JSON.parse(lines.at(-1)).waterline_url).pathname;
+const apiPath = pagePath.replace("/flows/instances/", "/api/instances/");
+if (apiPath === pagePath) {
+  throw new Error(`Waterline run URL does not use the selected-run route: ${pagePath}`);
+}
+console.log(pagePath);
+console.log(apiPath);
+')
+if (( ${#waterline_paths[@]} != 2 )); then
+    echo 'Could not derive the Waterline page and selected-run API paths.' >&2
+    exit 1
+fi
+waterline_page_path="${waterline_paths[0]}"
+waterline_api_path="${waterline_paths[1]}"
+
+# Prove both the browser shell and its exact selected-run data are reachable
+# before retaining a screenshot or reporting success to the user.
+"${compose[@]}" exec -T waterline curl --fail --silent --show-error \
+    "http://localhost:8081${waterline_page_path}" >/dev/null
+waterline_selection_json="$(
+    "${compose[@]}" exec -T waterline curl --fail --silent --show-error \
+        "http://localhost:8081${waterline_api_path}"
+)"
+SERVICE_MODE_JOURNEY_JSON="$journey_json" \
+SERVICE_MODE_WATERLINE_SELECTION_JSON="$waterline_selection_json" \
+node <<'NODE'
+const journeyLines = process.env.SERVICE_MODE_JOURNEY_JSON
+  .split(/\r?\n/)
+  .map(line => line.trim())
+  .filter(Boolean);
+const journey = JSON.parse(journeyLines.at(-1));
+const selection = JSON.parse(process.env.SERVICE_MODE_WATERLINE_SELECTION_JSON);
+
+if (
+  selection.instance_id !== journey.workflow_id
+  || selection.selected_run_id !== journey.run_id
+) {
+  throw new Error(
+    `Waterline selected ${selection.instance_id ?? 'unknown'}/${selection.selected_run_id ?? 'unknown'}; `
+    + `expected ${journey.workflow_id}/${journey.run_id}.`,
+  );
+}
+NODE
+
 browser_started_ms="$(date +%s%3N)"
 "${compose[@]}" run --no-deps --rm -T browser-smoke screenshot \
     --wait-for-timeout=1500 \
-    "http://waterline:8081${waterline_path}" \
+    "http://waterline:8081${waterline_page_path}" \
     "/evidence/${browser_evidence_name}"
 browser_elapsed_ms="$(( $(date +%s%3N) - browser_started_ms ))"
 

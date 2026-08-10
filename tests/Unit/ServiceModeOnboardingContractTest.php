@@ -120,6 +120,27 @@ final class ServiceModeOnboardingContractTest extends TestCase
         $this->assertStringContainsString('if [ "$installed" != "$python_version" ]', $script);
     }
 
+    public function test_entrypoint_verifies_the_exact_waterline_run_before_reporting_success(): void
+    {
+        $script = (string) file_get_contents($this->repoPath('scripts/service-mode.sh'));
+
+        $this->assertStringContainsString('waterline_page_path=', $script);
+        $this->assertStringContainsString('waterline_api_path=', $script);
+        $this->assertStringContainsString('exec -T waterline curl --fail', $script);
+        $this->assertStringContainsString(
+            'selection.instance_id !== journey.workflow_id',
+            $script,
+        );
+        $this->assertStringContainsString(
+            'selection.selected_run_id !== journey.run_id',
+            $script,
+        );
+        $this->assertLessThan(
+            strpos($script, 'Browser proof:'),
+            strpos($script, 'selection.selected_run_id !== journey.run_id'),
+        );
+    }
+
     private function repoPath(string $path): string
     {
         return dirname(__DIR__, 2).'/'.$path;
