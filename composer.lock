@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0d171874f8803acd18adc0e34b6f6bbe",
+    "content-hash": "2a6d19c7cb3c91af91211960c10ca34d",
     "packages": [
         {
             "name": "apache/avro",
@@ -808,16 +808,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-rc.13",
+            "version": "2.0.0-rc.14",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "75ce78c8e78c47131dbcefa70ebd89d43778f25a"
+                "reference": "fa28853fe0e12743d0159eb29497d95b4e7d2d57"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/75ce78c8e78c47131dbcefa70ebd89d43778f25a",
-                "reference": "75ce78c8e78c47131dbcefa70ebd89d43778f25a",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/fa28853fe0e12743d0159eb29497d95b4e7d2d57",
+                "reference": "fa28853fe0e12743d0159eb29497d95b4e7d2d57",
                 "shasum": ""
             },
             "require": {
@@ -850,7 +850,7 @@
                     ]
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.0-rc.13"
+                    "product-train": "2.0.0-rc.14"
                 }
             },
             "autoload": {
@@ -871,9 +871,9 @@
             "description": "An elegant UI for monitoring Laravel Workflows.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.13"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.14"
             },
-            "time": "2026-08-09T03:36:26+00:00"
+            "time": "2026-08-10T05:32:17+00:00"
         },
         {
             "name": "durable-workflow/workflow",

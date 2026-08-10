@@ -93,6 +93,7 @@ jobs:
           path: |
             service-mode-*.json
             service-mode-*-waterline.png
+            service-mode-*-waterline-dialogs/**
           if-no-files-found: error
           retention-days: 30
 

@@ -60,6 +60,7 @@ final class ServiceModeOnboardingContractTest extends TestCase
             'http://server:8080',
             $services['waterline']['environment']['WATERLINE_SERVER_ENDPOINT'] ?? null,
         );
+        $this->assertContains('service-observer-app:/observer:ro', $services['browser-smoke']['volumes'] ?? []);
     }
 
     public function test_entrypoint_resolves_qualified_artifacts_and_keeps_builds_disabled(): void
@@ -81,6 +82,8 @@ final class ServiceModeOnboardingContractTest extends TestCase
         $this->assertStringContainsString('sample-app-service-mode', $script);
         $this->assertStringContainsString('service-mode-evidence.json', $script);
         $this->assertStringContainsString('browser-smoke screenshot', $script);
+        $this->assertStringContainsString('workflow-list-dialog-visual.mjs', $script);
+        $this->assertStringContainsString('SERVICE_MODE_DIALOG_EVIDENCE', $script);
     }
 
     public function test_qualified_php_artifacts_match_the_bootable_laravel_graph(): void

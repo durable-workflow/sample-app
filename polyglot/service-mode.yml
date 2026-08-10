@@ -264,10 +264,12 @@ services:
   browser-smoke:
     image: *development-image
     user: root
+    working_dir: /var/www/html
     entrypoint: ["playwright"]
     volumes:
       - >-
         ${SERVICE_MODE_EVIDENCE_DIR:?set evidence directory}:/evidence
+      - service-observer-app:/observer:ro
 
 volumes:
   service-mysql:

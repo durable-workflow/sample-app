@@ -9,6 +9,7 @@ mkdir -p "$(dirname "$evidence_path")"
 export SERVICE_MODE_EVIDENCE_DIR="$(cd "$(dirname "$evidence_path")" && pwd)"
 evidence_name="$(basename "$evidence_path")"
 browser_evidence_name="${evidence_name%.json}-waterline.png"
+dialog_evidence_name="${evidence_name%.json}-waterline-dialogs"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sample-app-service-mode}"
 export SERVICE_MODE_PORT="${SERVICE_MODE_PORT:-18081}"
 
@@ -118,11 +119,20 @@ browser_started_ms="$(date +%s%3N)"
     "/evidence/${browser_evidence_name}"
 browser_elapsed_ms="$(( $(date +%s%3N) - browser_started_ms ))"
 
+dialog_started_ms="$(date +%s%3N)"
+"${compose[@]}" run --no-deps --rm -T --entrypoint node browser-smoke \
+    /observer/vendor/durable-workflow/waterline/scripts/ci/workflow-list-dialog-visual.mjs \
+    --base-url http://waterline:8081 \
+    --output-dir "/evidence/${dialog_evidence_name}"
+dialog_elapsed_ms="$(( $(date +%s%3N) - dialog_started_ms ))"
+
 SERVICE_MODE_JOURNEY_JSON="$journey_json" \
 SERVICE_MODE_STARTUP_MS="$startup_ms" \
 SERVICE_MODE_ELAPSED_MS="$journey_elapsed_ms" \
 SERVICE_MODE_BROWSER_MS="$browser_elapsed_ms" \
 SERVICE_MODE_BROWSER_SCREENSHOT="$browser_evidence_name" \
+SERVICE_MODE_DIALOG_MS="$dialog_elapsed_ms" \
+SERVICE_MODE_DIALOG_EVIDENCE="${dialog_evidence_name}/summary.json" \
 SERVICE_MODE_EVIDENCE_OUTPUT="$evidence_path" \
 node <<'NODE'
 const fs = require('node:fs');
@@ -140,6 +150,8 @@ const evidence = {
   journey_ms: Number(process.env.SERVICE_MODE_ELAPSED_MS),
   browser_ms: Number(process.env.SERVICE_MODE_BROWSER_MS),
   browser_screenshot: process.env.SERVICE_MODE_BROWSER_SCREENSHOT,
+  dialog_ms: Number(process.env.SERVICE_MODE_DIALOG_MS),
+  dialog_evidence: process.env.SERVICE_MODE_DIALOG_EVIDENCE,
   workflow: result,
   artifacts: {
     server: process.env.DURABLE_SERVER_IMAGE,

@@ -11,6 +11,16 @@ from typing import Any
 
 
 VERSION = re.compile(r"^2\.0\.0-(?:beta|rc)\.\d+$")
+EXPECTED_DIALOG_CASES = {
+    ("filters", "desktop", 1440, 900),
+    ("filters", "intermediate", 900, 768),
+    ("filters", "mobile", 390, 844),
+    ("filters", "short-height", 1280, 480),
+    ("view-options", "desktop", 1440, 900),
+    ("view-options", "intermediate", 900, 768),
+    ("view-options", "mobile", 390, 844),
+    ("view-options", "short-height", 1280, 480),
+}
 
 
 def fail(message: str) -> None:
@@ -29,7 +39,7 @@ def load(path: Path) -> dict[str, Any]:
 
     if payload.get("schema") != "durable-workflow.sample-app.service-mode-evidence.v1":
         fail(f"{path} has an unsupported schema")
-    for field in ("startup_ms", "journey_ms", "browser_ms"):
+    for field in ("startup_ms", "journey_ms", "browser_ms", "dialog_ms"):
         if not isinstance(payload.get(field), int) or payload[field] <= 0:
             fail(f"{path} {field} must be a positive integer")
     screenshot = payload.get("browser_screenshot")
@@ -37,6 +47,40 @@ def load(path: Path) -> dict[str, Any]:
         fail(f"{path} has an invalid browser screenshot name")
     if not path.with_name(screenshot).is_file():
         fail(f"{path} browser screenshot is missing")
+
+    dialog_evidence = payload.get("dialog_evidence")
+    if not isinstance(dialog_evidence, str) or Path(dialog_evidence).name != "summary.json":
+        fail(f"{path} does not identify responsive dialog evidence")
+    dialog_summary_path = path.parent / dialog_evidence
+    if dialog_summary_path.resolve().parent.parent != path.parent.resolve():
+        fail(f"{path} responsive dialog evidence path must be a sibling directory")
+    with dialog_summary_path.open(encoding="utf-8") as source:
+        dialog_summary = require_mapping(json.load(source), str(dialog_summary_path))
+    if dialog_summary.get("schema") != "durable-workflow.waterline.dialog-visual-summary.v1":
+        fail(f"{dialog_summary_path} has an unsupported schema")
+    if dialog_summary.get("expectedCases") != 8 or dialog_summary.get("passedCases") != 8:
+        fail(f"{dialog_summary_path} did not pass all responsive dialog cases")
+
+    observed_dialog_cases: set[tuple[str, str, int, int]] = set()
+    for case in dialog_summary.get("cases", []):
+        case = require_mapping(case, f"{dialog_summary_path} case")
+        viewport = require_mapping(case.get("viewport"), f"{dialog_summary_path} viewport")
+        key = (
+            case.get("dialog"),
+            viewport.get("name"),
+            viewport.get("width"),
+            viewport.get("height"),
+        )
+        observed_dialog_cases.add(key)
+        screenshot_name = case.get("screenshot")
+        report_name = f"{case.get('dialog')}-{viewport.get('name')}.json"
+        for filename in (screenshot_name, report_name):
+            if not isinstance(filename, str) or Path(filename).name != filename:
+                fail(f"{dialog_summary_path} has an invalid case artifact name")
+            if not dialog_summary_path.with_name(filename).is_file():
+                fail(f"{dialog_summary_path} case artifact {filename} is missing")
+    if observed_dialog_cases != EXPECTED_DIALOG_CASES:
+        fail(f"{dialog_summary_path} does not cover the required dialog viewport matrix")
 
     workflow = require_mapping(payload.get("workflow"), f"{path} workflow")
     workflow_id = workflow.get("workflow_id")
