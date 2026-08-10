@@ -149,6 +149,26 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertTrue(is_executable($this->repoPath('.devcontainer/post-create.sh')));
     }
 
+    public function test_image_prewarms_composer_as_the_unprivileged_runtime_user(): void
+    {
+        $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
+        $userCreation = strpos($dockerfile, 'useradd --create-home --gid laravel');
+        $dependencyOwnership = strpos(
+            $dockerfile,
+            'chown -R laravel:laravel /tmp/sample-app-composer',
+        );
+        $unprivilegedPrewarm = strpos(
+            $dockerfile,
+            'COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install',
+        );
+
+        $this->assertNotFalse($userCreation);
+        $this->assertNotFalse($dependencyOwnership);
+        $this->assertNotFalse($unprivilegedPrewarm);
+        $this->assertLessThan($dependencyOwnership, $userCreation);
+        $this->assertLessThan($unprivilegedPrewarm, $dependencyOwnership);
+    }
+
     public function test_codespaces_schema_dump_records_every_current_migration(): void
     {
         $schema = $this->contents('.devcontainer/schema/mysql-schema.sql');

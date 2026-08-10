@@ -89,6 +89,7 @@ RUN set -eux; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
     install -d -o laravel -g laravel /home/laravel/.composer /ms-playwright /var/www/html; \
+    chown -R laravel:laravel /tmp/sample-app-composer; \
     for dependency_set in root microservice; do \
         COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install \
             --working-dir="/tmp/sample-app-composer/${dependency_set}" \
