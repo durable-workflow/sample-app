@@ -476,23 +476,48 @@ BASH,
 
     public function test_publication_separates_untrusted_builds_from_protected_registry_jobs(): void
     {
-        $workflow = $this->contents('.github/workflows/devcontainer-image.yml');
-        $artifactIdentity = $this->jobBlock($workflow, 'artifact-identity');
-        $validate = $this->jobBlock($workflow, 'validate');
-        $candidateEvidence = $this->jobBlock($workflow, 'candidate-evidence');
-        $publish = $this->jobBlock($workflow, 'publish-architecture');
-        $assembly = $this->jobBlock($workflow, 'assemble-indexes');
-        $qualification = $this->jobBlock($workflow, 'qualify-published');
-        $promotion = $this->jobBlock($workflow, 'promote-main');
-        $recovery = $this->jobBlock($workflow, 'recover-main');
-        $movingChannel = $this->jobBlock($workflow, 'verify-main');
-        $publicationEvidence = $this->jobBlock($workflow, 'publication-evidence');
+        $candidateWorkflow = $this->contents('.github/workflows/devcontainer-image-pr.yml');
+        $publicationWorkflow = $this->contents('.github/workflows/devcontainer-image.yml');
+        $combinedWorkflows = $candidateWorkflow."\n".$publicationWorkflow;
+        $candidateHeader = explode("\njobs:", $candidateWorkflow, 2)[0];
+        $publicationHeader = explode("\njobs:", $publicationWorkflow, 2)[0];
+        $artifactIdentity = $this->jobBlock($publicationWorkflow, 'artifact-identity');
+        $validate = $this->jobBlock($candidateWorkflow, 'validate');
+        $candidateEvidence = $this->jobBlock($candidateWorkflow, 'candidate-evidence');
+        $publish = $this->jobBlock($publicationWorkflow, 'publish-architecture');
+        $assembly = $this->jobBlock($publicationWorkflow, 'assemble-indexes');
+        $qualification = $this->jobBlock($publicationWorkflow, 'qualify-published');
+        $promotion = $this->jobBlock($publicationWorkflow, 'promote-main');
+        $recovery = $this->jobBlock($publicationWorkflow, 'recover-main');
+        $movingChannel = $this->jobBlock($publicationWorkflow, 'verify-main');
+        $publicationEvidence = $this->jobBlock($publicationWorkflow, 'publication-evidence');
         $matrixRunner = "runs-on: \${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}";
         $aggregationRunner = "runs-on: \${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}";
 
-        $this->assertStringNotContainsString('pull_request_target', $workflow);
-        $this->assertStringNotContainsString('setup-qemu-action', $workflow);
-        $this->assertStringNotContainsString('QEMU', $workflow);
+        $this->assertStringContainsString("  pull_request:\n    branches: [ main ]", $candidateHeader);
+        $this->assertStringNotContainsString('  push:', $candidateHeader);
+        $this->assertStringNotContainsString('  schedule:', $candidateHeader);
+        $this->assertStringNotContainsString('  workflow_dispatch:', $candidateHeader);
+        $this->assertStringContainsString("permissions:\n  contents: read", $candidateHeader);
+        foreach ([$candidateHeader, $publicationHeader] as $header) {
+            $this->assertStringContainsString('.github/workflows/devcontainer-image.yml', $header);
+            $this->assertStringContainsString('.github/workflows/devcontainer-image-pr.yml', $header);
+        }
+        $this->assertStringNotContainsString('  pull_request:', $publicationHeader);
+        $this->assertStringContainsString("  push:\n    branches: [ main ]", $publicationHeader);
+        $this->assertStringContainsString('  schedule:', $publicationHeader);
+        $this->assertStringContainsString('  workflow_dispatch:', $publicationHeader);
+        $this->assertStringContainsString("permissions:\n  contents: read", $publicationHeader);
+        $this->assertStringContainsString('devcontainer-image-${{ github.event.pull_request.number }}', $candidateHeader);
+        $this->assertStringContainsString('group: devcontainer-image-protected-main', $publicationHeader);
+        $this->assertStringNotContainsString("\n  publish-architecture:", $candidateWorkflow);
+        $this->assertStringNotContainsString("\n  validate:", $publicationWorkflow);
+        $this->assertStringNotContainsString('pull_request_target', $combinedWorkflows);
+        $this->assertStringNotContainsString('setup-qemu-action', $combinedWorkflows);
+        $this->assertStringNotContainsString('QEMU', $combinedWorkflows);
+        foreach (['packages: write', 'secrets.', 'docker/login-action', 'cache-from', 'cache-to', 'environment:'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $candidateWorkflow);
+        }
         $this->assertStringContainsString('runner: ubuntu-24.04', $validate);
         $this->assertStringContainsString('runner: ubuntu-24.04-arm', $validate);
         foreach ([$validate, $publish, $qualification] as $job) {
@@ -509,7 +534,7 @@ BASH,
         $this->assertStringContainsString('echo "revision_tag=$revision_tag" >> "$GITHUB_OUTPUT"', $artifactIdentity);
         $this->assertStringNotContainsString(
             'REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}',
-            $workflow,
+            $publicationWorkflow,
         );
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
         $this->assertStringContainsString('contents: read', $validate);
@@ -544,6 +569,7 @@ BASH,
         $this->assertStringNotContainsString('cache-to', $publish);
 
         $this->assertStringContainsString('needs: [artifact-identity, publish-architecture]', $assembly);
+        $this->assertStringContainsString("github.ref == 'refs/heads/main'", $assembly);
         $this->assertStringContainsString('imagetools create', $assembly);
         $this->assertStringContainsString('cmp ghcr-index.json dockerhub-index.json', $assembly);
         $this->assertStringContainsString('needs: [artifact-identity, assemble-indexes]', $qualification);
@@ -555,8 +581,10 @@ BASH,
         $this->assertStringNotContainsString('secrets.', $qualification);
         $this->assertStringNotContainsString('docker/login-action', $qualification);
         $this->assertStringContainsString('needs: [artifact-identity, assemble-indexes, qualify-published]', $promotion);
+        $this->assertStringContainsString("github.ref == 'refs/heads/main'", $promotion);
         $this->assertStringContainsString("inputs.recover_revision_tag != ''", $recovery);
         $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $recovery);
+        $this->assertStringContainsString("github.ref == 'refs/heads/main'", $recovery);
         $this->assertStringContainsString('packages: write', $recovery);
         $this->assertStringContainsString('secrets.DOCKERHUB_TOKEN', $recovery);
         $this->assertStringContainsString('^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$', $recovery);
@@ -572,11 +600,13 @@ BASH,
         $this->assertStringContainsString('compressed_layer_count', $publish);
         $this->assertStringContainsString('within_size_budget', $publish);
         $this->assertStringContainsString("always() && steps.build.outcome == 'success'", $publish);
-        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $workflow);
-        $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $workflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $candidateWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $candidateWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $publicationWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $publicationWorkflow);
         $this->assertStringContainsString('900', $publicationEvidence);
 
-        preg_match_all('/^\s*uses:\s+[^@\s]+@([^\s#]+)/m', $workflow, $actionRefs);
+        preg_match_all('/^\s*uses:\s+[^@\s]+@([^\s#]+)/m', $combinedWorkflows, $actionRefs);
         $this->assertNotEmpty($actionRefs[1]);
         foreach ($actionRefs[1] as $ref) {
             $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', $ref);

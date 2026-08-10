@@ -1,0 +1,154 @@
+name: devcontainer image pull request
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - .devcontainer/**
+      - .github/workflows/devcontainer-image.yml
+      - .github/workflows/devcontainer-image-pr.yml
+      - app/Console/Commands/Init.php
+      - composer.json
+      - composer.lock
+      - docker/install-phpredis.sh
+      - docker/playwright-smoke.js
+      - microservice/composer.json
+      - microservice/composer.lock
+      - package.json
+      - package-lock.json
+      - scripts/ci/qualify-devcontainer-image.sh
+      - scripts/ci/summarize-devcontainer-evidence.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcontainer-image-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  MAX_COMPRESSED_LAYER_BYTES: '400000000'
+  MAX_COMPRESSED_PLATFORM_BYTES: '750000000'
+
+jobs:
+  validate:
+    name: Validate candidate natively (${{ matrix.platform }})
+    if: ${{ github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
+    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            runner_architecture: amd64
+            host_machine: x86_64
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            runner_architecture: arm64
+            host_machine: aarch64
+            suffix: arm64
+    steps:
+      - name: Start candidate timing
+        id: timing-start
+        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        with:
+          persist-credentials: false
+
+      - name: Require the native runner and Docker engine
+        env:
+          EXPECTED_HOST_MACHINE: ${{ matrix.host_machine }}
+          EXPECTED_RUNNER_ARCHITECTURE: ${{ matrix.runner_architecture }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_HOST_MACHINE"
+          docker_architecture="$(docker info --format '{{.Architecture}}')"
+          case "${EXPECTED_RUNNER_ARCHITECTURE}:${docker_architecture}" in
+            amd64:amd64|amd64:x86_64|arm64:arm64|arm64:aarch64) ;;
+            *) echo "Docker engine architecture mismatch: ${docker_architecture}" >&2; exit 1 ;;
+          esac
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4
+
+      - name: Build untrusted candidate without shared cache
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
+        with:
+          context: .
+          file: .devcontainer/docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          no-cache: true
+          pull: true
+          push: false
+          tags: sample-app-devcontainer:candidate-${{ matrix.suffix }}
+          build-args: |
+            VCS_REF=${{ github.sha }}
+
+      - name: Record candidate build timing
+        id: build-timing
+        env:
+          STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
+        run: echo "elapsed_ms=$(( $(date +%s%3N) - STARTED_MS ))" >> "$GITHUB_OUTPUT"
+
+      - name: Qualify candidate topology
+        env:
+          DEVCONTAINER_EVIDENCE_TYPE: candidate_qualification
+          DEVCONTAINER_EXPECTED_REVISION: ${{ github.sha }}
+          DEVCONTAINER_IMAGE_BUILD_MS: ${{ steps.build-timing.outputs.elapsed_ms }}
+          DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS: 0
+          DEVCONTAINER_RUNNER_LABEL: ${{ matrix.runner }}
+          DEVCONTAINER_RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
+          DEVCONTAINER_SKIP_IMAGE_PULL: 1
+        run: >-
+          scripts/ci/qualify-devcontainer-image.sh
+          sample-app-devcontainer:candidate-${{ matrix.suffix }}
+          ${{ matrix.platform }}
+          devcontainer-candidate-evidence-${{ matrix.suffix }}.json
+
+      - name: Retain candidate evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: devcontainer-evidence-candidate-${{ matrix.suffix }}
+          path: devcontainer-candidate-evidence-${{ matrix.suffix }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  candidate-evidence:
+    name: Enforce cold pull-request validation budget
+    if: ${{ github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
+    needs: [validate]
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          pattern: devcontainer-evidence-candidate-*
+          path: devcontainer-evidence
+          merge-multiple: true
+
+      - name: Summarize native candidate evidence
+        run: >-
+          python3 scripts/ci/summarize-devcontainer-evidence.py
+          candidate
+          devcontainer-evidence
+          devcontainer-candidate-evidence.json
+          900
+
+      - name: Retain candidate summary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: devcontainer-candidate-evidence
+          path: devcontainer-candidate-evidence.json
+          if-no-files-found: error
+          retention-days: 30

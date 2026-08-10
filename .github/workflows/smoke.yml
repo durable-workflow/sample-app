@@ -87,7 +87,7 @@ jobs:
 
       - name: Retain startup and result timing evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: service-mode-onboarding-evidence
           path: |

@@ -175,17 +175,21 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertIn("${{ github.event_name }}-", php)
 
     def test_devcontainer_publication_isolated_from_untrusted_validation(self) -> None:
-        workflow = read_workflow("devcontainer-image.yml")
-        artifact_identity = job_block(workflow, "artifact-identity")
-        validate = job_block(workflow, "validate")
-        candidate_evidence = job_block(workflow, "candidate-evidence")
-        publish = job_block(workflow, "publish-architecture")
-        assembly = job_block(workflow, "assemble-indexes")
-        qualification = job_block(workflow, "qualify-published")
-        promotion = job_block(workflow, "promote-main")
-        recovery = job_block(workflow, "recover-main")
-        moving_channel = job_block(workflow, "verify-main")
-        publication_evidence = job_block(workflow, "publication-evidence")
+        candidate_workflow = read_workflow("devcontainer-image-pr.yml")
+        publication_workflow = read_workflow("devcontainer-image.yml")
+        combined_workflows = f"{candidate_workflow}\n{publication_workflow}"
+        candidate_header = candidate_workflow.split("\njobs:", maxsplit=1)[0]
+        publication_header = publication_workflow.split("\njobs:", maxsplit=1)[0]
+        artifact_identity = job_block(publication_workflow, "artifact-identity")
+        validate = job_block(candidate_workflow, "validate")
+        candidate_evidence = job_block(candidate_workflow, "candidate-evidence")
+        publish = job_block(publication_workflow, "publish-architecture")
+        assembly = job_block(publication_workflow, "assemble-indexes")
+        qualification = job_block(publication_workflow, "qualify-published")
+        promotion = job_block(publication_workflow, "promote-main")
+        recovery = job_block(publication_workflow, "recover-main")
+        moving_channel = job_block(publication_workflow, "verify-main")
+        publication_evidence = job_block(publication_workflow, "publication-evidence")
 
         matrix_runner = (
             "runs-on: ${{ github.server_url == 'https://github.com' "
@@ -196,9 +200,35 @@ class WorkflowRoutingTest(unittest.TestCase):
             "&& 'ubuntu-24.04' || 'ubuntu-latest' }}"
         )
 
-        self.assertNotIn("pull_request_target", workflow)
-        self.assertNotIn("setup-qemu-action", workflow)
-        self.assertNotIn("QEMU", workflow)
+        self.assertIn("  pull_request:\n    branches: [ main ]", candidate_header)
+        self.assertNotIn("  push:", candidate_header)
+        self.assertNotIn("  schedule:", candidate_header)
+        self.assertNotIn("  workflow_dispatch:", candidate_header)
+        self.assertIn("permissions:\n  contents: read", candidate_header)
+        for header in (candidate_header, publication_header):
+            self.assertIn(".github/workflows/devcontainer-image.yml", header)
+            self.assertIn(".github/workflows/devcontainer-image-pr.yml", header)
+        self.assertNotIn("  pull_request:", publication_header)
+        self.assertIn("  push:\n    branches: [ main ]", publication_header)
+        self.assertIn("  schedule:", publication_header)
+        self.assertIn("  workflow_dispatch:", publication_header)
+        self.assertIn("permissions:\n  contents: read", publication_header)
+        self.assertIn("devcontainer-image-${{ github.event.pull_request.number }}", candidate_header)
+        self.assertIn("group: devcontainer-image-protected-main", publication_header)
+        self.assertNotIn("\n  publish-architecture:", candidate_workflow)
+        self.assertNotIn("\n  validate:", publication_workflow)
+        self.assertNotIn("pull_request_target", combined_workflows)
+        self.assertNotIn("setup-qemu-action", combined_workflows)
+        self.assertNotIn("QEMU", combined_workflows)
+        for forbidden in (
+            "packages: write",
+            "secrets.",
+            "docker/login-action",
+            "cache-from",
+            "cache-to",
+            "environment:",
+        ):
+            self.assertNotIn(forbidden, candidate_workflow)
         self.assertIn("github.event_name == 'pull_request'", validate)
         self.assertIn("runner: ubuntu-24.04", validate)
         self.assertIn("runner: ubuntu-24.04-arm", validate)
@@ -251,6 +281,7 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertNotIn("cache-to", publish)
 
         self.assertIn("needs: [artifact-identity, publish-architecture]", assembly)
+        self.assertIn("github.ref == 'refs/heads/main'", assembly)
         self.assertIn("imagetools create", assembly)
         self.assertIn("cmp ghcr-index.json dockerhub-index.json", assembly)
         self.assertIn("needs: [artifact-identity, assemble-indexes]", qualification)
@@ -262,8 +293,10 @@ class WorkflowRoutingTest(unittest.TestCase):
             "needs: [artifact-identity, assemble-indexes, qualify-published]",
             promotion,
         )
+        self.assertIn("github.ref == 'refs/heads/main'", promotion)
         self.assertIn("inputs.recover_revision_tag != ''", recovery)
         self.assertIn("github.repository == 'durable-workflow/sample-app'", recovery)
+        self.assertIn("github.ref == 'refs/heads/main'", recovery)
         self.assertIn("packages: write", recovery)
         self.assertIn("secrets.DOCKERHUB_TOKEN", recovery)
         self.assertIn("^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$", recovery)
@@ -276,7 +309,7 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertIn("summarize-devcontainer-evidence.py", publication_evidence)
 
         action_refs = []
-        for line in workflow.splitlines():
+        for line in combined_workflows.splitlines():
             stripped = line.strip()
             if not stripped.startswith("uses: "):
                 continue
