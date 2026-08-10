@@ -14,6 +14,16 @@ for executable in composer curl ffmpeg git mysql node npm npx playwright redis-c
     command -v "$executable" >/dev/null
 done
 
+mysql_seed_archive=/usr/local/share/sample-app/mysql-datadir.tar
+test -x /usr/local/bin/seed-mysql-volume
+test -s "$mysql_seed_archive"
+tar --list --file="$mysql_seed_archive" \
+    | grep -Fx './.sample-app-codespaces-seed' >/dev/null
+tar --list --file="$mysql_seed_archive" \
+    | grep -Fx './mysql/' >/dev/null
+tar --list --file="$mysql_seed_archive" \
+    | grep -Fx './sample/' >/dev/null
+
 case "${DEVCONTAINER_SSH_HOST_KEY_STATE:-present}" in
     absent)
         if compgen -G '/etc/ssh/ssh_host_*_key' >/dev/null; then

@@ -2,6 +2,76 @@ FROM node:22-bookworm-slim AS node
 
 FROM composer:2 AS composer
 
+FROM mariadb:11.4 AS mysql-seed
+
+ENV MYSQL_ROOT_PASSWORD=password \
+    MYSQL_ROOT_HOST=% \
+    MYSQL_DATABASE=sample \
+    MYSQL_USER=laravel \
+    MYSQL_PASSWORD=password
+
+COPY .devcontainer/docker/create-testing-database.sh /docker-entrypoint-initdb.d/10-create-testing-database.sh
+COPY .devcontainer/schema/mysql-schema.sql /docker-entrypoint-initdb.d/20-sample-app-schema.sql
+
+RUN set -eux; \
+    docker-entrypoint.sh mariadbd \
+        --innodb-flush-method=nosync \
+        --innodb-flush-log-at-trx-commit=0 \
+        --innodb-doublewrite=OFF \
+        --innodb-file-per-table=OFF \
+        --innodb-buffer-pool-size=64M \
+        --innodb-log-file-size=16M \
+        --performance-schema=OFF \
+        --skip-name-resolve & \
+    database_pid="$!"; \
+    database_ready=0; \
+    for attempt in $(seq 1 180); do \
+        if healthcheck.sh --connect --innodb_initialized \
+            && mariadb \
+                --protocol=tcp \
+                --host=127.0.0.1 \
+                --user="$MYSQL_USER" \
+                --password="$MYSQL_PASSWORD" \
+                --database="$MYSQL_DATABASE" \
+                --batch \
+                --skip-column-names \
+                --execute='SELECT 1' \
+                >/dev/null; then \
+            database_ready=1; \
+            break; \
+        fi; \
+        sleep 1; \
+    done; \
+    if [ "$database_ready" != 1 ]; then \
+        echo 'Timed out while creating the Codespaces MySQL seed.' >&2; \
+        exit 1; \
+    fi; \
+    migration_count="$(mariadb \
+        --user="$MYSQL_USER" \
+        --password="$MYSQL_PASSWORD" \
+        --database="$MYSQL_DATABASE" \
+        --batch \
+        --skip-column-names \
+        --execute='SELECT COUNT(*) FROM migrations')"; \
+    test "$migration_count" = 49; \
+    mariadb-admin \
+        --user=root \
+        --password="$MYSQL_ROOT_PASSWORD" \
+        --protocol=socket \
+        shutdown; \
+    wait "$database_pid"; \
+    rm -f /var/lib/mysql/auto.cnf; \
+    touch /var/lib/mysql/.sample-app-codespaces-seed; \
+    tar \
+        --create \
+        --file=/tmp/sample-app-mysql-seed.tar \
+        --format=posix \
+        --numeric-owner \
+        --sort=name \
+        --directory=/var/lib/mysql \
+        .; \
+    test -s /tmp/sample-app-mysql-seed.tar
+
 FROM php:8.4-cli-bookworm
 
 ARG VCS_REF=unknown
@@ -165,12 +235,14 @@ RUN set -eux; \
 
 ENV COMPOSER_HOME=/home/laravel/.composer
 
+COPY --from=mysql-seed /tmp/sample-app-mysql-seed.tar /usr/local/share/sample-app/mysql-datadir.tar
 COPY .devcontainer/docker/start-container /usr/local/bin/start-container
+COPY .devcontainer/docker/seed-mysql-volume /usr/local/bin/seed-mysql-volume
 COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image
 COPY .devcontainer/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .devcontainer/docker/php.ini /usr/local/etc/php/conf.d/99-laravel.ini
 
-RUN chmod +x /usr/local/bin/start-container /usr/local/bin/verify-devcontainer-image \
+RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container /usr/local/bin/verify-devcontainer-image \
     && DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image
 
 EXPOSE 22 80 5173

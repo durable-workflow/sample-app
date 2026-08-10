@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -59,6 +60,27 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertSame('local', $compose['volumes']['laravel-vendor']['driver'] ?? null);
         $this->assertSame('local', $compose['volumes']['microservice-vendor']['driver'] ?? null);
 
+        $this->assertSame($expectedImage, $services['mysql-seed']['image'] ?? null);
+        $this->assertSame(
+            '${SAMPLE_APP_DEVCONTAINER_PULL_POLICY:-always}',
+            $services['mysql-seed']['pull_policy'] ?? null,
+        );
+        $this->assertSame('root', $services['mysql-seed']['user'] ?? null);
+        $this->assertSame(
+            ['/usr/local/bin/seed-mysql-volume'],
+            $services['mysql-seed']['entrypoint'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'type' => 'volume',
+                'source' => 'laravel-mysql',
+                'target' => '/var/lib/mysql',
+                'volume' => ['nocopy' => true],
+            ],
+            $services['mysql-seed']['volumes'][0] ?? null,
+        );
+        $this->assertSame('no', $services['mysql-seed']['restart'] ?? null);
+
         $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
         $this->assertSame(
             [
@@ -90,6 +112,10 @@ final class DevcontainerImageContractTest extends TestCase
             './mysql-healthcheck.sh:/usr/local/bin/check-codespaces-mysql-health:ro',
             $services['mysql']['volumes'][3] ?? null,
         );
+        $this->assertSame(
+            ['mysql-seed' => ['condition' => 'service_completed_successfully']],
+            $services['mysql']['depends_on'] ?? null,
+        );
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
         $this->assertSame(
             [
@@ -113,12 +139,27 @@ final class DevcontainerImageContractTest extends TestCase
         $verification = $this->contents('.devcontainer/docker/verify-image.sh');
         $databaseInitialization = $this->contents('.devcontainer/docker/create-testing-database.sh');
         $databaseHealthcheck = $this->contents('.devcontainer/docker/mysql-healthcheck.sh');
+        $databaseSeed = $this->contents('.devcontainer/docker/seed-mysql-volume');
         $initCommand = $this->contents('app/Console/Commands/Init.php');
         $postCreate = $this->contents('.devcontainer/post-create.sh');
 
         $this->assertStringContainsString('FROM php:8.4-cli-bookworm', $dockerfile);
         $this->assertStringContainsString('FROM node:22-bookworm-slim', $dockerfile);
         $this->assertStringContainsString('FROM composer:2', $dockerfile);
+        $this->assertStringContainsString('FROM mariadb:11.4 AS mysql-seed', $dockerfile);
+        $this->assertStringContainsString('healthcheck.sh --connect --innodb_initialized', $dockerfile);
+        $this->assertStringContainsString('--protocol=tcp', $dockerfile);
+        $this->assertStringContainsString('--host=127.0.0.1', $dockerfile);
+        $this->assertStringContainsString('--file=/tmp/sample-app-mysql-seed.tar', $dockerfile);
+        $this->assertStringContainsString('--numeric-owner', $dockerfile);
+        $this->assertStringContainsString(
+            'COPY --from=mysql-seed /tmp/sample-app-mysql-seed.tar /usr/local/share/sample-app/mysql-datadir.tar',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
+            'COPY .devcontainer/docker/seed-mysql-volume /usr/local/bin/seed-mysql-volume',
+            $dockerfile,
+        );
         $this->assertStringContainsString('COPY package-lock.json /tmp/sample-app-package-lock.json', $dockerfile);
         $this->assertStringContainsString('lock.packages["node_modules/playwright"].version', $dockerfile);
         $this->assertStringContainsString('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1', $dockerfile);
@@ -186,6 +227,9 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('--host=127.0.0.1', $databaseHealthcheck);
         $this->assertStringContainsString("--execute='SELECT 1'", $databaseHealthcheck);
         $this->assertStringNotContainsString('migrations', $databaseHealthcheck);
+        $this->assertStringContainsString('.sample-app-seed-in-progress', $databaseSeed);
+        $this->assertStringContainsString('[[ -d "$data_dir/mysql" ]]', $databaseSeed);
+        $this->assertStringContainsString('find "$data_dir" -mindepth 1 -depth -delete', $databaseSeed);
         $this->assertStringContainsString('-c:v libx264', $verification);
         $this->assertStringContainsString('-c:a aac', $verification);
         $this->assertStringContainsString('output.mp4', $verification);
@@ -209,6 +253,98 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('--check-lock', $entrypoint);
         $this->assertStringContainsString('[[ ! -s vendor/autoload.php ]]', $entrypoint);
         $this->assertTrue(is_executable($this->repoPath('.devcontainer/post-create.sh')));
+        $this->assertTrue(is_executable($this->repoPath('.devcontainer/docker/seed-mysql-volume')));
+    }
+
+    public function test_mysql_seed_initializes_only_fresh_or_interrupted_data_directories(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-mysql-seed-'.bin2hex(random_bytes(8));
+        $seedSource = $temporaryDirectory.'/seed-source';
+        $seedArchive = $temporaryDirectory.'/mysql-seed.tar';
+        $dataDirectory = $temporaryDirectory.'/data';
+        $interruptedDirectory = $temporaryDirectory.'/interrupted';
+        $unexpectedDirectory = $temporaryDirectory.'/unexpected';
+        $filesystem->mkdir([
+            $seedSource.'/mysql',
+            $seedSource.'/sample',
+            $seedSource.'/testing',
+            $dataDirectory,
+            $interruptedDirectory,
+            $unexpectedDirectory,
+        ], 0700);
+        file_put_contents($seedSource.'/.sample-app-codespaces-seed', "seed\n");
+        file_put_contents($seedSource.'/mysql/system-table', "system\n");
+        file_put_contents($seedSource.'/sample/application-table', "application\n");
+        file_put_contents($seedSource.'/testing/database-marker', "testing\n");
+
+        try {
+            (new Process([
+                'tar',
+                '--create',
+                '--file='.$seedArchive,
+                '--directory='.$seedSource,
+                '.',
+            ]))->mustRun();
+
+            $fakeId = $temporaryDirectory.'/id';
+            file_put_contents($fakeId, <<<'BASH'
+#!/usr/bin/env bash
+printf '%s\n' "${FAKE_ID_UID:-0}"
+BASH);
+            chmod($fakeId, 0700);
+
+            $environment = [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'FAKE_ID_UID' => '0',
+                'SAMPLE_APP_MYSQL_DATA_DIR' => $dataDirectory,
+                'SAMPLE_APP_MYSQL_SEED_ARCHIVE' => $seedArchive,
+            ];
+            $seed = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: $environment,
+            );
+            $seed->mustRun();
+
+            $this->assertFileExists($dataDirectory.'/.sample-app-codespaces-seed');
+            $this->assertFileExists($dataDirectory.'/mysql/system-table');
+            $this->assertFileExists($dataDirectory.'/sample/application-table');
+            $this->assertFileExists($dataDirectory.'/testing/database-marker');
+            $this->assertFileDoesNotExist($dataDirectory.'/.sample-app-seed-in-progress');
+
+            file_put_contents($dataDirectory.'/sample/persistent-user-data', "preserve\n");
+            $seed->mustRun();
+            $this->assertFileExists($dataDirectory.'/sample/persistent-user-data');
+
+            file_put_contents($interruptedDirectory.'/.sample-app-seed-in-progress', "partial\n");
+            file_put_contents($interruptedDirectory.'/partial-data', "replace\n");
+            (new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: [...$environment, 'SAMPLE_APP_MYSQL_DATA_DIR' => $interruptedDirectory],
+            ))->mustRun();
+            $this->assertFileDoesNotExist($interruptedDirectory.'/partial-data');
+            $this->assertFileExists($interruptedDirectory.'/sample/application-table');
+            $this->assertFileDoesNotExist($interruptedDirectory.'/.sample-app-seed-in-progress');
+
+            file_put_contents($unexpectedDirectory.'/unknown-data', "unknown\n");
+            $unexpected = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: [...$environment, 'SAMPLE_APP_MYSQL_DATA_DIR' => $unexpectedDirectory],
+            );
+            $unexpected->run();
+            $this->assertSame(1, $unexpected->getExitCode());
+            $this->assertStringContainsString('Refusing to seed non-empty MySQL data directory', $unexpected->getErrorOutput());
+            $this->assertFileExists($unexpectedDirectory.'/unknown-data');
+
+            $nonRoot = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: [...$environment, 'FAKE_ID_UID' => '1000'],
+            );
+            $nonRoot->run();
+            $this->assertSame(1, $nonRoot->getExitCode());
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
     }
 
     public function test_mysql_healthcheck_fails_closed_without_gating_on_the_schema_version(): void
@@ -341,6 +477,7 @@ BASH,
     public function test_publication_separates_untrusted_builds_from_protected_registry_jobs(): void
     {
         $workflow = $this->contents('.github/workflows/devcontainer-image.yml');
+        $artifactIdentity = $this->jobBlock($workflow, 'artifact-identity');
         $validate = $this->jobBlock($workflow, 'validate');
         $candidateEvidence = $this->jobBlock($workflow, 'candidate-evidence');
         $publish = $this->jobBlock($workflow, 'publish-architecture');
@@ -361,9 +498,19 @@ BASH,
         foreach ([$validate, $publish, $qualification] as $job) {
             $this->assertStringContainsString($matrixRunner, $job);
         }
-        foreach ([$candidateEvidence, $assembly, $promotion, $recovery, $movingChannel, $publicationEvidence] as $job) {
+        foreach ([$artifactIdentity, $candidateEvidence, $assembly, $promotion, $recovery, $movingChannel, $publicationEvidence] as $job) {
             $this->assertStringContainsString($aggregationRunner, $job);
         }
+        $this->assertStringContainsString('revision_tag: ${{ steps.identity.outputs.revision_tag }}', $artifactIdentity);
+        $this->assertStringContainsString(
+            'revision_tag="sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            $artifactIdentity,
+        );
+        $this->assertStringContainsString('echo "revision_tag=$revision_tag" >> "$GITHUB_OUTPUT"', $artifactIdentity);
+        $this->assertStringNotContainsString(
+            'REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}',
+            $workflow,
+        );
         $this->assertStringContainsString('platforms: ${{ matrix.platform }}', $validate);
         $this->assertStringContainsString('contents: read', $validate);
         $this->assertStringNotContainsString('packages: write', $validate);
@@ -379,6 +526,11 @@ BASH,
 
         $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $publish);
         $this->assertStringContainsString("github.ref == 'refs/heads/main'", $publish);
+        $this->assertStringContainsString('needs: [artifact-identity]', $publish);
+        $this->assertStringContainsString(
+            'REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}',
+            $publish,
+        );
         $this->assertStringContainsString('runner: ubuntu-24.04', $publish);
         $this->assertStringContainsString('runner: ubuntu-24.04-arm', $publish);
         $this->assertStringContainsString('packages: write', $publish);
@@ -391,10 +543,10 @@ BASH,
         $this->assertStringNotContainsString('cache-from', $publish);
         $this->assertStringNotContainsString('cache-to', $publish);
 
-        $this->assertStringContainsString('needs: [publish-architecture]', $assembly);
+        $this->assertStringContainsString('needs: [artifact-identity, publish-architecture]', $assembly);
         $this->assertStringContainsString('imagetools create', $assembly);
         $this->assertStringContainsString('cmp ghcr-index.json dockerhub-index.json', $assembly);
-        $this->assertStringContainsString('needs: [assemble-indexes]', $qualification);
+        $this->assertStringContainsString('needs: [artifact-identity, assemble-indexes]', $qualification);
         $this->assertStringContainsString('runner: ubuntu-24.04', $qualification);
         $this->assertStringContainsString('runner: ubuntu-24.04-arm', $qualification);
         $this->assertStringContainsString('DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1', $qualification);
@@ -402,7 +554,7 @@ BASH,
         $this->assertStringContainsString('linux/arm64', $qualification);
         $this->assertStringNotContainsString('secrets.', $qualification);
         $this->assertStringNotContainsString('docker/login-action', $qualification);
-        $this->assertStringContainsString('needs: [assemble-indexes, qualify-published]', $promotion);
+        $this->assertStringContainsString('needs: [artifact-identity, assemble-indexes, qualify-published]', $promotion);
         $this->assertStringContainsString("inputs.recover_revision_tag != ''", $recovery);
         $this->assertStringContainsString("github.repository == 'durable-workflow/sample-app'", $recovery);
         $this->assertStringContainsString('packages: write', $recovery);
@@ -411,7 +563,7 @@ BASH,
         $this->assertStringContainsString('cmp ghcr-source.json dockerhub-source.json', $recovery);
         $this->assertStringContainsString('architectures != {"amd64", "arm64"}', $recovery);
         $this->assertStringContainsString('cmp ghcr-main.json dockerhub-main.json', $recovery);
-        $this->assertStringContainsString('needs: [promote-main]', $movingChannel);
+        $this->assertStringContainsString('needs: [artifact-identity, promote-main]', $movingChannel);
         $this->assertStringContainsString('anonymous-docker-config', $movingChannel);
         $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
         $this->assertStringContainsString('summarize-devcontainer-evidence.py', $publicationEvidence);
@@ -444,6 +596,9 @@ BASH,
         $this->assertStringContainsString('anonymous_pull_verification', $script);
         $this->assertStringContainsString('runner', $script);
         $this->assertStringContainsString('export SAMPLE_APP_UID="$(id -u)"', $script);
+        $this->assertStringContainsString('prepare_qualification_checkout', $script);
+        $this->assertStringContainsString('sudo chown -R "${SAMPLE_APP_UID}:${qualification_gid}"', $script);
+        $this->assertStringContainsString('stat --format=%u .env', $script);
         $this->assertStringContainsString('[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]', $script);
         $this->assertStringContainsString('exec -T --user laravel laravel .devcontainer/post-create.sh', $script);
         $this->assertStringContainsString('php artisan migrate:status --no-interaction', $script);
@@ -453,7 +608,7 @@ BASH,
         $this->assertStringContainsString('expected_migration_count=49', $script);
         $this->assertStringContainsString('expected_table_count=49', $script);
         preg_match_all('/^verify_database_schema$/m', $script, $schemaVerifications, PREG_OFFSET_CAPTURE);
-        $this->assertCount(2, $schemaVerifications[0]);
+        $this->assertCount(4, $schemaVerifications[0]);
         $this->assertLessThan(
             strpos($script, 'dependency_bootstrap_started_ms='),
             $schemaVerifications[0][0][1],

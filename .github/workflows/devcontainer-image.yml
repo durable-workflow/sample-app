@@ -54,9 +54,35 @@ env:
   DOCKERHUB_IMAGE: durableworkflow/sample-app-devcontainer
   MAX_COMPRESSED_LAYER_BYTES: '400000000'
   MAX_COMPRESSED_PLATFORM_BYTES: '750000000'
-  REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
+  artifact-identity:
+    name: Reserve immutable publication identity
+    if: >-
+      ${{
+        github.server_url == 'https://github.com' &&
+        github.repository == 'durable-workflow/sample-app' &&
+        github.ref == 'refs/heads/main' &&
+        github.event_name != 'pull_request' &&
+        (github.event_name != 'workflow_dispatch' || inputs.recover_revision_tag == '')
+      }}
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      revision_tag: ${{ steps.identity.outputs.revision_tag }}
+    steps:
+      - name: Bind the publication chain to this workflow attempt
+        id: identity
+        run: |
+          revision_tag="sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ ! "$revision_tag" =~ ^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$ ]]; then
+            echo "Invalid immutable publication tag: ${revision_tag}" >&2
+            exit 1
+          fi
+          echo "revision_tag=$revision_tag" >> "$GITHUB_OUTPUT"
+
   validate:
     name: Validate candidate natively (${{ matrix.platform }})
     if: ${{ github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
@@ -181,6 +207,7 @@ jobs:
 
   publish-architecture:
     name: Publish immutable native artifact (${{ matrix.platform }})
+    needs: [artifact-identity]
     if: >-
       ${{
         github.server_url == 'https://github.com' &&
@@ -194,6 +221,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -404,12 +433,14 @@ jobs:
   assemble-indexes:
     name: Assemble matching verified image indexes
     if: ${{ github.server_url == 'https://github.com' }}
-    needs: [publish-architecture]
+    needs: [artifact-identity, publish-architecture]
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
       packages: write
+    env:
+      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     steps:
       - name: Start index assembly timing
         id: timing-start
@@ -503,11 +534,13 @@ jobs:
   qualify-published:
     name: Qualify anonymously and natively (${{ matrix.registry }}, ${{ matrix.platform }})
     if: ${{ github.server_url == 'https://github.com' }}
-    needs: [assemble-indexes]
+    needs: [artifact-identity, assemble-indexes]
     runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -575,12 +608,14 @@ jobs:
   promote-main:
     name: Promote qualified image to main
     if: ${{ github.server_url == 'https://github.com' }}
-    needs: [assemble-indexes, qualify-published]
+    needs: [artifact-identity, assemble-indexes, qualify-published]
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
       packages: write
+    env:
+      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     steps:
       - name: Start promotion timing
         id: timing-start
@@ -744,11 +779,13 @@ jobs:
   verify-main:
     name: Inspect public main channel anonymously (${{ matrix.registry }})
     if: ${{ github.server_url == 'https://github.com' }}
-    needs: [promote-main]
+    needs: [artifact-identity, promote-main]
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
+    env:
+      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     strategy:
       fail-fast: false
       matrix:

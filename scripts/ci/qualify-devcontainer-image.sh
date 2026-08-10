@@ -97,6 +97,27 @@ export FORWARD_DB_PORT=13306
 export FORWARD_REDIS_PORT=16379
 
 compose=(docker compose --file "$compose_file")
+
+prepare_qualification_checkout() {
+    local qualification_gid
+
+    qualification_gid="$(id -g)"
+    if [[ "$(stat --format=%u "$repo_root")" != "$SAMPLE_APP_UID" \
+        || "$(stat --format=%g "$repo_root")" != "$qualification_gid" ]]; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo chown -R "${SAMPLE_APP_UID}:${qualification_gid}" "$repo_root"
+        else
+            chown -R "${SAMPLE_APP_UID}:${qualification_gid}" "$repo_root"
+        fi
+    fi
+
+    if [[ "$(stat --format=%u "$repo_root")" != "$SAMPLE_APP_UID" || ! -w "$repo_root" ]]; then
+        echo "Qualification checkout is not writable by SAMPLE_APP_UID ${SAMPLE_APP_UID}: ${repo_root}" >&2
+        exit 1
+    fi
+}
+
+prepare_qualification_checkout
 tracked_status_before="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
 
 verify_database_schema() {
@@ -204,11 +225,31 @@ container_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait mysql redis
 container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
 
+seed_container_id="$("${compose[@]}" ps --all --quiet mysql-seed)"
+if [[ -z "$seed_container_id" \
+    || "$(docker inspect --format '{{.State.ExitCode}}' "$seed_container_id")" != 0 ]]; then
+    echo 'The first-volume MySQL seed service did not complete successfully.' >&2
+    exit 1
+fi
+
 verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
+"${compose[@]}" exec -T --user laravel laravel bash -euc '
+    [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
+    [[ -w . ]]
+    if [[ -e .env ]]; then
+        [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
+        [[ -w .env ]]
+    fi
+'
 "${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
+"${compose[@]}" exec -T --user laravel laravel bash -euc '
+    [[ -f .env ]]
+    [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
+    [[ -w .env ]]
+'
 "${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
 dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
 
@@ -275,9 +316,39 @@ fi
 '
 
 warm_rebuild_started_ms="$(timestamp_ms)"
+"${compose[@]}" run --rm --no-deps mysql-seed
+verify_database_schema
+"${compose[@]}" stop laravel microservice mysql
+"${compose[@]}" up --detach --no-build --wait mysql redis
 "${compose[@]}" up --detach --no-build --force-recreate --wait laravel microservice
 "${compose[@]}" exec -T --user laravel laravel curl --fail --silent http://localhost/up >/dev/null
+"${compose[@]}" exec -T --user laravel laravel bash -euc '
+    migration_name=create_codespaces_future_migration_probe_table
+    php artisan make:migration "$migration_name" \
+        --create=codespaces_future_migration_probe \
+        --no-interaction
+    migration_paths=(database/migrations/*_"${migration_name}".php)
+    if (( ${#migration_paths[@]} != 1 )); then
+        echo "Expected one future-migration probe, found ${#migration_paths[@]}." >&2
+        exit 1
+    fi
+    migration_path="${migration_paths[0]}"
+    trap '\''rm -f "$migration_path"'\'' EXIT
+    php artisan migrate --force --no-interaction
+    php artisan migrate:rollback \
+        --force \
+        --no-interaction \
+        --path="$migration_path"
+'
+verify_database_schema
 warm_rebuild_ms="$(duration_ms "$warm_rebuild_started_ms")"
+
+checkout_status_after="$(git -C "$repo_root" status --porcelain)"
+if [[ -n "$checkout_status_after" ]]; then
+    echo 'Devcontainer qualification left the checkout dirty after persistent-volume validation.' >&2
+    printf '%s\n' "$checkout_status_after" >&2
+    exit 1
+fi
 
 fresh_total_ms=$(( image_pull_ms + container_readiness_ms + dependency_bootstrap_ms + application_readiness_ms ))
 max_fresh_ms=$(( max_fresh_seconds * 1000 ))

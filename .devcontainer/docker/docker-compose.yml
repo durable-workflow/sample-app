@@ -48,6 +48,18 @@ services:
             redis:
                 condition: service_healthy
         command: ["php", "artisan", "queue:listen", "shared", "--queue=activity"]
+    mysql-seed:
+        image: '${SAMPLE_APP_DEVCONTAINER_IMAGE:-ghcr.io/durable-workflow/sample-app-devcontainer:main}'
+        pull_policy: '${SAMPLE_APP_DEVCONTAINER_PULL_POLICY:-always}'
+        user: root
+        entrypoint: ["/usr/local/bin/seed-mysql-volume"]
+        volumes:
+            - type: volume
+              source: laravel-mysql
+              target: /var/lib/mysql
+              volume:
+                  nocopy: true
+        restart: 'no'
     mysql:
         image: 'mariadb:11.4'
         command:
@@ -79,6 +91,9 @@ services:
             - './mysql-healthcheck.sh:/usr/local/bin/check-codespaces-mysql-health:ro'
         networks:
             - laravel
+        depends_on:
+            mysql-seed:
+                condition: service_completed_successfully
         healthcheck:
             test: ["CMD", "bash", "/usr/local/bin/check-codespaces-mysql-health"]
             interval: 2s

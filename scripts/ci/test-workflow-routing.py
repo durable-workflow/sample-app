@@ -176,6 +176,7 @@ class WorkflowRoutingTest(unittest.TestCase):
 
     def test_devcontainer_publication_isolated_from_untrusted_validation(self) -> None:
         workflow = read_workflow("devcontainer-image.yml")
+        artifact_identity = job_block(workflow, "artifact-identity")
         validate = job_block(workflow, "validate")
         candidate_evidence = job_block(workflow, "candidate-evidence")
         publish = job_block(workflow, "publish-architecture")
@@ -204,6 +205,7 @@ class WorkflowRoutingTest(unittest.TestCase):
         for block in (validate, publish, qualification):
             self.assertIn(matrix_runner, block)
         for block in (
+            artifact_identity,
             candidate_evidence,
             assembly,
             promotion,
@@ -216,14 +218,27 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertNotIn("packages: write", validate)
         self.assertNotIn("secrets.", validate)
         self.assertNotIn("docker/login-action", validate)
+        self.assertNotIn("needs:", validate)
         self.assertNotIn("cache-from", validate)
         self.assertNotIn("cache-to", validate)
         self.assertIn("no-cache: true", validate)
         self.assertIn("needs: [validate]", candidate_evidence)
         self.assertIn("summarize-devcontainer-evidence.py", candidate_evidence)
 
+        self.assertIn("github.event_name != 'pull_request'", artifact_identity)
+        self.assertIn("contents: read", artifact_identity)
+        self.assertNotIn("packages: write", artifact_identity)
+        self.assertNotIn("secrets.", artifact_identity)
+        self.assertNotIn("docker/login-action", artifact_identity)
+        self.assertIn(
+            'revision_tag="sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            artifact_identity,
+        )
+
         self.assertIn("github.repository == 'durable-workflow/sample-app'", publish)
         self.assertIn("github.ref == 'refs/heads/main'", publish)
+        self.assertIn("github.event_name != 'pull_request'", publish)
+        self.assertIn("needs: [artifact-identity]", publish)
         self.assertIn("runner: ubuntu-24.04", publish)
         self.assertIn("runner: ubuntu-24.04-arm", publish)
         self.assertIn("packages: write", publish)
@@ -235,15 +250,18 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertNotIn("cache-from", publish)
         self.assertNotIn("cache-to", publish)
 
-        self.assertIn("needs: [publish-architecture]", assembly)
+        self.assertIn("needs: [artifact-identity, publish-architecture]", assembly)
         self.assertIn("imagetools create", assembly)
         self.assertIn("cmp ghcr-index.json dockerhub-index.json", assembly)
-        self.assertIn("needs: [assemble-indexes]", qualification)
+        self.assertIn("needs: [artifact-identity, assemble-indexes]", qualification)
         self.assertIn("runner: ubuntu-24.04-arm", qualification)
         self.assertIn("DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1", qualification)
         self.assertNotIn("secrets.", qualification)
         self.assertNotIn("docker/login-action", qualification)
-        self.assertIn("needs: [assemble-indexes, qualify-published]", promotion)
+        self.assertIn(
+            "needs: [artifact-identity, assemble-indexes, qualify-published]",
+            promotion,
+        )
         self.assertIn("inputs.recover_revision_tag != ''", recovery)
         self.assertIn("github.repository == 'durable-workflow/sample-app'", recovery)
         self.assertIn("packages: write", recovery)
@@ -252,7 +270,7 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertIn("cmp ghcr-source.json dockerhub-source.json", recovery)
         self.assertIn('architectures != {"amd64", "arm64"}', recovery)
         self.assertIn("cmp ghcr-main.json dockerhub-main.json", recovery)
-        self.assertIn("needs: [promote-main]", moving_channel)
+        self.assertIn("needs: [artifact-identity, promote-main]", moving_channel)
         self.assertIn("anonymous-docker-config", moving_channel)
         self.assertIn("needs: [verify-main]", publication_evidence)
         self.assertIn("summarize-devcontainer-evidence.py", publication_evidence)

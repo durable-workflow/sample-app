@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+data_dir="${SAMPLE_APP_MYSQL_DATA_DIR:-/var/lib/mysql}"
+seed_archive="${SAMPLE_APP_MYSQL_SEED_ARCHIVE:-/usr/local/share/sample-app/mysql-datadir.tar}"
+progress_marker="${data_dir}/.sample-app-seed-in-progress"
+
+if [[ "$(id -u)" != 0 ]]; then
+    printf '%s\n' 'The MySQL seed service must run as root so numeric database ownership is preserved.' >&2
+    exit 1
+fi
+
+if [[ ! -s "$seed_archive" ]]; then
+    printf 'The MySQL seed archive is missing or empty: %s\n' "$seed_archive" >&2
+    printf '%s\n' 'Pull the current development image and rebuild the Codespace.' >&2
+    exit 1
+fi
+
+mkdir -p "$data_dir"
+
+if [[ -e "$progress_marker" ]]; then
+    printf '%s\n' 'Recovering an interrupted first-volume MySQL seed.'
+    find "$data_dir" -mindepth 1 -depth -delete
+elif [[ -d "$data_dir/mysql" ]]; then
+    printf '%s\n' 'MySQL data already exists; preserving the persistent Codespaces volume.'
+    exit 0
+elif [[ -n "$(find "$data_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    printf 'Refusing to seed non-empty MySQL data directory without an initialized system database: %s\n' \
+        "$data_dir" >&2
+    printf '%s\n' 'Inspect or remove the affected Codespaces volume before rebuilding.' >&2
+    exit 1
+fi
+
+touch "$progress_marker"
+
+if ! tar \
+    --extract \
+    --file="$seed_archive" \
+    --directory="$data_dir" \
+    --numeric-owner \
+    --same-owner; then
+    printf '%s\n' 'MySQL seed extraction failed; the next run will replace the partial first-volume data.' >&2
+    exit 1
+fi
+
+for required_path in \
+    "$data_dir/.sample-app-codespaces-seed" \
+    "$data_dir/mysql" \
+    "$data_dir/sample" \
+    "$data_dir/testing"; do
+    if [[ ! -e "$required_path" ]]; then
+        printf 'MySQL seed extraction did not create required path: %s\n' "$required_path" >&2
+        exit 1
+    fi
+done
+
+rm -f "$progress_marker"
+printf '%s\n' 'Seeded the fresh persistent MySQL volume from the development image.'
