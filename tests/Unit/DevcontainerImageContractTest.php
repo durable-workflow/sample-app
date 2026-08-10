@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 final class DevcontainerImageContractTest extends TestCase
@@ -47,6 +48,17 @@ final class DevcontainerImageContractTest extends TestCase
             );
         }
 
+        $this->assertSame('../../:/var/www/html', $services['laravel']['volumes'][0] ?? null);
+        $this->assertSame('laravel-vendor:/var/www/html/vendor', $services['laravel']['volumes'][1] ?? null);
+        $this->assertSame('/var/www/html/microservice', $services['microservice']['working_dir'] ?? null);
+        $this->assertSame('../../:/var/www/html', $services['microservice']['volumes'][0] ?? null);
+        $this->assertSame(
+            'microservice-vendor:/var/www/html/microservice/vendor',
+            $services['microservice']['volumes'][1] ?? null,
+        );
+        $this->assertSame('local', $compose['volumes']['laravel-vendor']['driver'] ?? null);
+        $this->assertSame('local', $compose['volumes']['microservice-vendor']['driver'] ?? null);
+
         $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
         $this->assertSame(
             [
@@ -70,13 +82,20 @@ final class DevcontainerImageContractTest extends TestCase
             ],
             $services['mysql']['volumes'][0] ?? null,
         );
+        $this->assertSame(
+            '../schema/mysql-schema.sql:/docker-entrypoint-initdb.d/20-sample-app-schema.sql:ro',
+            $services['mysql']['volumes'][2] ?? null,
+        );
+        $this->assertSame(
+            './mysql-healthcheck.sh:/usr/local/bin/check-codespaces-mysql-health:ro',
+            $services['mysql']['volumes'][3] ?? null,
+        );
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
         $this->assertSame(
             [
                 'CMD',
-                'healthcheck.sh',
-                '--connect',
-                '--innodb_initialized',
+                'bash',
+                '/usr/local/bin/check-codespaces-mysql-health',
             ],
             $services['mysql']['healthcheck']['test'] ?? null,
         );
@@ -93,6 +112,7 @@ final class DevcontainerImageContractTest extends TestCase
         $supervisor = $this->contents('.devcontainer/docker/supervisord.conf');
         $verification = $this->contents('.devcontainer/docker/verify-image.sh');
         $databaseInitialization = $this->contents('.devcontainer/docker/create-testing-database.sh');
+        $databaseHealthcheck = $this->contents('.devcontainer/docker/mysql-healthcheck.sh');
         $initCommand = $this->contents('app/Console/Commands/Init.php');
         $postCreate = $this->contents('.devcontainer/post-create.sh');
 
@@ -103,9 +123,15 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('lock.packages["node_modules/playwright"].version', $dockerfile);
         $this->assertStringContainsString('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1', $dockerfile);
         $this->assertStringContainsString('playwright install --with-deps --only-shell chromium', $dockerfile);
-        $this->assertStringContainsString('--download-only', $dockerfile);
-        $this->assertStringContainsString('/tmp/sample-app-composer/root/', $dockerfile);
-        $this->assertStringContainsString('/tmp/sample-app-composer/microservice/', $dockerfile);
+        $this->assertStringNotContainsString('--download-only', $dockerfile);
+        $this->assertStringContainsString('composer.json composer.lock /var/www/html/', $dockerfile);
+        $this->assertStringContainsString(
+            'microservice/composer.json microservice/composer.lock /var/www/html/microservice/',
+            $dockerfile,
+        );
+        $this->assertStringContainsString('for dependency_dir in /var/www/html /var/www/html/microservice', $dockerfile);
+        $this->assertStringContainsString('test -s "${dependency_dir}/vendor/autoload.php"', $dockerfile);
+        $this->assertStringContainsString('rm -rf /home/laravel/.composer/cache', $dockerfile);
         $this->assertStringContainsString('apt-get purge -y --auto-remove', $dockerfile);
         $this->assertStringContainsString('canonical_library="$(readlink -f "$library")"', $dockerfile);
         $this->assertStringContainsString('dpkg-query --search "$canonical_library"', $dockerfile);
@@ -155,6 +181,11 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('must not contain shared SSH host private keys', $verification);
         $this->assertStringContainsString('command -v mariadb', $databaseInitialization);
         $this->assertStringContainsString('command -v mysql', $databaseInitialization);
+        $this->assertStringContainsString('healthcheck.sh --connect --innodb_initialized', $databaseHealthcheck);
+        $this->assertStringContainsString('--protocol=tcp', $databaseHealthcheck);
+        $this->assertStringContainsString('--host=127.0.0.1', $databaseHealthcheck);
+        $this->assertStringContainsString("--execute='SELECT 1'", $databaseHealthcheck);
+        $this->assertStringNotContainsString('migrations', $databaseHealthcheck);
         $this->assertStringContainsString('-c:v libx264', $verification);
         $this->assertStringContainsString('-c:a aac', $verification);
         $this->assertStringContainsString('output.mp4', $verification);
@@ -173,23 +204,86 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('http://127.0.0.1/up', $postCreate);
         $this->assertStringContainsString('http://127.0.0.1/', $postCreate);
         $this->assertStringContainsString('timestamp_ms', $postCreate);
+        $entrypoint = $this->contents('.devcontainer/docker/start-container');
+        $this->assertStringContainsString('composer validate', $entrypoint);
+        $this->assertStringContainsString('--check-lock', $entrypoint);
+        $this->assertStringContainsString('[[ ! -s vendor/autoload.php ]]', $entrypoint);
         $this->assertTrue(is_executable($this->repoPath('.devcontainer/post-create.sh')));
     }
 
-    public function test_image_prewarms_composer_as_the_unprivileged_runtime_user(): void
+    public function test_mysql_healthcheck_fails_closed_without_gating_on_the_schema_version(): void
+    {
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-mysql-health-'.bin2hex(random_bytes(8));
+        $this->assertTrue(mkdir($temporaryDirectory, 0700));
+
+        try {
+            $commands = [
+                'healthcheck.sh' => <<<'BASH'
+#!/usr/bin/env bash
+exit 0
+BASH,
+                'mariadb' => <<<'BASH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$FAKE_MYSQL_ARGUMENTS"
+exit "${FAKE_MYSQL_STATUS:-0}"
+BASH,
+            ];
+
+            foreach ($commands as $command => $contents) {
+                $commandPath = $temporaryDirectory.'/'.$command;
+                $this->assertNotFalse(file_put_contents($commandPath, $contents));
+                $this->assertTrue(chmod($commandPath, 0700));
+            }
+
+            $argumentOutput = $temporaryDirectory.'/mariadb-arguments';
+            $environment = [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'MYSQL_USER' => 'laravel',
+                'MYSQL_PASSWORD' => 'password',
+                'MYSQL_DATABASE' => 'sample',
+                'FAKE_MYSQL_ARGUMENTS' => $argumentOutput,
+            ];
+            $healthcheck = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/mysql-healthcheck.sh')],
+                env: $environment,
+            );
+
+            $healthcheck->mustRun();
+            $arguments = file_get_contents($argumentOutput);
+            $this->assertIsString($arguments);
+            $this->assertStringContainsString('--protocol=tcp', $arguments);
+            $this->assertStringContainsString('--host=127.0.0.1', $arguments);
+            $this->assertStringContainsString('--execute=SELECT 1', $arguments);
+
+            $unavailableDatabase = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/mysql-healthcheck.sh')],
+                env: [...$environment, 'FAKE_MYSQL_STATUS' => '1'],
+            );
+            $unavailableDatabase->run();
+
+            $this->assertSame(1, $unavailableDatabase->getExitCode());
+        } finally {
+            foreach (['healthcheck.sh', 'mariadb', 'mariadb-arguments'] as $command) {
+                @unlink($temporaryDirectory.'/'.$command);
+            }
+            @rmdir($temporaryDirectory);
+        }
+    }
+
+    public function test_image_seeds_composer_dependencies_as_the_unprivileged_runtime_user(): void
     {
         $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
         $userCreation = strpos($dockerfile, 'useradd --create-home --gid laravel');
         $browserInstallation = strpos($dockerfile, 'playwright install --with-deps --only-shell chromium');
         $rootDependencyOwnership = strpos(
             $dockerfile,
-            'COPY --chown=laravel:laravel composer.json composer.lock /tmp/sample-app-composer/root/',
+            'COPY --chown=laravel:laravel composer.json composer.lock /var/www/html/',
         );
         $microserviceDependencyOwnership = strpos(
             $dockerfile,
-            'COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/',
+            'COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /var/www/html/microservice/',
         );
-        $unprivilegedPrewarm = strpos(
+        $unprivilegedSeed = strpos(
             $dockerfile,
             'COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install',
         );
@@ -198,18 +292,18 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertNotFalse($browserInstallation);
         $this->assertNotFalse($rootDependencyOwnership);
         $this->assertNotFalse($microserviceDependencyOwnership);
-        $this->assertNotFalse($unprivilegedPrewarm);
+        $this->assertNotFalse($unprivilegedSeed);
         $this->assertLessThan($rootDependencyOwnership, $userCreation);
         $this->assertLessThan($rootDependencyOwnership, $browserInstallation);
         $this->assertLessThan($microserviceDependencyOwnership, $rootDependencyOwnership);
-        $this->assertLessThan($unprivilegedPrewarm, $microserviceDependencyOwnership);
+        $this->assertLessThan($unprivilegedSeed, $microserviceDependencyOwnership);
         $this->assertStringContainsString('gosu laravel test -w "$writable_path"', $dockerfile);
         $this->assertStringContainsString(
             'install -d -o laravel -g laravel "${dependency_dir}/vendor"',
             $dockerfile,
         );
         $this->assertStringContainsString(
-            'Composer prewarm path is not writable by laravel: ${writable_path}',
+            'Composer seed path is not writable by laravel: ${writable_path}',
             $dockerfile,
         );
     }
@@ -358,6 +452,12 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('information_schema.tables', $script);
         $this->assertStringContainsString('expected_migration_count=49', $script);
         $this->assertStringContainsString('expected_table_count=49', $script);
+        preg_match_all('/^verify_database_schema$/m', $script, $schemaVerifications, PREG_OFFSET_CAPTURE);
+        $this->assertCount(2, $schemaVerifications[0]);
+        $this->assertLessThan(
+            strpos($script, 'dependency_bootstrap_started_ms='),
+            $schemaVerifications[0][0][1],
+        );
         $this->assertStringContainsString('redis-cli -h redis --raw ping', $script);
         $this->assertStringContainsString('second_app_key', $script);
         $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);
@@ -366,13 +466,13 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('/dev/tcp/127.0.0.1/22', $script);
         $this->assertStringContainsString('laravel@127.0.0.1 id -u', $script);
         $this->assertStringContainsString('-o BatchMode=yes', $script);
-        $this->assertStringContainsString("if ! gosu laravel bash -c '", $entrypoint);
+        $this->assertStringContainsString('prepare_project_permissions', $entrypoint);
         $this->assertStringContainsString("ssh-keygen -A\n    sshd -t", $entrypoint);
         $this->assertStringContainsString('remap_laravel_uid', $entrypoint);
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
         $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
-        $this->assertStringContainsString('chown -R laravel:laravel /var/www/html', $entrypoint);
+        $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
 
         foreach ([
             'image_pull',

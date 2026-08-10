@@ -133,28 +133,34 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*
 
-COPY --chown=laravel:laravel composer.json composer.lock /tmp/sample-app-composer/root/
-COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/
+COPY --chown=laravel:laravel composer.json composer.lock /var/www/html/
+COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /var/www/html/microservice/
 
 RUN set -eux; \
-    for dependency_set in root microservice; do \
-        dependency_dir="/tmp/sample-app-composer/${dependency_set}"; \
+    for dependency_dir in /var/www/html /var/www/html/microservice; do \
         install -d -o laravel -g laravel "${dependency_dir}/vendor"; \
         for writable_path in "$dependency_dir" "${dependency_dir}/vendor"; do \
             if ! gosu laravel test -w "$writable_path"; then \
-                echo "Composer prewarm path is not writable by laravel: ${writable_path}" >&2; \
+                echo "Composer seed path is not writable by laravel: ${writable_path}" >&2; \
                 exit 1; \
             fi; \
         done; \
+        COMPOSER_HOME=/home/laravel/.composer gosu laravel composer validate \
+            --working-dir="$dependency_dir" \
+            --strict \
+            --check-lock \
+            --no-check-all \
+            --no-interaction; \
         COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install \
             --working-dir="$dependency_dir" \
-            --download-only \
             --prefer-dist \
             --no-interaction \
             --no-plugins \
             --no-progress \
             --no-scripts; \
+        gosu laravel test -s "${dependency_dir}/vendor/autoload.php"; \
     done; \
+    rm -rf /home/laravel/.composer/cache; \
     rm -rf /tmp/* /var/tmp/*
 
 ENV COMPOSER_HOME=/home/laravel/.composer

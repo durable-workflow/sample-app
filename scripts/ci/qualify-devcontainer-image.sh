@@ -99,6 +99,35 @@ export FORWARD_REDIS_PORT=16379
 compose=(docker compose --file "$compose_file")
 tracked_status_before="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
 
+verify_database_schema() {
+    "${compose[@]}" exec -T mysql sh -euc '
+        query_database() {
+            mariadb \
+                --user="$MYSQL_USER" \
+                --password="$MYSQL_PASSWORD" \
+                --database="$MYSQL_DATABASE" \
+                --batch \
+                --skip-column-names \
+                --execute="$1"
+        }
+
+        expected_migration_count=49
+        expected_table_count=49
+        migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
+        table_count="$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
+
+        if [ "$migration_count" != "$expected_migration_count" ]; then
+            echo "Codespaces schema recorded ${migration_count} migrations; expected ${expected_migration_count}." >&2
+            exit 1
+        fi
+
+        if [ "$table_count" != "$expected_table_count" ]; then
+            echo "Codespaces schema created ${table_count} tables; expected ${expected_table_count}." >&2
+            exit 1
+        fi
+    '
+}
+
 if [[ -n "$tracked_status_before" ]]; then
     echo 'Devcontainer qualification requires a checkout with no tracked changes.' >&2
     printf '%s\n' "$tracked_status_before" >&2
@@ -175,16 +204,7 @@ container_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait mysql redis
 container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
 
-"${compose[@]}" exec -T mysql sh -euc '
-    table_count="$(mariadb \
-        --user="$MYSQL_USER" \
-        --password="$MYSQL_PASSWORD" \
-        --database="$MYSQL_DATABASE" \
-        --batch \
-        --skip-column-names \
-        --execute="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
-    test "$table_count" = 0
-'
+verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
@@ -192,32 +212,7 @@ dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
 dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
 
-"${compose[@]}" exec -T mysql sh -euc '
-    query_database() {
-        mariadb \
-            --user="$MYSQL_USER" \
-            --password="$MYSQL_PASSWORD" \
-            --database="$MYSQL_DATABASE" \
-            --batch \
-            --skip-column-names \
-            --execute="$1"
-    }
-
-    expected_migration_count=49
-    expected_table_count=49
-    migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
-    table_count="$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
-
-    if [ "$migration_count" != "$expected_migration_count" ]; then
-        echo "Schema bootstrap recorded ${migration_count} migrations; expected ${expected_migration_count}." >&2
-        exit 1
-    fi
-
-    if [ "$table_count" != "$expected_table_count" ]; then
-        echo "Schema bootstrap created ${table_count} tables; expected ${expected_table_count}." >&2
-        exit 1
-    fi
-'
+verify_database_schema
 
 application_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait

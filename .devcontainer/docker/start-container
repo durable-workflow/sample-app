@@ -2,6 +2,52 @@
 
 set -euo pipefail
 
+install_locked_composer_dependencies() {
+    local -a command_prefix=("$@")
+
+    if ! "${command_prefix[@]}" composer validate \
+        --strict \
+        --check-lock \
+        --no-check-all \
+        --no-interaction; then
+        printf 'Composer lock validation failed in %s. Regenerate and commit the lock file before rebuilding the Codespace.\n' \
+            "$PWD" >&2
+        return 1
+    fi
+
+    if [[ ! -s vendor/autoload.php ]]; then
+        printf 'Image-seeded Composer dependencies are missing in %s. Rebuild the Codespace to recreate its dependency volume.\n' \
+            "$PWD" >&2
+        return 1
+    fi
+
+    if ! "${command_prefix[@]}" composer install \
+        --prefer-dist \
+        --no-progress \
+        --no-interaction; then
+        printf 'Composer dependency installation failed in %s. Review the Composer error above, then rebuild the Codespace.\n' \
+            "$PWD" >&2
+        return 1
+    fi
+}
+
+prepare_project_permissions() {
+    local project_dir="$PWD"
+    local generated_dir
+
+    if ! gosu laravel test -w "$project_dir" \
+        || ! gosu laravel test -w "$project_dir/composer.json"; then
+        chown -R laravel:laravel "$project_dir"
+        return
+    fi
+
+    for generated_dir in "$project_dir/vendor" "$project_dir/node_modules"; do
+        if [[ -d "$generated_dir" ]] && ! gosu laravel test -w "$generated_dir"; then
+            chown -R laravel:laravel "$generated_dir"
+        fi
+    done
+}
+
 remap_laravel_uid() {
     local requested_uid="${SAMPLE_APP_UID:-}"
     local current_uid
@@ -33,17 +79,10 @@ if [[ "$(id -u)" == "0" ]]; then
     ssh-keygen -A
     sshd -t
 
-    if ! gosu laravel bash -c '
-        test -w /var/www/html
-        test ! -e /var/www/html/composer.json || test -w /var/www/html/composer.json
-        test ! -d /var/www/html/vendor || test -w /var/www/html/vendor
-        test ! -d /var/www/html/node_modules || test -w /var/www/html/node_modules
-    '; then
-        chown -R laravel:laravel /var/www/html
-    fi
+    prepare_project_permissions
 
     if [[ -f composer.json ]]; then
-        gosu laravel composer install --prefer-dist --no-progress --no-interaction
+        install_locked_composer_dependencies gosu laravel
     fi
 
     if (( $# > 0 )); then
@@ -54,7 +93,7 @@ if [[ "$(id -u)" == "0" ]]; then
 fi
 
 if [[ -f composer.json ]]; then
-    composer install --prefer-dist --no-progress --no-interaction
+    install_locked_composer_dependencies
 fi
 
 if (( $# > 0 )); then

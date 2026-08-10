@@ -13,6 +13,7 @@ services:
             - '${VITE_PORT:-15173}:${VITE_PORT:-15173}'
         volumes:
             - '../../:/var/www/html'
+            - 'laravel-vendor:/var/www/html/vendor'
         networks:
             - laravel
         depends_on:
@@ -33,10 +34,12 @@ services:
             - 'host.docker.internal:host-gateway'
         environment:
             SAMPLE_APP_UID: '${SAMPLE_APP_UID:-}'
+        working_dir: /var/www/html/microservice
         ports:
             - '${MICROSERVICE_PORT:-18001}:80'
         volumes:
-            - '../../microservice:/var/www/html'
+            - '../../:/var/www/html'
+            - 'microservice-vendor:/var/www/html/microservice/vendor'
         networks:
             - laravel
         depends_on:
@@ -72,10 +75,12 @@ services:
               volume:
                   nocopy: true
             - './create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+            - '../schema/mysql-schema.sql:/docker-entrypoint-initdb.d/20-sample-app-schema.sql:ro'
+            - './mysql-healthcheck.sh:/usr/local/bin/check-codespaces-mysql-health:ro'
         networks:
             - laravel
         healthcheck:
-            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            test: ["CMD", "bash", "/usr/local/bin/check-codespaces-mysql-health"]
             interval: 2s
             retries: 75
             start_period: 30s
@@ -101,4 +106,8 @@ volumes:
     laravel-mysql:
         driver: local
     laravel-redis:
+        driver: local
+    laravel-vendor:
+        driver: local
+    microservice-vendor:
         driver: local
