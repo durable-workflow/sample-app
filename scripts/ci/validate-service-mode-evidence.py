@@ -48,6 +48,31 @@ def load(path: Path) -> dict[str, Any]:
     if not path.with_name(screenshot).is_file():
         fail(f"{path} browser screenshot is missing")
 
+    mount_evidence = payload.get("mount_evidence")
+    if not isinstance(mount_evidence, str) or not mount_evidence.endswith(
+        "-waterline-mount.json"
+    ):
+        fail(f"{path} has an invalid Waterline mount evidence name")
+    mount_evidence_path = path.with_name(mount_evidence)
+    with mount_evidence_path.open(encoding="utf-8") as source:
+        mount_summary = require_mapping(json.load(source), str(mount_evidence_path))
+    if mount_summary.get("schema") != "durable-workflow.sample-app.waterline-mount.v1":
+        fail(f"{mount_evidence_path} has an unsupported schema")
+    if mount_summary.get("status") != "passed":
+        fail(f"{mount_evidence_path} did not observe a mounted Waterline page")
+    page = require_mapping(mount_summary.get("page"), f"{mount_evidence_path} page")
+    if page.get("mounted") is not True or page.get("body_text_length", 0) < 100:
+        fail(f"{mount_evidence_path} did not retain a nonblank mounted page")
+    list_request = require_mapping(
+        mount_summary.get("workflow_list_request"),
+        f"{mount_evidence_path} workflow_list_request",
+    )
+    if list_request.get("status") != 200:
+        fail(f"{mount_evidence_path} did not complete the workflow-list request")
+    for field in ("page_errors", "console_errors", "request_failures"):
+        if mount_summary.get(field) != []:
+            fail(f"{mount_evidence_path} recorded {field}")
+
     dialog_evidence = payload.get("dialog_evidence")
     if not isinstance(dialog_evidence, str) or Path(dialog_evidence).name != "summary.json":
         fail(f"{path} does not identify responsive dialog evidence")

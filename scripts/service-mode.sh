@@ -9,6 +9,7 @@ mkdir -p "$(dirname "$evidence_path")"
 export SERVICE_MODE_EVIDENCE_DIR="$(cd "$(dirname "$evidence_path")" && pwd)"
 evidence_name="$(basename "$evidence_path")"
 browser_evidence_name="${evidence_name%.json}-waterline.png"
+mount_evidence_name="${evidence_name%.json}-waterline-mount.json"
 dialog_evidence_name="${evidence_name%.json}-waterline-dialogs"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sample-app-service-mode}"
 export SERVICE_MODE_PORT="${SERVICE_MODE_PORT:-18081}"
@@ -113,15 +114,16 @@ if (
 NODE
 
 browser_started_ms="$(date +%s%3N)"
-"${compose[@]}" run --no-deps --rm -T browser-smoke screenshot \
-    --wait-for-timeout=1500 \
-    "http://waterline:8081${waterline_page_path}" \
-    "/evidence/${browser_evidence_name}"
+"${compose[@]}" run --no-deps --rm -T --entrypoint node browser-smoke \
+    /observer/scripts/ci/waterline-mount-readiness.mjs \
+    --base-url http://waterline:8081 \
+    --screenshot "/evidence/${browser_evidence_name}" \
+    --report "/evidence/${mount_evidence_name}"
 browser_elapsed_ms="$(( $(date +%s%3N) - browser_started_ms ))"
 
 dialog_started_ms="$(date +%s%3N)"
 "${compose[@]}" run --no-deps --rm -T --entrypoint node browser-smoke \
-    /observer/vendor/durable-workflow/waterline/scripts/ci/workflow-list-dialog-visual.mjs \
+    /observer/scripts/ci/run-service-mode-dialog-visual.mjs \
     --base-url http://waterline:8081 \
     --output-dir "/evidence/${dialog_evidence_name}"
 dialog_elapsed_ms="$(( $(date +%s%3N) - dialog_started_ms ))"
@@ -131,6 +133,7 @@ SERVICE_MODE_STARTUP_MS="$startup_ms" \
 SERVICE_MODE_ELAPSED_MS="$journey_elapsed_ms" \
 SERVICE_MODE_BROWSER_MS="$browser_elapsed_ms" \
 SERVICE_MODE_BROWSER_SCREENSHOT="$browser_evidence_name" \
+SERVICE_MODE_MOUNT_EVIDENCE="$mount_evidence_name" \
 SERVICE_MODE_DIALOG_MS="$dialog_elapsed_ms" \
 SERVICE_MODE_DIALOG_EVIDENCE="${dialog_evidence_name}/summary.json" \
 SERVICE_MODE_EVIDENCE_OUTPUT="$evidence_path" \
@@ -150,6 +153,7 @@ const evidence = {
   journey_ms: Number(process.env.SERVICE_MODE_ELAPSED_MS),
   browser_ms: Number(process.env.SERVICE_MODE_BROWSER_MS),
   browser_screenshot: process.env.SERVICE_MODE_BROWSER_SCREENSHOT,
+  mount_evidence: process.env.SERVICE_MODE_MOUNT_EVIDENCE,
   dialog_ms: Number(process.env.SERVICE_MODE_DIALOG_MS),
   dialog_evidence: process.env.SERVICE_MODE_DIALOG_EVIDENCE,
   workflow: result,

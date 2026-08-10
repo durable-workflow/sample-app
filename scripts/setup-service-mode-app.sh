@@ -56,3 +56,10 @@ file_put_contents($path, $source);
 esac
 
 composer dump-autoload --no-dev --optimize --no-interaction
+
+if [[ "$role" == observer ]]; then
+    # The observer must serve the assets that belong to the package Composer
+    # just installed. A copied application may contain assets from an older
+    # lock, and --no-scripts intentionally skips Laravel's publish hook.
+    php artisan waterline:publish --no-interaction
+fi

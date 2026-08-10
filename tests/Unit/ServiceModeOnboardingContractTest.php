@@ -81,9 +81,22 @@ final class ServiceModeOnboardingContractTest extends TestCase
         $this->assertStringNotContainsString('docker compose build', $script);
         $this->assertStringContainsString('sample-app-service-mode', $script);
         $this->assertStringContainsString('service-mode-evidence.json', $script);
-        $this->assertStringContainsString('browser-smoke screenshot', $script);
-        $this->assertStringContainsString('workflow-list-dialog-visual.mjs', $script);
+        $this->assertStringContainsString('waterline-mount-readiness.mjs', $script);
+        $this->assertStringContainsString('run-service-mode-dialog-visual.mjs', $script);
+        $this->assertStringContainsString('SERVICE_MODE_MOUNT_EVIDENCE', $script);
         $this->assertStringContainsString('SERVICE_MODE_DIALOG_EVIDENCE', $script);
+    }
+
+    public function test_observer_bootstrap_publishes_assets_from_the_installed_waterline_package(): void
+    {
+        $script = (string) file_get_contents($this->repoPath('scripts/setup-service-mode-app.sh'));
+
+        $this->assertStringContainsString('if [[ "$role" == observer ]]', $script);
+        $this->assertStringContainsString('php artisan waterline:publish --no-interaction', $script);
+        $this->assertLessThan(
+            strpos($script, 'php artisan waterline:publish --no-interaction'),
+            strpos($script, 'composer dump-autoload --no-dev --optimize --no-interaction'),
+        );
     }
 
     public function test_qualified_php_artifacts_match_the_bootable_laravel_graph(): void
