@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Workflows\Sandbox\SandboxAgentWorkflow;
+use DurableWorkflow\AI\Workflows\SandboxAgentWorkflow;
 use Illuminate\Console\Command;
 use Workflow\V2\WorkflowStub;
 
 class Sandbox extends Command
 {
     protected $signature = 'app:sandbox
-        {--provider= : Sandbox provider override (defaults to config(\'sandbox.default\'))}
+        {--provider= : Sandbox provider override (defaults to config(\'durable-workflow-ai.default\'))}
         {--snapshot-every=2 : Snapshot the workspace after every N tool calls (0 disables snapshots)}
-        {--suspend-between : Idle-suspend the sandbox between tool calls and resume before the next one}
         {--inject-loss-after= : For the local provider, evict the sandbox after N successful tool calls to exercise restore}
         {--wait-seconds=180 : Seconds to wait for the workflow to reach a terminal state}';
 
@@ -24,18 +23,17 @@ class Sandbox extends Command
         $toolCalls = $this->demoToolCalls($this->positiveIntOption('inject-loss-after'));
         $provider = $this->stringOption('provider');
         $snapshotEvery = (int) $this->option('snapshot-every');
-        $suspend = (bool) $this->option('suspend-between');
         $waitSeconds = $this->positiveIntOption('wait-seconds') ?? 180;
 
         $this->line(sprintf(
             'Starting sandbox agent workflow against [%s] provider with %d tool call%s...',
-            $provider ?? config('sandbox.default'),
+            $provider ?? config('durable-workflow-ai.default'),
             count($toolCalls),
             count($toolCalls) === 1 ? '' : 's',
         ));
 
         $workflow = WorkflowStub::make(SandboxAgentWorkflow::class);
-        $workflow->start($toolCalls, $provider, $snapshotEvery, $suspend);
+        $workflow->start($toolCalls, $provider, $snapshotEvery);
 
         $deadline = time() + $waitSeconds;
 

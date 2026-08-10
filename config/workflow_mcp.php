@@ -8,9 +8,9 @@ use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
-use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
+use DurableWorkflow\AI\Workflows\SandboxAgentWorkflow;
 
 return [
     /*
@@ -104,15 +104,13 @@ return [
         'sandbox' => [
             'class' => SandboxAgentWorkflow::class,
             'description' => 'Durable sandbox orchestration: provision, dispatch tool calls, snapshot, recover, and clean up against a swappable sandbox provider.',
-            'pattern' => 'agent sandbox lifecycle (provision, dispatch, suspend/resume, snapshot/restore, cleanup)',
+            'pattern' => 'agent sandbox lifecycle (provision, dispatch, snapshot/restore, cleanup)',
             'command' => 'php artisan app:sandbox',
-            'requires' => ['SANDBOX_DRIVER (default local; set to e2b plus E2B_API_KEY for the E2B Cloud provider)'],
+            'requires' => ['DURABLE_AI_SANDBOX_DRIVER (default local; set to e2b plus E2B_API_KEY for E2B Cloud)'],
             'arguments' => [
                 ['name' => 'toolCalls', 'type' => 'array', 'description' => 'Ordered list of {type, args} tool calls to dispatch through the sandbox.'],
-                ['name' => 'provider', 'type' => 'string|null', 'description' => 'Provider override; defaults to config(sandbox.default).'],
+                ['name' => 'provider', 'type' => 'string|null', 'description' => 'Provider override; defaults to config(durable-workflow-ai.default).'],
                 ['name' => 'snapshotEveryNCalls', 'type' => 'int', 'default' => 0],
-                ['name' => 'suspendBetweenCalls', 'type' => 'bool', 'default' => false],
-                ['name' => 'options', 'type' => 'array', 'default' => []],
             ],
         ],
         'polyglot_php_to_python' => [

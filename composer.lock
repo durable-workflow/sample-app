@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "840ad14b7e24eec1c1816086403a7b71",
+    "content-hash": "0d171874f8803acd18adc0e34b6f6bbe",
     "packages": [
         {
             "name": "apache/avro",
@@ -652,6 +652,68 @@
                 }
             ],
             "time": "2025-10-31T18:51:33+00:00"
+        },
+        {
+            "name": "durable-workflow/ai",
+            "version": "2.0.0-rc.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/durable-workflow/ai.git",
+                "reference": "4a9a1c77f256a68ae5b494349fc3f8b636110569"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/durable-workflow/ai/zipball/4a9a1c77f256a68ae5b494349fc3f8b636110569",
+                "reference": "4a9a1c77f256a68ae5b494349fc3f8b636110569",
+                "shasum": ""
+            },
+            "require": {
+                "durable-workflow/workflow": "^2.0@RC",
+                "laravel/framework": "^12.61.1|^13.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^10.0|^11.0",
+                "phpstan/phpstan": "^2.1",
+                "phpunit/phpunit": "^11.0|^12.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "DurableWorkflow\\AI\\Laravel\\SandboxServiceProvider"
+                    ]
+                },
+                "durable-workflow": {
+                    "contracts": {
+                        "sandbox-provider": "1.0"
+                    },
+                    "product-train": "2.0.0-rc.3"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "DurableWorkflow\\AI\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Durable sandbox orchestration contracts and providers for AI agents.",
+            "keywords": [
+                "agents",
+                "durable-workflow",
+                "laravel",
+                "sandbox",
+                "workflow"
+            ],
+            "support": {
+                "issues": "https://github.com/durable-workflow/ai/issues",
+                "source": "https://github.com/durable-workflow/ai/tree/2.0.0-rc.3"
+            },
+            "time": "2026-08-10T04:02:24+00:00"
         },
         {
             "name": "durable-workflow/sdk",
@@ -9074,6 +9136,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
+        "durable-workflow/ai": 5,
         "durable-workflow/sdk": 5,
         "durable-workflow/waterline": 5,
         "durable-workflow/workflow": 5

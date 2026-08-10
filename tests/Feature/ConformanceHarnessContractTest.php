@@ -168,7 +168,6 @@ class ConformanceHarnessContractTest extends TestCase
             'ai_failure_car',
             'sandbox_default',
             'sandbox_snapshot',
-            'sandbox_suspend_resume',
             'sandbox_recovery_injection',
             'waterline_operator_dashboard',
             'artifactVersions',

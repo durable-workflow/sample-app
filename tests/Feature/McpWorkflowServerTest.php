@@ -18,9 +18,9 @@ use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
 use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
-use App\Workflows\Sandbox\SandboxAgentWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
+use DurableWorkflow\AI\Workflows\SandboxAgentWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -155,7 +155,7 @@ class McpWorkflowServerTest extends TestCase
                     ->where('available_workflows.6.updates.0.name', 'receive')
                     ->where('available_workflows.7.key', 'sandbox')
                     ->where('available_workflows.7.class', SandboxAgentWorkflow::class)
-                    ->where('available_workflows.7.pattern', 'agent sandbox lifecycle (provision, dispatch, suspend/resume, snapshot/restore, cleanup)')
+                    ->where('available_workflows.7.pattern', 'agent sandbox lifecycle (provision, dispatch, snapshot/restore, cleanup)')
                     ->where('available_workflows.7.command', 'php artisan app:sandbox')
                     ->where('available_workflows.8.key', 'polyglot_php_to_python')
                     ->where('available_workflows.8.class', PhpToPythonWorkflow::class)

@@ -1,100 +1,59 @@
-# Sandbox Orchestration Pattern
+# Sandbox orchestration example
 
-This sample shows how to drive an ephemeral agent sandbox from a durable workflow without rebuilding lifecycle plumbing for every project. It is the durable-workflow equivalent of the "sandbox orchestration harness" pattern that other AI/agent platforms ship as reference material — and it sits entirely on existing v2 Activity primitives, with no new server-side machinery.
+This application is a small integration example for the reusable
+[`durable-workflow/ai`](https://github.com/durable-workflow/ai) package. The
+package owns provider contracts, handles, typed calls/results, lifecycle
+activities, recovery, leases, cleanup, E2B HTTP integration, and Laravel
+registration. The app pins the package's `2.0.0-rc.3` release candidate and can
+install that published artifact from Packagist. The Sample App keeps only:
 
-## What the sample covers
+- `app/Console/Commands/Sandbox.php`, which starts the package workflow with a
+  short tool-call demonstration;
+- `config/durable-workflow-ai.php`, which shows local and E2B configuration; and
+- this runnable walkthrough.
 
-A long-running coding agent — or any agent that needs a place to run shell commands, edit files, and install dependencies — depends on five lifecycle guarantees. Each one corresponds to one activity in this sample:
-
-| Guarantee | Activity | Why workflow code can rely on it |
-|-----------|----------|----------------------------------|
-| Provision on demand | `ProvisionSandboxActivity` | Provider lease happens inside an activity, so the workflow only stores a handle id. |
-| Drive execution from agent intent | `DispatchToolCallActivity` | LLM tool-call decisions reach the sandbox through one activity, the result lands in workflow history. |
-| Persist state across long runs | `SnapshotSandboxActivity` | Workspace state is captured to provider-managed storage; the snapshot id is durable across worker migrations and worker restarts. |
-| Recover from sandbox loss | `RestoreSandboxActivity` | When the sandbox is gone, the workflow loop catches `SandboxGoneException`, restores from the latest snapshot, and resumes. |
-| Clean up at the right time | `DestroySandboxActivity` | Invoked from a `try/finally` block, so success, cancel, and failure paths all tear the sandbox down — no orphan compute spend. |
-
-Optional `SuspendSandboxActivity` and `ResumeSandboxActivity` cover idle-suspend for providers that bill by active minute; providers without idle support implement them as no-ops, so the workflow stays portable.
-
-## Files in the sample
-
-```
-app/Sandbox/
-  SandboxProvider.php                    # the contract (provision/execute/suspend/resume/snapshot/restore/destroy)
-  SandboxHandle.php                      # opaque handle DTO
-  SandboxToolCall.php                    # {type, args} DTO
-  SandboxToolResult.php                  # {exit_code, stdout, stderr} DTO
-  SandboxConfig.php                      # facade over config('sandbox')
-  SandboxManager.php                     # resolves a SandboxProvider by config name
-  Exceptions/
-    SandboxGoneException.php             # NonRetryable — workflow loop owns the recovery decision
-    SandboxProvisionException.php        # mapped to NonRetryable inside ProvisionSandboxActivity
-  Providers/
-    LocalSandboxProvider.php             # subprocess-backed; ships with the sample
-    E2bSandboxProvider.php               # E2B Cloud HTTP integration
-
-app/Workflows/Sandbox/
-  SandboxAgentWorkflow.php               # the orchestration workflow
-  ProvisionSandboxActivity.php           # tries=5; SandboxProvisionException -> NonRetryable
-  DispatchToolCallActivity.php           # tries=4; SandboxGoneException is non-retryable, propagates to the workflow
-  SnapshotSandboxActivity.php            # tries=3
-  RestoreSandboxActivity.php             # tries=5
-  SuspendSandboxActivity.php             # tries=3 (no-op on providers without idle)
-  ResumeSandboxActivity.php              # tries=5
-  DestroySandboxActivity.php             # tries=3; swallows provider errors so cleanup is best-effort
-
-config/sandbox.php                       # default driver + per-driver config
-```
-
-## Run it
-
-The default `local` driver runs each tool call as a subprocess against a per-sandbox workspace directory under `storage_path('sandbox/workspaces')`. It needs no API keys and is the easiest way to see the full lifecycle.
+## Run locally
 
 ```bash
-php artisan app:sandbox                              # local subprocess provider, no snapshots
-php artisan app:sandbox --snapshot-every=2           # snapshot every 2 tool calls
-php artisan app:sandbox --suspend-between            # suspend + resume between calls
-php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2  # force local restore
+php artisan app:sandbox --snapshot-every=2
+php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2
 ```
 
-To run the same workflow against E2B Cloud:
+The `local` provider is a development/test-only subprocess workspace. It runs
+commands with the Laravel worker's privileges, is not a security isolation
+boundary, and must not execute untrusted input.
+
+The loss-injection command snapshots the workspace, removes the active local
+workspace, then demonstrates package recovery. Recovery restores the latest
+snapshot and replays every completed later operation, including nonzero exits,
+with the original stable operation IDs before continuing.
+
+## Run with E2B
 
 ```bash
-SANDBOX_DRIVER=e2b E2B_API_KEY=… php artisan app:sandbox --snapshot-every=2
+DURABLE_AI_SANDBOX_DRIVER=e2b \
+E2B_API_KEY=… \
+E2B_TEMPLATE_ID=base \
+php artisan app:sandbox --snapshot-every=2
 ```
 
-The workflow class does not change when you switch providers. Only `config/sandbox.php` changes.
+The E2B adapter uses provider TTL plus idempotent destroy while the sandbox is
+running. Its suspend and resume capabilities are disabled because pausing
+removes the provider TTL; both operations fail before a provider request is
+sent. This sample also excludes the workflow suspension argument from its CLI
+and MCP launch surfaces. Unsupported lifecycle guarantees fail clearly rather
+than becoming silent no-ops.
 
-## Add a third provider
+## Delivery boundary
 
-Implement `App\Sandbox\SandboxProvider` for the third-party API (Modal, Daytona, GKE Agent Sandbox, Bedrock AgentCore Runtime, an internal sandbox service, …). Register a factory through `SandboxManager::extend()` from your service provider:
+Every dispatch carries an `operation_id` stable across activity retries and
+workflow replay. Both built-in providers currently declare at-least-once tool
+effects because neither public provider boundary guarantees atomic effect
+deduplication. An uncertain retry after execution but before acknowledgement can
+therefore repeat a mutating tool effect.
 
-```php
-$this->app->afterResolving(SandboxManager::class, function (SandboxManager $manager): void {
-    $manager->extend('modal', static fn ($app, $config): SandboxProvider
-        => new ModalSandboxProvider(
-            apiKey: (string) $config['api_key'],
-            // …
-        ));
-});
-```
-
-Add the corresponding entry to `config/sandbox.php` and set `SANDBOX_DRIVER=modal`. Workflow code stays identical because every lifecycle path goes through the activity layer, not directly through the provider.
-
-## Retry posture
-
-The activities classify failures so the workflow stays simple:
-
-- **Permanent provider failures** (missing credentials, bad template, quota exceeded) → `SandboxProvisionException` inside `ProvisionSandboxActivity` is converted to `NonRetryableException`. The workflow surfaces a deterministic failure rather than burning retry budget.
-- **Sandbox lost mid-run** → `SandboxGoneException` implements `NonRetryableExceptionContract` so the activity does not retry. The workflow's catch block restores from the latest snapshot and the run continues.
-- **Transient provider failures** (network blips, rate limits) → plain `RuntimeException`. The activity's `$tries` budget covers them automatically.
-
-## Cleanup posture
-
-`SandboxAgentWorkflow::handle()` wraps the entire run in `try { … } finally { activity(DestroySandboxActivity::class, $handle); }`. PHP's `finally` runs on every termination path:
-
-- success → finally runs, sandbox destroyed.
-- workflow cancellation (`WorkflowCancelledException`) → finally runs, sandbox destroyed.
-- unrecoverable failure → finally runs, sandbox destroyed.
-
-`SandboxProvider::destroy()` is required to be idempotent so a duplicate cleanup attempt — or a destroy against a sandbox that was already gone — is always safe.
+See the package's
+[delivery and recovery contract](https://github.com/durable-workflow/ai/blob/2.0.0-rc.3/docs/delivery-and-recovery.md)
+and
+[provider-author guide](https://github.com/durable-workflow/ai/blob/2.0.0-rc.3/docs/provider-author-guide.md)
+for the versioned public contract and third-party adapter requirements.

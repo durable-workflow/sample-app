@@ -70,6 +70,17 @@ class StartWorkflowTool extends Tool
             return Response::error("Class {$workflowClass} is not a valid Workflow.");
         }
 
+        $maximumArguments = $this->maximumConfiguredArguments($workflowKey, $workflowClass);
+
+        if ($maximumArguments !== null && count($args) > $maximumArguments) {
+            return Response::error(sprintf(
+                'Workflow [%s] accepts at most %d ordered arguments; received %d.',
+                $workflowKey,
+                $maximumArguments,
+                count($args),
+            ));
+        }
+
         try {
             $startOptions = new StartOptions(
                 duplicateStartPolicy: DuplicateStartPolicy::from(
@@ -169,6 +180,23 @@ class StartWorkflowTool extends Tool
             ->map(static fn (array $argument): mixed => $argument['default'])
             ->values()
             ->all();
+    }
+
+    private function maximumConfiguredArguments(string $workflowKey, string $workflowClass): ?int
+    {
+        $definition = $this->workflowDefinition($workflowKey);
+
+        if (is_array($definition) && is_array($definition['arguments'] ?? null)) {
+            return count($definition['arguments']);
+        }
+
+        $configuredLimits = collect(config('workflow_mcp.workflows', []))
+            ->filter(static fn (mixed $candidate): bool => is_array($candidate)
+                && ($candidate['class'] ?? null) === $workflowClass
+                && is_array($candidate['arguments'] ?? null))
+            ->map(static fn (array $candidate): int => count($candidate['arguments']));
+
+        return $configuredLimits->isEmpty() ? null : $configuredLimits->min();
     }
 
     /**

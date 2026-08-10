@@ -54,7 +54,6 @@ class Conformance extends Command
         'waterline_manual_observation',
         'sandbox_default',
         'sandbox_snapshot',
-        'sandbox_suspend_resume',
         'sandbox_recovery_injection',
         'prism_ai',
         'ai_agent_scripted',
@@ -137,12 +136,6 @@ class Conformance extends Command
             'sandbox_snapshot',
             ['php', 'artisan', 'app:sandbox', '--snapshot-every=2', '--wait-seconds=180'],
             '/Workflow complete\..*snap_/s',
-            self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
-        );
-        $this->runProcessSurface(
-            'sandbox_suspend_resume',
-            ['php', 'artisan', 'app:sandbox', '--suspend-between', '--wait-seconds=180'],
-            '/Workflow complete\./',
             self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
         );
         $this->runProcessSurface(
