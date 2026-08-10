@@ -2,13 +2,20 @@
 
 set -euo pipefail
 
+timestamp_ms() {
+    date +%s%3N
+}
+
 run_step() {
     local label="$1"
+    local started_ms
     shift
 
+    started_ms="$(timestamp_ms)"
     printf '==> %s\n' "$label"
 
     if "$@"; then
+        printf '<== %s (%sms)\n' "$label" "$(( $(timestamp_ms) - started_ms ))"
         return 0
     else
         local status=$?
@@ -18,6 +25,8 @@ run_step() {
         return "$status"
     fi
 }
+
+setup_started_ms="$(timestamp_ms)"
 
 check_http_200() {
     local url="$1"
@@ -41,10 +50,13 @@ check_http_200() {
 run_step 'waiting for the Laravel container to finish starting' \
     check_http_200 http://127.0.0.1/up 120 180
 run_step 'initializing Laravel, MySQL, Redis, npm, and Playwright' \
-    php artisan app:init --no-interaction
+    php artisan app:init \
+        --schema-path=.devcontainer/schema/mysql-schema.sql \
+        --no-interaction
 run_step 'checking the Laravel health endpoint' \
     check_http_200 http://127.0.0.1/up 12 30
 run_step 'checking the Laravel welcome page' \
     check_http_200 http://127.0.0.1/ 12 30
 
-printf '%s\n' 'Codespaces setup complete: Laravel, MySQL, Redis, and Playwright are ready.'
+printf 'Codespaces setup complete: Laravel, MySQL, Redis, and Playwright are ready (%sms total).\n' \
+    "$(( $(timestamp_ms) - setup_started_ms ))"

@@ -273,6 +273,56 @@ jobs:
           docker buildx imagetools inspect "$GHCR_REF" --raw > ghcr-architecture.json
           docker buildx imagetools inspect "$DOCKERHUB_REF" --raw > dockerhub-architecture.json
           cmp ghcr-architecture.json dockerhub-architecture.json
+          platform_digest="$(python3 - ghcr-architecture.json "$PLATFORM" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              manifest = json.load(source)
+
+          if isinstance(manifest.get("layers"), list):
+              print("")
+              raise SystemExit
+
+          operating_system, architecture = sys.argv[2].split("/", 1)
+          matches = [
+              entry["digest"]
+              for entry in manifest.get("manifests", [])
+              if entry.get("platform", {}).get("os") == operating_system
+              and entry.get("platform", {}).get("architecture") == architecture
+              and (entry.get("annotations") or {}).get("vnd.docker.reference.type")
+              != "attestation-manifest"
+          ]
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"expected one image manifest for {sys.argv[2]}, found {len(matches)}"
+              )
+          print(matches[0])
+          PY
+          )"
+          if [[ -n "$platform_digest" ]]; then
+            docker buildx imagetools inspect "$GHCR_REF@$platform_digest" --raw > ghcr-platform.json
+            docker buildx imagetools inspect "$DOCKERHUB_REF@$platform_digest" --raw > dockerhub-platform.json
+          else
+            cp ghcr-architecture.json ghcr-platform.json
+            cp dockerhub-architecture.json dockerhub-platform.json
+          fi
+          cmp ghcr-platform.json dockerhub-platform.json
+          compressed_platform_bytes="$(python3 - ghcr-platform.json <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              manifest = json.load(source)
+          layers = manifest.get("layers")
+          if not isinstance(layers, list) or not layers:
+              raise SystemExit("platform image manifest does not contain compressed layers")
+          compressed_bytes = sum(int(layer["size"]) for layer in layers)
+          if compressed_bytes <= 0:
+              raise SystemExit("compressed platform size must be positive")
+          print(compressed_bytes)
+          PY
+          )"
           ghcr_digest="$(docker buildx imagetools inspect "$GHCR_REF" --format '{{ .Manifest.Digest }}')"
           dockerhub_digest="$(docker buildx imagetools inspect "$DOCKERHUB_REF" --format '{{ .Manifest.Digest }}')"
           test "$ghcr_digest" = "$dockerhub_digest"
@@ -280,6 +330,7 @@ jobs:
           completed_ms="$(date +%s%3N)"
           GHCR_DIGEST="$ghcr_digest" \
           DOCKERHUB_DIGEST="$dockerhub_digest" \
+          COMPRESSED_PLATFORM_BYTES="$compressed_platform_bytes" \
           COMPLETED_MS="$completed_ms" \
           HOST_MACHINE="$(uname -m)" \
           DOCKER_ARCHITECTURE="$(docker info --format '{{.Architecture}}')" \
@@ -308,6 +359,7 @@ jobs:
                   "dockerhub": os.environ["DOCKERHUB_DIGEST"],
               },
               "manifest_digest_parity": True,
+              "compressed_platform_bytes": int(os.environ["COMPRESSED_PLATFORM_BYTES"]),
               "attestations": {"provenance": "mode=max", "sbom": True},
               "run_started_epoch_ms": started,
               "completed_epoch_ms": completed,

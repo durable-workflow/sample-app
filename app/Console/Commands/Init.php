@@ -17,7 +17,8 @@ class Init extends Command
      *
      * @var string
      */
-    protected $signature = 'app:init';
+    protected $signature = 'app:init
+                            {--schema-path= : Optional schema dump used to bootstrap an empty database}';
 
     /**
      * The console command description.
@@ -42,10 +43,20 @@ class Init extends Command
             $this->ensureApplicationKey();
 
             $this->info('Running migrations...');
-            $migrationStatus = $this->call('migrate', [
+            $migrationOptions = [
                 '--force' => true,
                 '--no-interaction' => true,
-            ]);
+            ];
+
+            if (is_string($schemaPath = $this->option('schema-path')) && $schemaPath !== '') {
+                if (! is_file($schemaPath)) {
+                    throw new RuntimeException("Schema dump not found at {$schemaPath}.");
+                }
+
+                $migrationOptions['--schema-path'] = $schemaPath;
+            }
+
+            $migrationStatus = $this->call('migrate', $migrationOptions);
 
             if ($migrationStatus !== self::SUCCESS) {
                 throw new RuntimeException('MySQL migrations failed. Check the MySQL container health and credentials.');

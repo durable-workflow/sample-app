@@ -13,6 +13,7 @@ LABEL org.opencontainers.image.title="Durable Workflow Sample App development co
     org.opencontainers.image.licenses="MIT"
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     TZ=UTC \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
@@ -22,6 +23,8 @@ COPY --from=node /usr/local/ /usr/local/
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
 COPY package-lock.json /tmp/sample-app-package-lock.json
+COPY composer.json composer.lock /tmp/sample-app-composer/root/
+COPY microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/
 
 RUN set -eux; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
@@ -61,18 +64,45 @@ RUN set -eux; \
         pdo_sqlite \
         zip; \
     sh /usr/local/bin/install-phpredis; \
+    find /usr/local/lib/php/extensions -type f -name '*.so' -exec ldd '{}' ';' \
+        | awk '/=>/ { print $(NF - 1) }' \
+        | sort -u \
+        | xargs -r dpkg-query --search \
+        | cut -d: -f1 \
+        | sort -u \
+        | xargs -r apt-mark manual; \
+    apt-get purge -y --auto-remove \
+        ${PHPIZE_DEPS} \
+        libcurl4-openssl-dev \
+        libfreetype6-dev \
+        libicu-dev \
+        libjpeg62-turbo-dev \
+        libonig-dev \
+        libpng-dev \
+        libsqlite3-dev \
+        libzip-dev; \
     playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
     test -n "$playwright_version"; \
     npm install --global "playwright@${playwright_version}"; \
-    playwright install --with-deps chromium; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*; \
-    setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
-    getcap "$(command -v php)" | grep -F 'cap_net_bind_service=ep'; \
+    playwright install --with-deps --only-shell chromium; \
     groupadd --gid 1000 laravel; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
     install -d -o laravel -g laravel /home/laravel/.composer /ms-playwright /var/www/html; \
+    for dependency_set in root microservice; do \
+        COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install \
+            --working-dir="/tmp/sample-app-composer/${dependency_set}" \
+            --download-only \
+            --prefer-dist \
+            --no-interaction \
+            --no-plugins \
+            --no-progress \
+            --no-scripts; \
+    done; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*; \
+    setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
+    getcap "$(command -v php)" | grep -F 'cap_net_bind_service=ep'; \
     install -d -m 0700 -o laravel -g laravel /home/laravel/.ssh; \
     install -d -m 0755 /run/sshd; \
     printf '%s\n' \
@@ -86,8 +116,7 @@ RUN set -eux; \
     sshd -t; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 
-ENV COMPOSER_HOME=/home/laravel/.composer \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV COMPOSER_HOME=/home/laravel/.composer
 
 COPY .devcontainer/docker/start-container /usr/local/bin/start-container
 COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image

@@ -175,11 +175,49 @@ container_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait mysql redis
 container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
 
+"${compose[@]}" exec -T mysql sh -euc '
+    table_count="$(mariadb \
+        --user="$MYSQL_USER" \
+        --password="$MYSQL_PASSWORD" \
+        --database="$MYSQL_DATABASE" \
+        --batch \
+        --skip-column-names \
+        --execute="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
+    test "$table_count" = 0
+'
+
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
 "${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
 "${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
 dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
+
+"${compose[@]}" exec -T mysql sh -euc '
+    query_database() {
+        mariadb \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            --database="$MYSQL_DATABASE" \
+            --batch \
+            --skip-column-names \
+            --execute="$1"
+    }
+
+    expected_migration_count=49
+    expected_table_count=49
+    migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
+    table_count="$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
+
+    if [ "$migration_count" != "$expected_migration_count" ]; then
+        echo "Schema bootstrap recorded ${migration_count} migrations; expected ${expected_migration_count}." >&2
+        exit 1
+    fi
+
+    if [ "$table_count" != "$expected_table_count" ]; then
+        echo "Schema bootstrap created ${table_count} tables; expected ${expected_table_count}." >&2
+        exit 1
+    fi
+'
 
 application_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build --wait
@@ -187,6 +225,7 @@ application_readiness_started_ms="$(timestamp_ms)"
     [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/up)" == 200 ]]
     [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/)" == 200 ]]
     php artisan migrate:status --no-interaction
+    php artisan migrate:status --pending=1 --no-interaction
     [[ "$(redis-cli -h redis --raw ping)" == PONG ]]
 '
 application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"

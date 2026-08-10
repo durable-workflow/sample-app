@@ -48,6 +48,15 @@ final class DevcontainerImageContractTest extends TestCase
         }
 
         $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
+        $this->assertSame(
+            [
+                '--innodb-flush-method=nosync',
+                '--innodb-flush-log-at-trx-commit=0',
+                '--innodb-doublewrite=OFF',
+                '--innodb-file-per-table=OFF',
+            ],
+            $services['mysql']['command'] ?? null,
+        );
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
         $this->assertSame(
             [
@@ -78,7 +87,12 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('FROM composer:2', $dockerfile);
         $this->assertStringContainsString('COPY package-lock.json /tmp/sample-app-package-lock.json', $dockerfile);
         $this->assertStringContainsString('lock.packages["node_modules/playwright"].version', $dockerfile);
-        $this->assertStringContainsString('playwright install --with-deps chromium', $dockerfile);
+        $this->assertStringContainsString('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1', $dockerfile);
+        $this->assertStringContainsString('playwright install --with-deps --only-shell chromium', $dockerfile);
+        $this->assertStringContainsString('--download-only', $dockerfile);
+        $this->assertStringContainsString('/tmp/sample-app-composer/root/', $dockerfile);
+        $this->assertStringContainsString('/tmp/sample-app-composer/microservice/', $dockerfile);
+        $this->assertStringContainsString('apt-get purge -y --auto-remove', $dockerfile);
         $this->assertStringContainsString('default-mysql-client', $dockerfile);
         $this->assertStringContainsString('redis-tools', $dockerfile);
         $this->assertStringContainsString('ffmpeg', $dockerfile);
@@ -114,17 +128,55 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('must not contain shared SSH host private keys', $verification);
         $this->assertStringContainsString('command -v mariadb', $databaseInitialization);
         $this->assertStringContainsString('command -v mysql', $databaseInitialization);
+        $this->assertStringContainsString('-c:v libx264', $verification);
+        $this->assertStringContainsString('-c:a aac', $verification);
+        $this->assertStringContainsString('output.mp4', $verification);
 
         $this->assertStringContainsString("'npm ci --no-audit --no-fund'", $initCommand);
         $this->assertStringContainsString("'node docker/playwright-smoke.js'", $initCommand);
         $this->assertStringContainsString("DB::connection('mysql')->table", $initCommand);
         $this->assertStringContainsString("Redis::connection()->command('ping')", $initCommand);
+        $this->assertStringContainsString("\$this->option('schema-path')", $initCommand);
+        $this->assertStringContainsString('is_file($schemaPath)', $initCommand);
+        $this->assertStringContainsString("\$migrationOptions['--schema-path']", $initCommand);
         $this->assertStringNotContainsString('npx playwright install', $initCommand);
         $this->assertStringNotContainsString('README.md', $initCommand);
-        $this->assertStringContainsString('php artisan app:init --no-interaction', $postCreate);
+        $this->assertStringContainsString('php artisan app:init', $postCreate);
+        $this->assertStringContainsString('--schema-path=.devcontainer/schema/mysql-schema.sql', $postCreate);
         $this->assertStringContainsString('http://127.0.0.1/up', $postCreate);
         $this->assertStringContainsString('http://127.0.0.1/', $postCreate);
+        $this->assertStringContainsString('timestamp_ms', $postCreate);
         $this->assertTrue(is_executable($this->repoPath('.devcontainer/post-create.sh')));
+    }
+
+    public function test_codespaces_schema_dump_records_every_current_migration(): void
+    {
+        $schema = $this->contents('.devcontainer/schema/mysql-schema.sql');
+        preg_match_all(
+            '/INSERT INTO `migrations` .*? VALUES \([0-9]+,\'([^\']+)\',[0-9]+\);/',
+            $schema,
+            $matches,
+        );
+
+        $recorded = $matches[1];
+        sort($recorded);
+
+        $expected = [];
+        foreach ([
+            'database/migrations',
+            'vendor/durable-workflow/waterline/database/migrations',
+            'vendor/durable-workflow/workflow/src/migrations',
+        ] as $directory) {
+            foreach (glob($this->repoPath($directory).'/*_*.php') ?: [] as $migration) {
+                $expected[pathinfo($migration, PATHINFO_FILENAME)] = true;
+            }
+        }
+
+        $expected = array_keys($expected);
+        sort($expected);
+
+        $this->assertSame($expected, $recorded);
+        $this->assertFileDoesNotExist($this->repoPath('database/schema/mysql-schema.sql'));
     }
 
     public function test_publication_separates_untrusted_builds_from_protected_registry_jobs(): void
@@ -204,6 +256,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('anonymous-docker-config', $movingChannel);
         $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
         $this->assertStringContainsString('summarize-devcontainer-evidence.py', $publicationEvidence);
+        $this->assertStringContainsString('compressed_platform_bytes', $publish);
         $this->assertStringContainsString('900', $publicationEvidence);
 
         preg_match_all('/^\s*uses:\s+[^@\s]+@([^\s#]+)/m', $workflow, $actionRefs);
@@ -229,6 +282,11 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]', $script);
         $this->assertStringContainsString('exec -T --user laravel laravel .devcontainer/post-create.sh', $script);
         $this->assertStringContainsString('php artisan migrate:status --no-interaction', $script);
+        $this->assertStringContainsString('php artisan migrate:status --pending=1 --no-interaction', $script);
+        $this->assertStringContainsString('SELECT COUNT(*) FROM migrations', $script);
+        $this->assertStringContainsString('information_schema.tables', $script);
+        $this->assertStringContainsString('expected_migration_count=49', $script);
+        $this->assertStringContainsString('expected_table_count=49', $script);
         $this->assertStringContainsString('redis-cli -h redis --raw ping', $script);
         $this->assertStringContainsString('second_app_key', $script);
         $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);

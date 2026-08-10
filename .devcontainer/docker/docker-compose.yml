@@ -47,6 +47,11 @@ services:
         command: ["php", "artisan", "queue:listen", "shared", "--queue=activity"]
     mysql:
         image: 'mariadb:11.4'
+        command:
+            - '--innodb-flush-method=nosync'
+            - '--innodb-flush-log-at-trx-commit=0'
+            - '--innodb-doublewrite=OFF'
+            - '--innodb-file-per-table=OFF'
         ports:
             - '${FORWARD_DB_PORT:-13306}:3306'
         environment:

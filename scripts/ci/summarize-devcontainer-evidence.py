@@ -118,6 +118,9 @@ def validate_publication(grouped: dict[str, list[dict[str, Any]]]) -> None:
         fail("publication evidence must contain one native build for each architecture")
     for record in builds:
         validate_native(record)
+        compressed_platform_bytes = record.get("compressed_platform_bytes")
+        if not isinstance(compressed_platform_bytes, int) or compressed_platform_bytes <= 0:
+            fail(f"compressed platform size is missing for {record.get('platform')}")
         if record.get("manifest_digest_parity") is not True:
             fail(f"architecture registry digest parity failed for {record.get('platform')}")
         attestations = record.get("attestations", {})
@@ -213,6 +216,14 @@ def main() -> None:
         ),
         "manifest_digest_parity": (
             grouped["index_assembly"][0]["manifest_digest_parity"]
+            if mode == "publication"
+            else None
+        ),
+        "compressed_platform_bytes": (
+            {
+                record["platform"]: record["compressed_platform_bytes"]
+                for record in grouped["architecture_publication"]
+            }
             if mode == "publication"
             else None
         ),

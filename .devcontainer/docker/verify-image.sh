@@ -46,3 +46,31 @@ timeout 30 "$browser" \
     --headless \
     --no-sandbox \
     about:blank >/dev/null
+
+ffmpeg_probe_dir="$(mktemp -d)"
+trap 'rm -rf "$ffmpeg_probe_dir"' EXIT HUP INT TERM
+
+timeout 30 ffmpeg \
+    -hide_banner \
+    -loglevel error \
+    -f lavfi \
+    -i 'testsrc=size=64x64:rate=10' \
+    -f lavfi \
+    -i 'sine=frequency=1000:sample_rate=44100' \
+    -t 1 \
+    -c:v libvpx \
+    -c:a libvorbis \
+    "$ffmpeg_probe_dir/input.webm"
+
+timeout 30 ffmpeg \
+    -hide_banner \
+    -loglevel error \
+    -i "$ffmpeg_probe_dir/input.webm" \
+    -c:v libx264 \
+    -preset fast \
+    -crf 23 \
+    -c:a aac \
+    -b:a 128k \
+    "$ffmpeg_probe_dir/output.mp4"
+
+test -s "$ffmpeg_probe_dir/output.mp4"
