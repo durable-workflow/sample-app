@@ -121,6 +121,33 @@ def validate_publication(grouped: dict[str, list[dict[str, Any]]]) -> None:
         compressed_platform_bytes = record.get("compressed_platform_bytes")
         if not isinstance(compressed_platform_bytes, int) or compressed_platform_bytes <= 0:
             fail(f"compressed platform size is missing for {record.get('platform')}")
+        largest_compressed_layer_bytes = record.get("largest_compressed_layer_bytes")
+        if (
+            not isinstance(largest_compressed_layer_bytes, int)
+            or largest_compressed_layer_bytes <= 0
+            or largest_compressed_layer_bytes > compressed_platform_bytes
+        ):
+            fail(
+                f"largest compressed layer size is invalid for {record.get('platform')}"
+            )
+        compressed_layer_count = record.get("compressed_layer_count")
+        if not isinstance(compressed_layer_count, int) or compressed_layer_count <= 0:
+            fail(f"compressed layer count is missing for {record.get('platform')}")
+        size_budget = record.get("compressed_size_budget", {})
+        if not isinstance(size_budget, dict):
+            fail(
+                f"compressed image size budget is invalid for {record.get('platform')}"
+            )
+        max_platform_bytes = size_budget.get("max_platform_bytes")
+        max_layer_bytes = size_budget.get("max_layer_bytes")
+        if (
+            not isinstance(max_platform_bytes, int)
+            or not isinstance(max_layer_bytes, int)
+            or compressed_platform_bytes >= max_platform_bytes
+            or largest_compressed_layer_bytes >= max_layer_bytes
+            or size_budget.get("within_budget") is not True
+        ):
+            fail(f"compressed image size budget failed for {record.get('platform')}")
         if record.get("manifest_digest_parity") is not True:
             fail(f"architecture registry digest parity failed for {record.get('platform')}")
         attestations = record.get("attestations", {})
@@ -222,6 +249,18 @@ def main() -> None:
         "compressed_platform_bytes": (
             {
                 record["platform"]: record["compressed_platform_bytes"]
+                for record in grouped["architecture_publication"]
+            }
+            if mode == "publication"
+            else None
+        ),
+        "compressed_layer_profiles": (
+            {
+                record["platform"]: {
+                    "layer_count": record["compressed_layer_count"],
+                    "largest_layer_bytes": record["largest_compressed_layer_bytes"],
+                    "size_budget": record["compressed_size_budget"],
+                }
                 for record in grouped["architecture_publication"]
             }
             if mode == "publication"

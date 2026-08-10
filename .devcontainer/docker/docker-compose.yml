@@ -52,6 +52,10 @@ services:
             - '--innodb-flush-log-at-trx-commit=0'
             - '--innodb-doublewrite=OFF'
             - '--innodb-file-per-table=OFF'
+            - '--innodb-buffer-pool-size=64M'
+            - '--innodb-log-file-size=16M'
+            - '--performance-schema=OFF'
+            - '--skip-name-resolve'
         ports:
             - '${FORWARD_DB_PORT:-13306}:3306'
         environment:
@@ -62,14 +66,18 @@ services:
             MYSQL_PASSWORD: '${DB_PASSWORD:-password}'
             MYSQL_ALLOW_EMPTY_PASSWORD: 1
         volumes:
-            - 'laravel-mysql:/var/lib/mysql'
+            - type: volume
+              source: laravel-mysql
+              target: /var/lib/mysql
+              volume:
+                  nocopy: true
             - './create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
         networks:
             - laravel
         healthcheck:
             test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-            interval: 5s
-            retries: 30
+            interval: 2s
+            retries: 75
             start_period: 30s
             timeout: 5s
     redis:

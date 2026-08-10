@@ -54,8 +54,21 @@ final class DevcontainerImageContractTest extends TestCase
                 '--innodb-flush-log-at-trx-commit=0',
                 '--innodb-doublewrite=OFF',
                 '--innodb-file-per-table=OFF',
+                '--innodb-buffer-pool-size=64M',
+                '--innodb-log-file-size=16M',
+                '--performance-schema=OFF',
+                '--skip-name-resolve',
             ],
             $services['mysql']['command'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'type' => 'volume',
+                'source' => 'laravel-mysql',
+                'target' => '/var/lib/mysql',
+                'volume' => ['nocopy' => true],
+            ],
+            $services['mysql']['volumes'][0] ?? null,
         );
         $this->assertSame('redis:alpine', $services['redis']['image'] ?? null);
         $this->assertSame(
@@ -67,7 +80,8 @@ final class DevcontainerImageContractTest extends TestCase
             ],
             $services['mysql']['healthcheck']['test'] ?? null,
         );
-        $this->assertSame(30, $services['mysql']['healthcheck']['retries'] ?? null);
+        $this->assertSame('2s', $services['mysql']['healthcheck']['interval'] ?? null);
+        $this->assertSame(75, $services['mysql']['healthcheck']['retries'] ?? null);
         $this->assertSame('30s', $services['mysql']['healthcheck']['start_period'] ?? null);
         $this->assertSame(30, $services['redis']['healthcheck']['retries'] ?? null);
         $this->assertSame('5s', $services['redis']['healthcheck']['start_period'] ?? null);
@@ -93,6 +107,19 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('/tmp/sample-app-composer/root/', $dockerfile);
         $this->assertStringContainsString('/tmp/sample-app-composer/microservice/', $dockerfile);
         $this->assertStringContainsString('apt-get purge -y --auto-remove', $dockerfile);
+        $this->assertStringContainsString('canonical_library="$(readlink -f "$library")"', $dockerfile);
+        $this->assertStringContainsString('dpkg-query --search "$canonical_library"', $dockerfile);
+        $this->assertStringContainsString('dpkg-query --search "$library"', $dockerfile);
+        $this->assertStringContainsString('No Debian runtime package owns PHP extension dependency', $dockerfile);
+        $this->assertStringContainsString('Required PHP extension is unavailable after build dependency cleanup', $dockerfile);
+        $dependencyPurge = strpos($dockerfile, 'apt-get purge -y --auto-remove');
+        $postPurgeExtensionCheck = strpos(
+            $dockerfile,
+            'for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis zip',
+        );
+        $this->assertNotFalse($dependencyPurge);
+        $this->assertNotFalse($postPurgeExtensionCheck);
+        $this->assertLessThan($postPurgeExtensionCheck, $dependencyPurge);
         $this->assertStringContainsString('default-mysql-client', $dockerfile);
         $this->assertStringContainsString('redis-tools', $dockerfile);
         $this->assertStringContainsString('ffmpeg', $dockerfile);
@@ -153,9 +180,14 @@ final class DevcontainerImageContractTest extends TestCase
     {
         $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
         $userCreation = strpos($dockerfile, 'useradd --create-home --gid laravel');
-        $dependencyOwnership = strpos(
+        $browserInstallation = strpos($dockerfile, 'playwright install --with-deps --only-shell chromium');
+        $rootDependencyOwnership = strpos(
             $dockerfile,
-            'chown -R laravel:laravel /tmp/sample-app-composer',
+            'COPY --chown=laravel:laravel composer.json composer.lock /tmp/sample-app-composer/root/',
+        );
+        $microserviceDependencyOwnership = strpos(
+            $dockerfile,
+            'COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/',
         );
         $unprivilegedPrewarm = strpos(
             $dockerfile,
@@ -163,10 +195,23 @@ final class DevcontainerImageContractTest extends TestCase
         );
 
         $this->assertNotFalse($userCreation);
-        $this->assertNotFalse($dependencyOwnership);
+        $this->assertNotFalse($browserInstallation);
+        $this->assertNotFalse($rootDependencyOwnership);
+        $this->assertNotFalse($microserviceDependencyOwnership);
         $this->assertNotFalse($unprivilegedPrewarm);
-        $this->assertLessThan($dependencyOwnership, $userCreation);
-        $this->assertLessThan($unprivilegedPrewarm, $dependencyOwnership);
+        $this->assertLessThan($rootDependencyOwnership, $userCreation);
+        $this->assertLessThan($rootDependencyOwnership, $browserInstallation);
+        $this->assertLessThan($microserviceDependencyOwnership, $rootDependencyOwnership);
+        $this->assertLessThan($unprivilegedPrewarm, $microserviceDependencyOwnership);
+        $this->assertStringContainsString('gosu laravel test -w "$writable_path"', $dockerfile);
+        $this->assertStringContainsString(
+            'install -d -o laravel -g laravel "${dependency_dir}/vendor"',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
+            'Composer prewarm path is not writable by laravel: ${writable_path}',
+            $dockerfile,
+        );
     }
 
     public function test_codespaces_schema_dump_records_every_current_migration(): void
@@ -277,6 +322,12 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('needs: [verify-main]', $publicationEvidence);
         $this->assertStringContainsString('summarize-devcontainer-evidence.py', $publicationEvidence);
         $this->assertStringContainsString('compressed_platform_bytes', $publish);
+        $this->assertStringContainsString('largest_compressed_layer_bytes', $publish);
+        $this->assertStringContainsString('compressed_layer_count', $publish);
+        $this->assertStringContainsString('within_size_budget', $publish);
+        $this->assertStringContainsString("always() && steps.build.outcome == 'success'", $publish);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $workflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $workflow);
         $this->assertStringContainsString('900', $publicationEvidence);
 
         preg_match_all('/^\s*uses:\s+[^@\s]+@([^\s#]+)/m', $workflow, $actionRefs);

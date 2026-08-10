@@ -22,9 +22,6 @@ WORKDIR /var/www/html
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
-COPY package-lock.json /tmp/sample-app-package-lock.json
-COPY composer.json composer.lock /tmp/sample-app-composer/root/
-COPY microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/
 
 RUN set -eux; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
@@ -64,13 +61,31 @@ RUN set -eux; \
         pdo_sqlite \
         zip; \
     sh /usr/local/bin/install-phpredis; \
+    extension_libraries=/tmp/php-extension-libraries; \
+    runtime_packages=/tmp/php-runtime-packages; \
     find /usr/local/lib/php/extensions -type f -name '*.so' -exec ldd '{}' ';' \
         | awk '/=>/ { print $(NF - 1) }' \
-        | sort -u \
-        | xargs -r dpkg-query --search \
-        | cut -d: -f1 \
-        | sort -u \
-        | xargs -r apt-mark manual; \
+        | sort -u > "$extension_libraries"; \
+    : > "$runtime_packages"; \
+    while IFS= read -r library; do \
+        canonical_library="$(readlink -f "$library")"; \
+        if [ -z "$canonical_library" ] || [ ! -e "$canonical_library" ]; then \
+            echo "Unable to resolve PHP extension dependency: ${library}" >&2; \
+            exit 1; \
+        fi; \
+        if package_matches="$(dpkg-query --search "$canonical_library" 2>/dev/null)"; then \
+            :; \
+        elif package_matches="$(dpkg-query --search "$library" 2>/dev/null)"; then \
+            :; \
+        else \
+            echo "No Debian runtime package owns PHP extension dependency: ${library} (canonical: ${canonical_library})" >&2; \
+            exit 1; \
+        fi; \
+        printf '%s\n' "$package_matches" | cut -d: -f1 >> "$runtime_packages"; \
+    done < "$extension_libraries"; \
+    sort -u "$runtime_packages" -o "$runtime_packages"; \
+    test -s "$runtime_packages"; \
+    xargs -r apt-mark manual < "$runtime_packages"; \
     apt-get purge -y --auto-remove \
         ${PHPIZE_DEPS} \
         libcurl4-openssl-dev \
@@ -81,27 +96,18 @@ RUN set -eux; \
         libpng-dev \
         libsqlite3-dev \
         libzip-dev; \
-    playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
-    test -n "$playwright_version"; \
-    npm install --global "playwright@${playwright_version}"; \
-    playwright install --with-deps --only-shell chromium; \
+    for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis zip; do \
+        if ! php --ri "$extension" >/dev/null; then \
+            echo "Required PHP extension is unavailable after build dependency cleanup: ${extension}" >&2; \
+            exit 1; \
+        fi; \
+    done; \
     groupadd --gid 1000 laravel; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
     install -d -o laravel -g laravel /home/laravel/.composer /ms-playwright /var/www/html; \
-    chown -R laravel:laravel /tmp/sample-app-composer; \
-    for dependency_set in root microservice; do \
-        COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install \
-            --working-dir="/tmp/sample-app-composer/${dependency_set}" \
-            --download-only \
-            --prefer-dist \
-            --no-interaction \
-            --no-plugins \
-            --no-progress \
-            --no-scripts; \
-    done; \
     apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*; \
+    rm -rf /var/lib/apt/lists/* /var/tmp/*; \
     setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
     getcap "$(command -v php)" | grep -F 'cap_net_bind_service=ep'; \
     install -d -m 0700 -o laravel -g laravel /home/laravel/.ssh; \
@@ -116,6 +122,40 @@ RUN set -eux; \
     ssh-keygen -A; \
     sshd -t; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
+
+COPY package-lock.json /tmp/sample-app-package-lock.json
+
+RUN set -eux; \
+    playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
+    test -n "$playwright_version"; \
+    npm install --global --no-audit --no-fund "playwright@${playwright_version}"; \
+    playwright install --with-deps --only-shell chromium; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/tmp/*
+
+COPY --chown=laravel:laravel composer.json composer.lock /tmp/sample-app-composer/root/
+COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lock /tmp/sample-app-composer/microservice/
+
+RUN set -eux; \
+    for dependency_set in root microservice; do \
+        dependency_dir="/tmp/sample-app-composer/${dependency_set}"; \
+        install -d -o laravel -g laravel "${dependency_dir}/vendor"; \
+        for writable_path in "$dependency_dir" "${dependency_dir}/vendor"; do \
+            if ! gosu laravel test -w "$writable_path"; then \
+                echo "Composer prewarm path is not writable by laravel: ${writable_path}" >&2; \
+                exit 1; \
+            fi; \
+        done; \
+        COMPOSER_HOME=/home/laravel/.composer gosu laravel composer install \
+            --working-dir="$dependency_dir" \
+            --download-only \
+            --prefer-dist \
+            --no-interaction \
+            --no-plugins \
+            --no-progress \
+            --no-scripts; \
+    done; \
+    rm -rf /tmp/* /var/tmp/*
 
 ENV COMPOSER_HOME=/home/laravel/.composer
 

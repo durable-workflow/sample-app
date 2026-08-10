@@ -52,6 +52,8 @@ concurrency:
 env:
   GHCR_IMAGE: ghcr.io/durable-workflow/sample-app-devcontainer
   DOCKERHUB_IMAGE: durableworkflow/sample-app-devcontainer
+  MAX_COMPRESSED_LAYER_BYTES: '400000000'
+  MAX_COMPRESSED_PLATFORM_BYTES: '750000000'
   REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
@@ -308,7 +310,7 @@ jobs:
             cp dockerhub-architecture.json dockerhub-platform.json
           fi
           cmp ghcr-platform.json dockerhub-platform.json
-          compressed_platform_bytes="$(python3 - ghcr-platform.json <<'PY'
+          read -r compressed_platform_bytes largest_compressed_layer_bytes compressed_layer_count < <(python3 - ghcr-platform.json <<'PY'
           import json
           import sys
 
@@ -317,12 +319,21 @@ jobs:
           layers = manifest.get("layers")
           if not isinstance(layers, list) or not layers:
               raise SystemExit("platform image manifest does not contain compressed layers")
-          compressed_bytes = sum(int(layer["size"]) for layer in layers)
-          if compressed_bytes <= 0:
-              raise SystemExit("compressed platform size must be positive")
-          print(compressed_bytes)
+          layer_sizes = [int(layer["size"]) for layer in layers]
+          if any(size <= 0 for size in layer_sizes):
+              raise SystemExit("compressed layer sizes must be positive")
+          print(sum(layer_sizes), max(layer_sizes), len(layer_sizes))
           PY
-          )"
+          )
+          within_size_budget=1
+          if (( compressed_platform_bytes >= MAX_COMPRESSED_PLATFORM_BYTES )); then
+            echo "Compressed platform size ${compressed_platform_bytes} must be less than ${MAX_COMPRESSED_PLATFORM_BYTES} bytes." >&2
+            within_size_budget=0
+          fi
+          if (( largest_compressed_layer_bytes >= MAX_COMPRESSED_LAYER_BYTES )); then
+            echo "Largest compressed layer ${largest_compressed_layer_bytes} must be less than ${MAX_COMPRESSED_LAYER_BYTES} bytes." >&2
+            within_size_budget=0
+          fi
           ghcr_digest="$(docker buildx imagetools inspect "$GHCR_REF" --format '{{ .Manifest.Digest }}')"
           dockerhub_digest="$(docker buildx imagetools inspect "$DOCKERHUB_REF" --format '{{ .Manifest.Digest }}')"
           test "$ghcr_digest" = "$dockerhub_digest"
@@ -330,7 +341,10 @@ jobs:
           completed_ms="$(date +%s%3N)"
           GHCR_DIGEST="$ghcr_digest" \
           DOCKERHUB_DIGEST="$dockerhub_digest" \
+          COMPRESSED_LAYER_COUNT="$compressed_layer_count" \
           COMPRESSED_PLATFORM_BYTES="$compressed_platform_bytes" \
+          LARGEST_COMPRESSED_LAYER_BYTES="$largest_compressed_layer_bytes" \
+          WITHIN_SIZE_BUDGET="$within_size_budget" \
           COMPLETED_MS="$completed_ms" \
           HOST_MACHINE="$(uname -m)" \
           DOCKER_ARCHITECTURE="$(docker info --format '{{.Architecture}}')" \
@@ -359,7 +373,14 @@ jobs:
                   "dockerhub": os.environ["DOCKERHUB_DIGEST"],
               },
               "manifest_digest_parity": True,
+              "compressed_layer_count": int(os.environ["COMPRESSED_LAYER_COUNT"]),
               "compressed_platform_bytes": int(os.environ["COMPRESSED_PLATFORM_BYTES"]),
+              "largest_compressed_layer_bytes": int(os.environ["LARGEST_COMPRESSED_LAYER_BYTES"]),
+              "compressed_size_budget": {
+                  "max_layer_bytes": int(os.environ["MAX_COMPRESSED_LAYER_BYTES"]),
+                  "max_platform_bytes": int(os.environ["MAX_COMPRESSED_PLATFORM_BYTES"]),
+                  "within_budget": os.environ["WITHIN_SIZE_BUDGET"] == "1",
+              },
               "attestations": {"provenance": "mode=max", "sbom": True},
               "run_started_epoch_ms": started,
               "completed_epoch_ms": completed,
@@ -369,8 +390,10 @@ jobs:
               json.dump(payload, output, indent=2, sort_keys=True)
               output.write("\n")
           PY
+          test "$within_size_budget" = 1
 
       - name: Retain architecture publication evidence
+        if: ${{ always() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: devcontainer-evidence-build-${{ matrix.suffix }}
