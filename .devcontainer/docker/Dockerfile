@@ -2,6 +2,18 @@ FROM node:22-bookworm-slim AS node
 
 FROM composer:2 AS composer
 
+FROM docker:27.5.1-cli AS docker-cli
+
+FROM rust:1.86.0-slim-bookworm AS rust
+
+RUN set -eux; \
+    rm -rf /usr/local/rustup/downloads /usr/local/rustup/tmp; \
+    find /usr/local/rustup/toolchains -type d \
+        \( -path '*/share/doc' -o -path '*/share/man' \) \
+        -prune -exec rm -rf '{}' +; \
+    rustc --version; \
+    cargo --version
+
 FROM mariadb:11.4 AS mysql-seed
 
 ENV MYSQL_ROOT_PASSWORD=password \
@@ -75,9 +87,10 @@ RUN set -eux; \
 FROM php:8.4-cli-bookworm
 
 ARG VCS_REF=unknown
+ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.12
 
 LABEL org.opencontainers.image.title="Durable Workflow Sample App development container" \
-    org.opencontainers.image.description="PHP, Node, Composer, and Chromium environment for the Durable Workflow Sample App" \
+    org.opencontainers.image.description="PHP, Python, Rust, Docker, dw, Node, Composer, and Chromium environment for the Durable Workflow Sample App" \
     org.opencontainers.image.source="https://github.com/durable-workflow/sample-app" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.licenses="MIT"
@@ -85,12 +98,20 @@ LABEL org.opencontainers.image.title="Durable Workflow Sample App development co
 ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     TZ=UTC \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/home/laravel/.cargo \
+    DURABLE_WORKFLOW_CLI_VERSION=${DURABLE_WORKFLOW_CLI_VERSION} \
+    PATH=/usr/local/cargo/bin:${PATH}
 
 WORKDIR /var/www/html
 
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=rust /usr/local/cargo /usr/local/cargo
+COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
 
 RUN set -eux; \
@@ -114,6 +135,9 @@ RUN set -eux; \
         libsqlite3-dev \
         libzip-dev \
         openssh-server \
+        python3 \
+        python3-pip \
+        python3-venv \
         redis-tools \
         sqlite3 \
         supervisor \
@@ -172,10 +196,13 @@ RUN set -eux; \
             exit 1; \
         fi; \
     done; \
+    apt-get install -y --no-install-recommends build-essential pkg-config; \
     groupadd --gid 1000 laravel; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
-    install -d -o laravel -g laravel /home/laravel/.composer /ms-playwright /var/www/html; \
+    install -d -o laravel -g laravel /home/laravel/.cargo /home/laravel/.composer /ms-playwright /var/www/html; \
+    ln -s /usr/bin/python3 /usr/local/bin/python; \
+    ln -s /usr/bin/pip3 /usr/local/bin/pip; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*; \
     setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
@@ -192,6 +219,14 @@ RUN set -eux; \
     ssh-keygen -A; \
     sshd -t; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
+
+RUN set -eux; \
+    curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
+    VERSION="$DURABLE_WORKFLOW_CLI_VERSION" \
+        DURABLE_WORKFLOW_INSTALL_DIR=/usr/local/bin \
+        sh /tmp/dw-install.sh; \
+    rm /tmp/dw-install.sh; \
+    dw --version
 
 COPY package-lock.json /tmp/sample-app-package-lock.json
 

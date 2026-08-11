@@ -239,6 +239,8 @@ dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" exec -T --user laravel laravel bash -euc '
     [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
     [[ -w . ]]
+    docker version >/dev/null
+    docker compose version >/dev/null
     if [[ -e .env ]]; then
         [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
         [[ -w .env ]]

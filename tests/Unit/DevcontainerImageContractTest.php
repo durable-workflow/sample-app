@@ -51,6 +51,7 @@ final class DevcontainerImageContractTest extends TestCase
 
         $this->assertSame('../../:/var/www/html', $services['laravel']['volumes'][0] ?? null);
         $this->assertSame('laravel-vendor:/var/www/html/vendor', $services['laravel']['volumes'][1] ?? null);
+        $this->assertSame('/var/run/docker.sock:/var/run/docker.sock', $services['laravel']['volumes'][2] ?? null);
         $this->assertSame('/var/www/html/microservice', $services['microservice']['working_dir'] ?? null);
         $this->assertSame('../../:/var/www/html', $services['microservice']['volumes'][0] ?? null);
         $this->assertSame(
@@ -146,7 +147,13 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('FROM php:8.4-cli-bookworm', $dockerfile);
         $this->assertStringContainsString('FROM node:22-bookworm-slim', $dockerfile);
         $this->assertStringContainsString('FROM composer:2', $dockerfile);
+        $this->assertStringContainsString('FROM docker:27.5.1-cli AS docker-cli', $dockerfile);
+        $this->assertStringContainsString('FROM rust:1.86.0-slim-bookworm AS rust', $dockerfile);
         $this->assertStringContainsString('FROM mariadb:11.4 AS mysql-seed', $dockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.12', $dockerfile);
+        $this->assertStringContainsString('COPY --from=docker-cli /usr/local/bin/docker', $dockerfile);
+        $this->assertStringContainsString('COPY --from=rust /usr/local/cargo /usr/local/cargo', $dockerfile);
+        $this->assertStringContainsString('COPY --from=rust /usr/local/rustup /usr/local/rustup', $dockerfile);
         $this->assertStringContainsString('healthcheck.sh --connect --innodb_initialized', $dockerfile);
         $this->assertStringContainsString('--protocol=tcp', $dockerfile);
         $this->assertStringContainsString('--host=127.0.0.1', $dockerfile);
@@ -215,9 +222,31 @@ final class DevcontainerImageContractTest extends TestCase
             $this->assertStringContainsString($extension, $verification);
         }
 
-        foreach (['composer', 'curl', 'ffmpeg', 'git', 'mysql', 'node', 'playwright', 'redis-cli', 'ssh', 'sshd'] as $executable) {
+        foreach ([
+            'cargo',
+            'cc',
+            'composer',
+            'curl',
+            'docker',
+            'dw',
+            'ffmpeg',
+            'git',
+            'make',
+            'mysql',
+            'node',
+            'pip',
+            'playwright',
+            'python',
+            'redis-cli',
+            'rustc',
+            'ssh',
+            'sshd',
+        ] as $executable) {
             $this->assertStringContainsString($executable, $verification);
         }
+        $this->assertStringContainsString('python -m venv --help', $verification);
+        $this->assertStringContainsString('rustc "${rust_probe_dir}/main.rs"', $verification);
+        $this->assertStringContainsString('docker compose version', $verification);
         $this->assertStringContainsString("compgen -G '/etc/ssh/ssh_host_*_key'", $verification);
         $this->assertStringContainsString('must not contain shared SSH host private keys', $verification);
         $this->assertStringContainsString('command -v mariadb', $databaseInitialization);
@@ -600,9 +629,9 @@ BASH,
         $this->assertStringContainsString('compressed_layer_count', $publish);
         $this->assertStringContainsString('within_size_budget', $publish);
         $this->assertStringContainsString("always() && steps.build.outcome == 'success'", $publish);
-        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $candidateWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1100000000'", $candidateWorkflow);
         $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $candidateWorkflow);
-        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '750000000'", $publicationWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1100000000'", $publicationWorkflow);
         $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $publicationWorkflow);
         $this->assertStringContainsString('900', $publicationEvidence);
 
@@ -644,6 +673,8 @@ BASH,
             $schemaVerifications[0][0][1],
         );
         $this->assertStringContainsString('redis-cli -h redis --raw ping', $script);
+        $this->assertStringContainsString('docker version >/dev/null', $script);
+        $this->assertStringContainsString('docker compose version >/dev/null', $script);
         $this->assertStringContainsString('second_app_key', $script);
         $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);
         $this->assertStringContainsString('http://localhost/', $script);
@@ -654,6 +685,10 @@ BASH,
         $this->assertStringContainsString('prepare_project_permissions', $entrypoint);
         $this->assertStringContainsString("ssh-keygen -A\n    sshd -t", $entrypoint);
         $this->assertStringContainsString('remap_laravel_uid', $entrypoint);
+        $this->assertStringContainsString('prepare_docker_socket_access', $entrypoint);
+        $this->assertStringContainsString('stat --format=%g "$socket"', $entrypoint);
+        $this->assertStringContainsString('usermod --append --groups "$socket_group" laravel', $entrypoint);
+        $this->assertStringContainsString('gosu laravel test -w "$socket"', $entrypoint);
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
         $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);

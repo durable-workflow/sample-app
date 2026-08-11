@@ -5,14 +5,26 @@ set -euo pipefail
 [[ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" == "8.4" ]]
 [[ "$(composer --no-ansi --version | awk '{print $3}' | cut -d. -f1)" == "2" ]]
 [[ "$(node --version | sed -E 's/^v([0-9]+).*/\1/')" == "22" ]]
+python -c 'import sys; assert sys.version_info >= (3, 10)'
+python -m venv --help >/dev/null
+rust_version="$(rustc --version | sed -E 's/^rustc ([0-9]+\.[0-9]+).*/\1/')"
+[[ "$(printf '%s\n' 1.86 "$rust_version" | sort -V | head -n 1)" == "1.86" ]]
+[[ "$(dw --version)" == *"${DURABLE_WORKFLOW_CLI_VERSION}"* ]]
+docker compose version >/dev/null
 
 for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis zip; do
     php --ri "$extension" >/dev/null
 done
 
-for executable in composer curl ffmpeg git mysql node npm npx playwright redis-cli ssh sshd; do
+for executable in cargo cc composer curl docker dw ffmpeg git make mysql node npm npx pip pip3 pkg-config playwright python python3 redis-cli rustc ssh sshd; do
     command -v "$executable" >/dev/null
 done
+
+rust_probe_dir="$(mktemp -d)"
+printf 'fn main() { println!("rust-ok"); }\n' > "${rust_probe_dir}/main.rs"
+rustc "${rust_probe_dir}/main.rs" -o "${rust_probe_dir}/rust-probe"
+[[ "$("${rust_probe_dir}/rust-probe")" == "rust-ok" ]]
+rm -rf "$rust_probe_dir"
 
 mysql_seed_archive=/usr/local/share/sample-app/mysql-datadir.tar
 test -x /usr/local/bin/seed-mysql-volume

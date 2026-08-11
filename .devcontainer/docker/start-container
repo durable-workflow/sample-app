@@ -73,8 +73,30 @@ remap_laravel_uid() {
     chown -R laravel:laravel /home/laravel
 }
 
+prepare_docker_socket_access() {
+    local socket=/var/run/docker.sock
+    local socket_gid
+    local socket_group
+
+    [[ -S "$socket" ]] || return 0
+    socket_gid="$(stat --format=%g "$socket")"
+    socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
+
+    if [[ -z "$socket_group" ]]; then
+        socket_group=sample-app-docker
+        groupadd --gid "$socket_gid" "$socket_group"
+    fi
+
+    usermod --append --groups "$socket_group" laravel
+    if ! gosu laravel test -r "$socket" || ! gosu laravel test -w "$socket"; then
+        echo "Docker socket access is not permission-safe for laravel (gid ${socket_gid})." >&2
+        return 1
+    fi
+}
+
 if [[ "$(id -u)" == "0" ]]; then
     remap_laravel_uid
+    prepare_docker_socket_access
 
     ssh-keygen -A
     sshd -t
