@@ -6,6 +6,7 @@ namespace Tests\Unit;
 
 use App\Workflows\ServiceMode\WelcomeWorkflow;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 final class ServiceModeOnboardingContractTest extends TestCase
@@ -19,7 +20,7 @@ final class ServiceModeOnboardingContractTest extends TestCase
         foreach ($services as $service) {
             $this->assertArrayNotHasKey('build', $service);
         }
-        foreach (['worker-app-setup', 'observer-app-setup', 'php-worker', 'waterline', 'journey', 'browser-smoke'] as $serviceName) {
+        foreach (['worker-app-setup', 'observer-app-setup', 'waterline-migrate', 'php-worker', 'waterline', 'journey', 'browser-smoke'] as $serviceName) {
             $this->assertSame($developmentImage, $services[$serviceName]['image'] ?? null);
         }
         foreach (['python-setup', 'python-worker'] as $serviceName) {
@@ -61,6 +62,110 @@ final class ServiceModeOnboardingContractTest extends TestCase
             $services['waterline']['environment']['WATERLINE_SERVER_ENDPOINT'] ?? null,
         );
         $this->assertContains('service-observer-app:/observer:ro', $services['browser-smoke']['volumes'] ?? []);
+    }
+
+    public function test_waterline_migrations_gate_observer_readiness(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/service-mode.yml'));
+        $services = $compose['services'] ?? [];
+        $migration = $services['waterline-migrate'] ?? [];
+
+        $this->assertSame(
+            [
+                'php',
+                'artisan',
+                'migrate',
+                '--path=vendor/durable-workflow/waterline/database/migrations',
+                '--force',
+                '--no-interaction',
+            ],
+            $migration['entrypoint'] ?? null,
+        );
+        $this->assertContains('service-observer-app:/var/www/html', $migration['volumes'] ?? []);
+        $this->assertSame(
+            'service_healthy',
+            $migration['depends_on']['mysql']['condition'] ?? null,
+        );
+        $this->assertSame(
+            'service_completed_successfully',
+            $migration['depends_on']['observer-app-setup']['condition'] ?? null,
+        );
+        $this->assertSame(
+            'service_completed_successfully',
+            $services['waterline']['depends_on']['waterline-migrate']['condition'] ?? null,
+        );
+
+        $script = (string) file_get_contents($this->repoPath('scripts/service-mode.sh'));
+        $setup = strpos($script, 'run_phase "application and language setup"');
+        $database = strpos($script, 'run_phase "database readiness"');
+        $migrations = strpos($script, 'run_phase "Waterline database migrations"');
+        $readiness = strpos($script, 'run_phase "service startup and readiness"');
+
+        $this->assertIsInt($setup);
+        $this->assertIsInt($database);
+        $this->assertIsInt($migrations);
+        $this->assertIsInt($readiness);
+        $this->assertTrue($setup < $database && $database < $migrations && $migrations < $readiness);
+    }
+
+    public function test_waterline_migration_failure_stops_in_the_migration_phase(): void
+    {
+        $temporaryDirectory = sys_get_temp_dir().'/service-mode-migration-'.bin2hex(random_bytes(6));
+        $dockerPath = $temporaryDirectory.'/docker';
+        $dockerLog = $temporaryDirectory.'/docker.log';
+
+        $this->assertTrue(mkdir($temporaryDirectory, 0700));
+        $this->assertNotFalse(file_put_contents($dockerPath, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >> "$SERVICE_MODE_FAKE_DOCKER_LOG"
+
+has_exit_code_from=false
+for argument in "$@"; do
+    if [[ "$argument" == "--exit-code-from" ]]; then
+        has_exit_code_from=true
+    fi
+done
+
+if [[ "$has_exit_code_from" == true && "${*: -1}" == "waterline-migrate" ]]; then
+    exit 37
+fi
+BASH));
+        $this->assertTrue(chmod($dockerPath, 0700));
+
+        try {
+            $process = new Process(
+                ['bash', $this->repoPath('scripts/service-mode.sh')],
+                env: [
+                    'PATH' => $temporaryDirectory.PATH_SEPARATOR.getenv('PATH'),
+                    'COMPOSE_PROJECT_NAME' => 'service-mode-migration-test',
+                    'DURABLE_WORKFLOW_ARTIFACT_SOURCE' => 'pinned',
+                    'SERVICE_MODE_EVIDENCE_PATH' => $temporaryDirectory.'/evidence.json',
+                    'SERVICE_MODE_FAKE_DOCKER_LOG' => $dockerLog,
+                ],
+            );
+            $process->run();
+
+            $output = $process->getOutput().$process->getErrorOutput();
+            $this->assertSame(37, $process->getExitCode(), $output);
+            $this->assertStringContainsString(
+                'Service mode failed during phase: Waterline database migrations.',
+                $process->getErrorOutput(),
+            );
+            $this->assertStringNotContainsString('==> service startup and readiness', $output);
+
+            $commands = (string) file_get_contents($dockerLog);
+            $this->assertStringContainsString(
+                'up --no-build --force-recreate --no-deps --exit-code-from waterline-migrate waterline-migrate',
+                $commands,
+            );
+        } finally {
+            @unlink($dockerPath);
+            @unlink($dockerLog);
+            @unlink($temporaryDirectory.'/evidence.json');
+            @rmdir($temporaryDirectory);
+        }
     }
 
     public function test_entrypoint_resolves_qualified_artifacts_and_keeps_builds_disabled(): void

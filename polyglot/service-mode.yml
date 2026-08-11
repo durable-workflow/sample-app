@@ -141,6 +141,26 @@ services:
       - service-python:/runtime
       - service-pip-cache:/pip-cache
 
+  waterline-migrate:
+    image: *development-image
+    user: "1000:1000"
+    working_dir: /var/www/html
+    entrypoint:
+      - php
+      - artisan
+      - migrate
+      - --path=vendor/durable-workflow/waterline/database/migrations
+      - --force
+      - --no-interaction
+    environment: *laravel-environment
+    volumes:
+      - service-observer-app:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+      observer-app-setup:
+        condition: service_completed_successfully
+
   bootstrap:
     image: ${DURABLE_SERVER_IMAGE:?resolve the current artifact tuple first}
     command: ["server-bootstrap"]
@@ -223,7 +243,7 @@ services:
     volumes:
       - service-observer-app:/var/www/html
     depends_on:
-      observer-app-setup:
+      waterline-migrate:
         condition: service_completed_successfully
       server:
         condition: service_healthy

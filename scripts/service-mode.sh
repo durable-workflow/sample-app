@@ -38,13 +38,28 @@ fi
 
 compose=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --file "$compose_file")
 
+run_phase() {
+    local phase="$1"
+    shift
+
+    echo "==> ${phase}"
+    if "$@"; then
+        return 0
+    else
+        local status=$?
+        echo "Service mode failed during phase: ${phase}." >&2
+        return "$status"
+    fi
+}
+
 diagnostics() {
     local status=$?
     if (( status != 0 )); then
         echo >&2
         echo 'Service mode did not finish. Current container status:' >&2
         "${compose[@]}" ps >&2 || true
-        "${compose[@]}" logs --no-color --tail=80 server php-worker python-worker waterline >&2 || true
+        "${compose[@]}" logs --no-color --tail=80 \
+            mysql observer-app-setup waterline-migrate server php-worker python-worker waterline >&2 || true
     fi
     return "$status"
 }
@@ -55,10 +70,22 @@ started_ms="$(date +%s%3N)"
 
 # Refresh moving public image tags and reuse them directly. This path has no
 # Docker build step and never compiles an SDK or language runtime locally.
-"${compose[@]}" pull --quiet mysql redis worker-app-setup observer-app-setup python-setup bootstrap server php-worker python-worker waterline journey browser-smoke
-"${compose[@]}" down --remove-orphans
-"${compose[@]}" up --no-build --force-recreate worker-app-setup observer-app-setup python-setup
-"${compose[@]}" up --detach --no-build --force-recreate --wait server php-worker python-worker waterline
+run_phase "published artifact pull" \
+    "${compose[@]}" pull --quiet \
+        mysql redis worker-app-setup observer-app-setup python-setup waterline-migrate \
+        bootstrap server php-worker python-worker waterline journey browser-smoke
+run_phase "previous service shutdown" "${compose[@]}" down --remove-orphans
+run_phase "application and language setup" \
+    "${compose[@]}" up --no-build --force-recreate \
+        worker-app-setup observer-app-setup python-setup
+run_phase "database readiness" \
+    "${compose[@]}" up --detach --no-build --wait mysql redis
+run_phase "Waterline database migrations" \
+    "${compose[@]}" up --no-build --force-recreate --no-deps \
+        --exit-code-from waterline-migrate waterline-migrate
+run_phase "service startup and readiness" \
+    "${compose[@]}" up --detach --no-build --wait \
+        server php-worker python-worker waterline
 
 startup_ms="$(( $(date +%s%3N) - started_ms ))"
 echo "Ready in ${startup_ms} ms. Starting a unique Laravel workflow..."

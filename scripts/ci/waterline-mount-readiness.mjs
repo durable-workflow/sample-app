@@ -56,6 +56,8 @@ const consoleErrors = [];
 const pageErrors = [];
 const requestFailures = [];
 const relevantResponses = [];
+const apiFailures = [];
+let emptyStateRequests = null;
 let failure = null;
 
 page.on('console', (message) => {
@@ -76,15 +78,34 @@ page.on('requestfailed', (request) => {
 });
 page.on('response', (response) => {
     const url = response.url();
+    const summary = {
+        status: response.status(),
+        resource_type: response.request().resourceType(),
+        url,
+    };
 
-    if (url.includes('/vendor/waterline/') || url.includes('/waterline/api/flows/completed')) {
-        relevantResponses.push({
-            status: response.status(),
-            resource_type: response.request().resourceType(),
-            url,
-        });
+    if (url.includes('/vendor/waterline/') || url.includes('/waterline/api/')) {
+        relevantResponses.push(summary);
+    }
+    if (url.includes('/waterline/api/') && response.status() >= 400) {
+        apiFailures.push(summary);
     }
 });
+
+const expectedApiResponses = Promise.all([
+    page.waitForResponse((response) => (
+        response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/waterline/api/saved-views'
+    ), { timeout: 30_000 }),
+    page.waitForResponse((response) => (
+        response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/waterline/api/preferences/workflow-list'
+    ), { timeout: 30_000 }),
+    page.waitForResponse((response) => (
+        response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/waterline/api/flows/completed'
+    ), { timeout: 30_000 }),
+]);
 
 try {
     await page.goto(new URL('/waterline/completed', baseUrl).href, {
@@ -98,23 +119,61 @@ try {
         state: 'visible',
         timeout: 20_000,
     });
-    const listRequestCompleted = relevantResponses.some((response) => (
-        response.url.includes('/waterline/api/flows/completed') && response.status === 200
-    ));
-    if (!listRequestCompleted) {
-        await page.waitForResponse((response) => (
-            response.url().includes('/waterline/api/flows/completed')
-            && response.status() === 200
-        ), { timeout: 20_000 }).catch(() => {
-            throw new Error('The mounted page did not complete its workflow-list request.');
-        });
+
+    const [savedViewsResponse, preferencesResponse, workflowListResponse] = await expectedApiResponses;
+    const expectedResponses = [savedViewsResponse, preferencesResponse, workflowListResponse];
+    if (expectedResponses.some((response) => response.status() !== 200)) {
+        throw new Error('The mounted page did not complete its empty-state API requests successfully.');
     }
+
+    const [savedViews, preferences] = await Promise.all([
+        savedViewsResponse.json(),
+        preferencesResponse.json(),
+    ]);
+    const customSavedViews = Array.isArray(savedViews.data)
+        ? savedViews.data.filter((view) => view?.system !== true)
+        : null;
+    const storedPreferences = preferences?.preferences;
+    const effectivePreferences = preferences?.effective_preferences;
+    const preferenceOverrides = preferences?.overrides;
+    if (
+        customSavedViews === null
+        || customSavedViews.length !== 0
+        || storedPreferences === null
+        || typeof storedPreferences !== 'object'
+        || Array.isArray(storedPreferences)
+        || Object.keys(storedPreferences).length !== 0
+        || effectivePreferences === null
+        || typeof effectivePreferences !== 'object'
+        || Array.isArray(effectivePreferences)
+        || Object.keys(effectivePreferences).length !== 0
+        || preferenceOverrides === null
+        || typeof preferenceOverrides !== 'object'
+        || Array.isArray(preferenceOverrides)
+        || Object.keys(preferenceOverrides).length !== 0
+    ) {
+        throw new Error('The mounted page did not receive fresh saved-view and preference state.');
+    }
+
+    emptyStateRequests = {
+        saved_views: {
+            status: savedViewsResponse.status(),
+            custom_view_count: customSavedViews.length,
+        },
+        workflow_list_preferences: {
+            status: preferencesResponse.status(),
+            stored_preference_count: Object.keys(storedPreferences).length,
+            effective_preference_count: Object.keys(effectivePreferences).length,
+            override_count: Object.keys(preferenceOverrides).length,
+        },
+    };
     await page.waitForTimeout(500);
 
-    if (pageErrors.length || consoleErrors.length || requestFailures.length) {
+    if (pageErrors.length || consoleErrors.length || requestFailures.length || apiFailures.length) {
         throw new Error('The mounted page emitted browser errors.');
     }
 } catch (error) {
+    expectedApiResponses.catch(() => {});
     failure = {
         name: error instanceof Error ? error.name : 'Error',
         message: error instanceof Error ? error.message : String(error),
@@ -169,7 +228,9 @@ const report = {
     status: failure ? 'failed' : 'passed',
     page: pageState,
     workflow_list_request: workflowListRequest,
+    empty_state_requests: emptyStateRequests,
     relevant_responses: relevantResponses,
+    api_failures: apiFailures,
     page_errors: pageErrors,
     console_errors: consoleErrors,
     request_failures: requestFailures,

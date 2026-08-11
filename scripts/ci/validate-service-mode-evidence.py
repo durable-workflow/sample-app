@@ -69,7 +69,30 @@ def load(path: Path) -> dict[str, Any]:
     )
     if list_request.get("status") != 200:
         fail(f"{mount_evidence_path} did not complete the workflow-list request")
-    for field in ("page_errors", "console_errors", "request_failures"):
+    empty_state_requests = require_mapping(
+        mount_summary.get("empty_state_requests"),
+        f"{mount_evidence_path} empty_state_requests",
+    )
+    saved_views = require_mapping(
+        empty_state_requests.get("saved_views"),
+        f"{mount_evidence_path} saved_views",
+    )
+    if saved_views.get("status") != 200 or saved_views.get("custom_view_count") != 0:
+        fail(f"{mount_evidence_path} did not observe empty saved-view state")
+    preferences = require_mapping(
+        empty_state_requests.get("workflow_list_preferences"),
+        f"{mount_evidence_path} workflow_list_preferences",
+    )
+    if preferences.get("status") != 200 or any(
+        preferences.get(field) != 0
+        for field in (
+            "stored_preference_count",
+            "effective_preference_count",
+            "override_count",
+        )
+    ):
+        fail(f"{mount_evidence_path} did not observe empty workflow-list preferences")
+    for field in ("page_errors", "console_errors", "request_failures", "api_failures"):
         if mount_summary.get(field) != []:
             fail(f"{mount_evidence_path} recorded {field}")
 
