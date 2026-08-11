@@ -196,6 +196,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertLessThan($postPurgeExtensionCheck, $dependencyPurge);
         $this->assertStringContainsString('default-mysql-client', $dockerfile);
         $this->assertStringContainsString('redis-tools', $dockerfile);
+        $this->assertStringContainsString('ripgrep', $dockerfile);
         $this->assertStringContainsString('ffmpeg', $dockerfile);
         $this->assertStringContainsString('libcap2-bin', $dockerfile);
         $this->assertStringContainsString('openssh-server', $dockerfile);
@@ -238,6 +239,7 @@ final class DevcontainerImageContractTest extends TestCase
             'playwright',
             'python',
             'redis-cli',
+            'rg',
             'rustc',
             'ssh',
             'sshd',

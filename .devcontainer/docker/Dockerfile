@@ -139,6 +139,7 @@ RUN set -eux; \
         python3-pip \
         python3-venv \
         redis-tools \
+        ripgrep \
         sqlite3 \
         supervisor \
         unzip \
