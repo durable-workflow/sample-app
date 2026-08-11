@@ -1,10 +1,10 @@
 # Durable Workflow Sample App
 
-This Laravel 13 application demonstrates Durable Workflow 2.0 with an embedded
-Laravel engine, a standalone service-mode application, and a featured
-`PolyglotWorkflow` spanning PHP, Python, and Rust. Every path runs in a GitHub
-Codespace on the supported 2.0 prerelease train. Stable Durable Workflow 2.0 has
-not been released yet.
+This Laravel 13 application demonstrates Durable Workflow 2.0 through two
+first-class deployment paths: Service mode with a standalone Server and
+first-party language workers, or an engine embedded in Laravel. Both paths run
+in a GitHub Codespace on the supported 2.0 prerelease train. Stable Durable
+Workflow 2.0 has not been released yet.
 
 > **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
@@ -19,17 +19,18 @@ installs the repository's Composer and npm dependencies. PHP, Node, Composer,
 Chromium, and operating-system packages are already in the image, so they are
 not rebuilt for each Codespace.
 
-When setup finishes, choose a runnable path:
+When setup finishes, choose either deployment path:
 
 | Path | Best fit | Runtime |
 | --- | --- | --- |
-| [PolyglotWorkflow](#polyglotworkflow) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + Server |
+| [Service mode](#service-mode) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + standalone Server |
 | [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
-| [Service mode](#service-mode) | A Laravel application calling a standalone Server with language-neutral workers | Server + Laravel SDK worker + Python SDK worker |
 
-### PolyglotWorkflow
+<!-- codespaces-path: service-mode -->
+### Service mode
 
-Run the featured sample after Codespaces reports that setup is complete:
+Service mode is the first-party PHP, Python, and Rust story. After Codespaces
+reports that setup is complete, run its featured `PolyglotWorkflow` sample:
 
 ```bash
 scripts/polyglot.sh
@@ -50,6 +51,20 @@ the isolated `sample-app-polyglot-demo` project remains available between runs.
 The exhaustive directional codec, replay, signal, query, and Waterline checks
 remain in the [polyglot matrix guide](polyglot/README.md#complete-runtime-matrix).
 
+#### Laravel integration variation
+
+For framework integration work, an optional narrower variation uses the
+standalone Server with Laravel's SDK bridge plus PHP and Python activities:
+
+```bash
+scripts/service-mode.sh
+```
+
+It remains documented as an advanced [Laravel integration
+variation](polyglot/README.md#laravel-integration-variation), not a separate
+deployment path.
+
+<!-- codespaces-path: embedded-laravel -->
 ### Embedded Laravel
 
 Codespaces setup has already created the environment, generated the application
@@ -76,45 +91,13 @@ php artisan test
 The embedded stack uses the Codespace's `sample-app` Compose state. Workflow
 instances receive generated identities, so the command is safe to run again.
 
-### Service mode
-
-From the same Codespace checkout, run one command:
-
-```bash
-scripts/service-mode.sh
-```
-
-The command resolves the current supported 2.0 artifact tuple, pulls the
-published Server and prepared runtime images, and starts an isolated
-`sample-app-service-mode` Compose project without building an SDK or runtime
-image. The Laravel SDK bridge resolves its workflow and PHP activity through
-the service container, sends worker diagnostics to Laravel's logger, and then
-routes a second activity to the Python worker.
-
-The terminal reports the generated workflow ID, both activity results, startup,
-result, and browser-check timing, and a Waterline URL for that exact run. It also
-retains a browser screenshot beside the timing record. The stack remains
-available at forwarded port 18081 for inspection. Run the command again at any
-time; each journey uses a new workflow ID and does not share database or Redis
-state with embedded mode.
-
-The implementation is intentionally application-shaped:
-
-- `config/durable-workflow.php` configures the Laravel bridge and handler services;
-- `app/Workflows/ServiceMode/` contains the attributed workflow and injected PHP activity;
-- `app:service-mode` injects `WorkflowClientInterface`, waits for the result, and supports the SDK test fake;
-- `polyglot/service_mode/python_worker.py` handles the cross-language activity.
-
-For the full PHP/Python/Rust runtime matrix, replay fixtures, signals, queries,
-and codec checks, continue to the [`polyglot/` guide](polyglot/README.md).
-
 ## Observe a run
 
 Check the two observability surfaces separately:
 
 | Surface | Use it for | Where to look |
 |---------|------------|---------------|
-| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | The exact run URL printed by either path, or `/waterline` |
+| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | The run URL printed by application journeys, or `/waterline` when the selected stack includes it |
 | Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for PHP workers; SDK metrics endpoints for external workers |
 
 Waterline proves that the durable run exists and shows what the engine or

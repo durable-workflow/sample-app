@@ -1,10 +1,11 @@
 # Polyglot Sample
 
-This directory contains the featured `PolyglotWorkflow`, the direct service-mode
-journey, and the complete PHP/Python/Rust validation stack. All three run
-against a standalone Durable Workflow Server and use published 2.0 artifacts.
+This directory contains the primary service-mode `PolyglotWorkflow` and the
+complete PHP/Python/Rust validation stack. It also holds a narrower Laravel
+integration variation. Every scenario runs against a standalone Durable
+Workflow Server and uses published 2.0 artifacts.
 
-## Featured PolyglotWorkflow
+## Service mode: PolyglotWorkflow
 
 From a Sample App Codespace after setup reports ready, run:
 
@@ -25,7 +26,7 @@ registrations, and runs the workflow. Docker, Composer, Python, and Rust are
 already present in the prepared Codespaces image, so there is no manual setup
 or hidden host command.
 
-## Service-mode quickstart
+### Laravel integration variation
 
 From a Sample App Codespace, run:
 
@@ -56,7 +57,7 @@ Python, and Rust workflow/activity cells. It drives workflow start, signal,
 query, result retrieval, replay, and codec checks through the published `dw`
 CLI and inspects the same runs through Waterline.
 
-The root app's embedded Laravel path, this service-mode quickstart, and the full
+The root app's embedded Laravel path, the service-mode examples, and the full
 matrix each use separate Compose projects and state.
 
 ## What it exercises
