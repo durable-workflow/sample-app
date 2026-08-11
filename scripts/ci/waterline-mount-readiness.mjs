@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { jsonContainerEntryCount } from './json-empty-state.mjs';
+
 function argumentValue(name, fallback = null) {
     const index = process.argv.indexOf(name);
 
@@ -136,21 +138,15 @@ try {
     const storedPreferences = preferences?.preferences;
     const effectivePreferences = preferences?.effective_preferences;
     const preferenceOverrides = preferences?.overrides;
+    const storedPreferenceCount = jsonContainerEntryCount(storedPreferences);
+    const effectivePreferenceCount = jsonContainerEntryCount(effectivePreferences);
+    const preferenceOverrideCount = jsonContainerEntryCount(preferenceOverrides);
     if (
         customSavedViews === null
         || customSavedViews.length !== 0
-        || storedPreferences === null
-        || typeof storedPreferences !== 'object'
-        || Array.isArray(storedPreferences)
-        || Object.keys(storedPreferences).length !== 0
-        || effectivePreferences === null
-        || typeof effectivePreferences !== 'object'
-        || Array.isArray(effectivePreferences)
-        || Object.keys(effectivePreferences).length !== 0
-        || preferenceOverrides === null
-        || typeof preferenceOverrides !== 'object'
-        || Array.isArray(preferenceOverrides)
-        || Object.keys(preferenceOverrides).length !== 0
+        || storedPreferenceCount !== 0
+        || effectivePreferenceCount !== 0
+        || preferenceOverrideCount !== 0
     ) {
         throw new Error('The mounted page did not receive fresh saved-view and preference state.');
     }
@@ -162,9 +158,9 @@ try {
         },
         workflow_list_preferences: {
             status: preferencesResponse.status(),
-            stored_preference_count: Object.keys(storedPreferences).length,
-            effective_preference_count: Object.keys(effectivePreferences).length,
-            override_count: Object.keys(preferenceOverrides).length,
+            stored_preference_count: storedPreferenceCount,
+            effective_preference_count: effectivePreferenceCount,
+            override_count: preferenceOverrideCount,
         },
     };
     await page.waitForTimeout(500);
