@@ -11,12 +11,16 @@ import sys
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from durable_workflow import Client
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from polyglot_workflow_smoke import run_scenario as run_featured_polyglot_workflow  # noqa: E402
 
 
 def semantic_version_from_text(value: str | None) -> str | None:
@@ -74,6 +78,7 @@ REQUIRED_ARTIFACT_VERSIONS = {
 
 PY_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
 PHP_QUEUE = os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")
+WORKFLOW_QUEUE = os.environ.get("POLYGLOT_WORKFLOW_TASK_QUEUE", "polyglot-workflow")
 PHP2PY_QUEUE = os.environ.get("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python")
 PY2PHP_QUEUE = os.environ.get("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php")
 SIGNAL_NAME = "polyglot-signal"
@@ -104,10 +109,23 @@ REQUIRED_WORKER_REGISTRATIONS = (
         "activity_type": "polyglot.python.greet",
     },
     {
+        "service": "polyglot-workflow-worker",
+        "task_queue": WORKFLOW_QUEUE,
+        "runtime": "php",
+        "workflow_type": "polyglot.PolyglotWorkflow",
+        "worker_id": "polyglot-workflow-worker",
+    },
+    {
         "service": "python-activity-worker",
         "task_queue": PHP2PY_QUEUE,
         "runtime": "python",
         "activity_type": "polyglot.php-to-python.reverse",
+    },
+    {
+        "service": "python-activity-worker",
+        "task_queue": PHP2PY_QUEUE,
+        "runtime": "python",
+        "activity_type": "polyglot.php-to-python.tally",
     },
     {
         "service": "python-activity-worker",
@@ -131,7 +149,7 @@ REQUIRED_WORKER_REGISTRATIONS = (
         "service": "php-workflow-worker",
         "task_queue": PHP2PY_QUEUE,
         "runtime": "php",
-        "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow",
+        "workflow_type": "polyglot.php-to-python.greeter",
         "worker_id": "php-workflow-worker",
     },
     {
@@ -167,6 +185,13 @@ REQUIRED_WORKER_REGISTRATIONS = (
         "task_queue": TO_RUST_QUEUE,
         "runtime": "rust",
         "activity_type": "polyglot.php-to-rust.echo",
+        "worker_id": "rust-activity-worker",
+    },
+    {
+        "service": "rust-activity-worker",
+        "task_queue": TO_RUST_QUEUE,
+        "runtime": "rust",
+        "activity_type": "polyglot.php-to-rust.receipt",
         "worker_id": "rust-activity-worker",
     },
 )
@@ -555,9 +580,9 @@ def artifact_metadata(
                 "status": "registered" if php_registration_observed else "not_registered",
                 "observed": php_registration_observed,
                 "version_matched": php_registration_observed,
-                "worker_id": "php-workflow-worker",
-                "task_queue": PHP2PY_QUEUE,
-                "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow",
+                "worker_id": "polyglot-workflow-worker",
+                "task_queue": WORKFLOW_QUEUE,
+                "workflow_type": "polyglot.PolyglotWorkflow",
                 "error": php_worker_error,
             },
             "exercised": php_registration_observed and php_execution["status"] == "completed",
@@ -913,11 +938,11 @@ async def four_corner_cli_scenarios() -> list[dict[str, Any]]:
             "scenario": "php_to_python",
             "workflow_language": "php",
             "activity_language": "python",
-            "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow",
+            "workflow_type": "polyglot.php-to-python.greeter",
             "task_queue": PHP2PY_QUEUE,
             "input": ["polyglot"],
             "workers": [
-                {"task_queue": PHP2PY_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-python.PhpToPythonWorkflow"},
+                {"task_queue": PHP2PY_QUEUE, "runtime": "php", "workflow_type": "polyglot.php-to-python.greeter"},
                 {"task_queue": PHP2PY_QUEUE, "runtime": "python", "activity_type": "polyglot.php-to-python.reverse"},
             ],
         },
@@ -1623,10 +1648,10 @@ async def run_all() -> int:
     php_sdk_worker_error: str | None = None
     try:
         php_sdk_worker_version = await wait_for_worker(
-            task_queue=PHP2PY_QUEUE,
+            task_queue=WORKFLOW_QUEUE,
             runtime="php",
-            workflow_type="polyglot.php-to-python.PhpToPythonWorkflow",
-            worker_id="php-workflow-worker",
+            workflow_type="polyglot.PolyglotWorkflow",
+            worker_id="polyglot-workflow-worker",
         )
     except Exception as exc:  # noqa: BLE001
         php_sdk_worker_version = None
@@ -1703,6 +1728,14 @@ async def run_all() -> int:
     surfaces: dict[str, dict[str, Any]] = {}
     failed = False
     cli_runs: list[dict[str, Any]] = []
+
+    print("\n==> PolyglotWorkflow: PHP orchestration with Python and Rust activities", flush=True)
+    try:
+        surfaces["featured_polyglot_workflow"] = await run_featured_polyglot_workflow()
+    except Exception as exc:  # noqa: BLE001
+        failed = True
+        surfaces["featured_polyglot_workflow"] = {"status": "failed", "error": str(exc)}
+    print(json.dumps(surfaces["featured_polyglot_workflow"], indent=2, sort_keys=True), flush=True)
 
     print("\n==> polyglot conformance: CLI four-corner runtime matrix", flush=True)
     try:

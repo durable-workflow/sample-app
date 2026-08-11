@@ -369,7 +369,7 @@ final class PolyglotWorkerReplayTest extends TestCase
             $requests[0]['body']['supported_workflow_types'] ?? [],
         );
         $this->assertNotContains(
-            'polyglot.php-to-python.PhpToPythonWorkflow',
+            'polyglot.PolyglotWorkflow',
             $requests[0]['body']['supported_workflow_types'] ?? [],
         );
 
@@ -450,12 +450,18 @@ final class PolyglotWorkerReplayTest extends TestCase
     public function test_activity_replay_ignores_signals_until_activity_completion_is_needed(): void
     {
         $body = $this->processWorkflowTask([
-            'workflow_type' => 'polyglot.php-to-python.PhpToPythonWorkflow',
+            'workflow_type' => 'polyglot.PolyglotWorkflow',
             'workflow_id' => 'php-activity-signal-replay',
             'run_id' => 'run-activity-signal-replay',
             'task_id' => 'task-activity-signal-replay',
             'workflow_task_attempt' => 1,
-            'arguments' => Avro::envelope(['polyglot']),
+            'arguments' => Avro::envelope([[
+                'name' => 'Ada',
+                'items' => [
+                    ['quantity' => 2, 'unit_price_cents' => 1500],
+                    ['quantity' => 1, 'unit_price_cents' => 4200],
+                ],
+            ]]),
             'history_events' => [
                 [
                     'event_type' => 'SignalReceived',
@@ -469,8 +475,9 @@ final class PolyglotWorkerReplayTest extends TestCase
                     'payload' => [
                         'result' => Avro::envelope([
                             'runtime' => 'python',
-                            'input' => 'polyglot',
-                            'reversed' => 'tolygolp',
+                            'operation' => 'calculate_order_total',
+                            'item_count' => 2,
+                            'total_cents' => 7200,
                         ]),
                     ],
                 ],
@@ -480,8 +487,8 @@ final class PolyglotWorkerReplayTest extends TestCase
         $command = $body['commands'][0] ?? [];
 
         $this->assertSame('schedule_activity', $command['type'] ?? null);
-        $this->assertSame('polyglot.php-to-python.tally', $command['activity_type'] ?? null);
-        $this->assertSame('polyglot-php-to-python', $command['queue'] ?? null);
+        $this->assertSame('polyglot.php-to-rust.receipt', $command['activity_type'] ?? null);
+        $this->assertSame('polyglot-to-rust', $command['queue'] ?? null);
     }
 
     public function test_signal_replay_ignores_unmatched_signal_names(): void
@@ -697,23 +704,30 @@ final class PolyglotWorkerReplayTest extends TestCase
     {
         $activityResult = [
             'runtime' => 'python',
-            'input' => 'polyglot',
-            'reversed' => 'tolygolp',
+            'operation' => 'calculate_order_total',
+            'item_count' => 2,
+            'total_cents' => 7200,
         ];
 
         $body = $this->processWorkflowTask([
-            'workflow_type' => 'polyglot.php-to-python.PhpToPythonWorkflow',
+            'workflow_type' => 'polyglot.PolyglotWorkflow',
             'workflow_id' => 'php-activity-empty-result',
             'run_id' => 'run-activity-empty-result',
             'task_id' => 'task-activity-empty-result',
             'workflow_task_attempt' => 1,
-            'arguments' => Avro::envelope(['polyglot']),
+            'arguments' => Avro::envelope([[
+                'name' => 'Ada',
+                'items' => [
+                    ['quantity' => 2, 'unit_price_cents' => 1500],
+                    ['quantity' => 1, 'unit_price_cents' => 4200],
+                ],
+            ]]),
             'history_events' => [
                 [
                     'event_type' => 'ActivityCompleted',
                     'payload' => [
                         'activity_execution_id' => 'activity-empty-result-1',
-                        'activity_type' => 'polyglot.php-to-python.reverse',
+                        'activity_type' => 'polyglot.php-to-python.tally',
                         'sequence' => 1,
                         'result' => '',
                         'payload_codec' => 'avro',
@@ -724,7 +738,7 @@ final class PolyglotWorkerReplayTest extends TestCase
                 'activities' => [
                     [
                         'id' => 'activity-empty-result-1',
-                        'activity_type' => 'polyglot.php-to-python.reverse',
+                        'activity_type' => 'polyglot.php-to-python.tally',
                         'sequence' => 1,
                         'payload_codec' => 'avro',
                         'result' => Avro::encode($activityResult),
@@ -736,7 +750,8 @@ final class PolyglotWorkerReplayTest extends TestCase
         $command = $body['commands'][0] ?? [];
 
         $this->assertSame('schedule_activity', $command['type'] ?? null);
-        $this->assertSame('polyglot.php-to-python.tally', $command['activity_type'] ?? null);
+        $this->assertSame('polyglot.php-to-rust.receipt', $command['activity_type'] ?? null);
+        $this->assertSame('polyglot-to-rust', $command['queue'] ?? null);
     }
 
     public function test_query_task_reports_waiting_state_with_python_parity_shape(): void

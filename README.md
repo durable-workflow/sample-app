@@ -1,9 +1,10 @@
 # Durable Workflow Sample App
 
-This Laravel 13 application has two first-class ways to run Durable Workflow
-2.0: an embedded Laravel engine and a standalone service with PHP and Python
-workers. Both paths run in a GitHub Codespace on the supported 2.0 prerelease
-train. Stable Durable Workflow 2.0 has not been released yet.
+This Laravel 13 application demonstrates Durable Workflow 2.0 with an embedded
+Laravel engine, a standalone service-mode application, and a featured
+`PolyglotWorkflow` spanning PHP, Python, and Rust. Every path runs in a GitHub
+Codespace on the supported 2.0 prerelease train. Stable Durable Workflow 2.0 has
+not been released yet.
 
 > **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
@@ -18,12 +19,36 @@ installs the repository's Composer and npm dependencies. PHP, Node, Composer,
 Chromium, and operating-system packages are already in the image, so they are
 not rebuilt for each Codespace.
 
-When setup finishes, choose either runnable path:
+When setup finishes, choose a runnable path:
 
 | Path | Best fit | Runtime |
 | --- | --- | --- |
+| [PolyglotWorkflow](#polyglotworkflow) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + Server |
 | [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
 | [Service mode](#service-mode) | A Laravel application calling a standalone Server with language-neutral workers | Server + Laravel SDK worker + Python SDK worker |
+
+### PolyglotWorkflow
+
+Run the featured sample after Codespaces reports that setup is complete:
+
+```bash
+scripts/polyglot.sh
+```
+
+This one command resolves the current installable Server, PHP SDK, Python SDK,
+and Rust SDK artifacts; builds their worker images; waits for all three workers;
+and starts `PolyglotWorkflow`. The PHP-authored workflow routes an order
+calculation to the Python activity queue, sends that calculation to the Rust
+receipt activity queue, and combines both results. Its output identifies the
+PHP workflow runtime, both activity runtimes, all three task queues, the current
+artifact versions, and the completed receipt.
+
+Docker and the complete PHP/Python/Rust toolchain are included in the prepared
+Codespaces image. The command does not require a package-install step or any
+tool outside the repository and its Compose stack. Repeat it for another run;
+the isolated `sample-app-polyglot-demo` project remains available between runs.
+The exhaustive directional codec, replay, signal, query, and Waterline checks
+remain in the [polyglot matrix guide](polyglot/README.md#complete-runtime-matrix).
 
 ### Embedded Laravel
 
@@ -343,7 +368,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `DurableWorkflow\AI\Workflows\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
-| Run the polyglot conformance smoke (complete PHP/Python/Rust runtime matrix) | PHP-authored workflows plus the Python and Rust workers in `polyglot/` | `while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
+| Run one PHP workflow that combines Python and Rust activity results | `App\Workflows\Polyglot\PolyglotWorkflow` | `scripts/polyglot.sh` | `polyglot` |
 | Exercise machine-readable failure diagnosis and repair refusal | `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` | `/mcp/workflows` `start_workflow` with `workflow=diagnostic_failure` | `diagnostic_failure` |
 
 #### Migrating from Durable Workflow 1.x
@@ -555,7 +580,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 - `sandbox` → `DurableWorkflow\AI\Workflows\SandboxAgentWorkflow` (package-owned lifecycle and recovery; defaults to the development-only local subprocess provider, set `DURABLE_AI_SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
-- `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the current artifact tuple resolver and the `polyglot/` docker compose stack with the PHP and Python workers running; the stack smoke also exercises Python-authored workflows)
+- `polyglot` → `App\Workflows\Polyglot\PolyglotWorkflow` (run `scripts/polyglot.sh` to start the standalone PHP workflow worker plus distinct Python and Rust activity workers against the current artifact tuple)
 - `diagnostic_failure` → `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` (no credentials; intentionally records a durable activity failure so MCP clients can prove `diagnose_workflow` and `repair_workflow` behavior)
 
 To add more workflows, update the config file:

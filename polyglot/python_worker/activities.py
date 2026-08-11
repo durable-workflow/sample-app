@@ -1,10 +1,9 @@
-"""Python activities consumed by the polyglot PHP-authored workflow.
+"""Python activities consumed by PHP and Rust authored workflows.
 
-The PHP workflow worker schedules `polyglot.php-to-python.reverse` and
-`polyglot.php-to-python.tally`; this Python container is the worker that
-actually executes them. Both workers poll the same task queue against
-one standalone Durable Workflow server, so each scheduled activity
-crosses the language boundary on the wire.
+The featured PHP-authored PolyglotWorkflow routes its order calculation here
+on the dedicated Python activity queue. Directional conformance workflows also
+use the reverse, tally, echo, and typed-error handlers. Every call reaches this
+Python process through the standalone Durable Workflow server.
 """
 from __future__ import annotations
 
@@ -44,6 +43,7 @@ def tally(items: list[dict[str, Any]]) -> dict[str, Any]:
         total += int(item["quantity"]) * int(item["unit_price_cents"])
     return {
         "runtime": "python",
+        "operation": "calculate_order_total",
         "item_count": len(items),
         "total_cents": total,
     }

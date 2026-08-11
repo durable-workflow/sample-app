@@ -10,11 +10,11 @@ use App\Polyglot\ServerClient;
 use App\Polyglot\WorkflowFiberRunner;
 use App\Workflows\Polyglot\PhpSignalQueryWorkflow;
 use App\Workflows\Polyglot\PhpSameLanguageWorkflow;
-use App\Workflows\Polyglot\PhpToPythonWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypedErrorWorkflow;
 use App\Workflows\Polyglot\PhpToPythonTypeRoundtripWorkflow;
 use App\Workflows\Polyglot\PhpToRustTypeRoundtripWorkflow;
 use App\Workflows\Polyglot\PhpToRustWorkflow;
+use App\Workflows\Polyglot\PolyglotWorkflow;
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -39,13 +39,11 @@ use Workflow\V2\Support\WorkerProtocolVersion;
  * through the language-neutral Avro envelope so each scenario proves
  * the language boundary on the wire.
  *
- * One workflow type is wired in by default —
- * `polyglot.php-to-python.PhpToPythonWorkflow` — which schedules
- * `polyglot.php-to-python.reverse` and `polyglot.php-to-python.tally`
- * activities implemented by the Python activity worker. Activity mode
- * registers `polyglot.python-to-php.*` activities for Python-authored
- * workflows to consume, plus `polyglot.php.*` activities for the PHP
- * same-language sanity scenario.
+ * The featured `polyglot.PolyglotWorkflow` type schedules work on distinct
+ * Python and Rust activity queues. Activity mode registers
+ * `polyglot.python-to-php.*` activities for Python-authored workflows to
+ * consume, plus `polyglot.php.*` activities for the PHP same-language sanity
+ * scenario.
  */
 class PolyglotWorker extends Command
 {
@@ -58,7 +56,7 @@ class PolyglotWorker extends Command
         {--server-url= : Standalone Durable Workflow server URL (defaults to DURABLE_WORKFLOW_SERVER_URL)}
         {--token= : Worker bearer token (defaults to DURABLE_WORKFLOW_AUTH_TOKEN)}
         {--namespace=default : Server namespace}
-        {--task-queue= : Task queue to poll (defaults to POLYGLOT_PHP2PY_TASK_QUEUE or POLYGLOT_PY2PHP_TASK_QUEUE by mode)}
+        {--task-queue= : Task queue to poll (defaults to the mode-specific polyglot task queue)}
         {--worker-id= : Stable worker id (defaults to a hostname-based id)}
         {--idle-iterations=0 : Stop after this many empty polls (0 = run forever)}
         {--poll-timeout=30 : Long-poll timeout in seconds}';
@@ -68,7 +66,7 @@ class PolyglotWorker extends Command
     /** @var array<string, class-string<\Workflow\V2\Workflow>> */
     private const WORKFLOW_REGISTRY = [
         'polyglot.php.greeter' => PhpSameLanguageWorkflow::class,
-        'polyglot.php-to-python.PhpToPythonWorkflow' => PhpToPythonWorkflow::class,
+        'polyglot.PolyglotWorkflow' => PolyglotWorkflow::class,
         'polyglot.php-to-python.type-roundtrip' => PhpToPythonTypeRoundtripWorkflow::class,
         'polyglot.php-to-python.typed-error' => PhpToPythonTypedErrorWorkflow::class,
         'polyglot.php-to-rust.greeter' => PhpToRustWorkflow::class,
@@ -135,7 +133,11 @@ class PolyglotWorker extends Command
             return (string) env('POLYGLOT_PY2PHP_TASK_QUEUE', 'polyglot-python-to-php');
         }
 
-        return (string) env('POLYGLOT_PHP2PY_TASK_QUEUE', 'polyglot-php-to-python');
+        if ($mode === 'query') {
+            return (string) env('POLYGLOT_PHP2PY_TASK_QUEUE', 'polyglot-php-to-python');
+        }
+
+        return (string) env('POLYGLOT_WORKFLOW_TASK_QUEUE', PolyglotWorkflow::WORKFLOW_TASK_QUEUE);
     }
 
     private function workflowEngineIdentity(): string
@@ -442,7 +444,7 @@ class PolyglotWorker extends Command
             $client->completeWorkflowTask($taskId, $workerId, $attempt, [[
                 'type' => 'schedule_activity',
                 'activity_type' => $activity->activity,
-                'queue' => $taskQueue,
+                'queue' => $activity->options?->queue ?? $taskQueue,
                 'arguments' => Avro::envelope(array_values($activity->arguments)),
             ]]);
 

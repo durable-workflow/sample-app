@@ -16,7 +16,7 @@ use App\Workflows\Ai\AiWorkflow;
 use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
-use App\Workflows\Polyglot\PhpToPythonWorkflow;
+use App\Workflows\Polyglot\PolyglotWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
@@ -157,10 +157,10 @@ class McpWorkflowServerTest extends TestCase
                     ->where('available_workflows.7.class', SandboxAgentWorkflow::class)
                     ->where('available_workflows.7.pattern', 'agent sandbox lifecycle (provision, dispatch, snapshot/restore, cleanup)')
                     ->where('available_workflows.7.command', 'php artisan app:sandbox')
-                    ->where('available_workflows.8.key', 'polyglot_php_to_python')
-                    ->where('available_workflows.8.class', PhpToPythonWorkflow::class)
-                    ->where('available_workflows.8.pattern', 'cross-language activity dispatch')
-                    ->where('available_workflows.8.command', 'while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke')
+                    ->where('available_workflows.8.key', 'polyglot')
+                    ->where('available_workflows.8.class', PolyglotWorkflow::class)
+                    ->where('available_workflows.8.pattern', 'one workflow coordinating distinct language activity queues')
+                    ->where('available_workflows.8.command', 'scripts/polyglot.sh')
                     ->where('available_workflows.9.key', 'diagnostic_failure')
                     ->where('available_workflows.9.requires', [])
                     ->where('available_workflows.9.pattern', 'agent diagnostic failure drill')

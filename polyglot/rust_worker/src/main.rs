@@ -218,6 +218,9 @@ async fn run_activity_worker(client: Client) -> Result<()> {
             native_binary_runtime_echo(first_avro_argument(args))
         });
     }
+    worker.register_activity("polyglot.php-to-rust.receipt", |_ctx, args| async move {
+        receipt(first_argument(&args))
+    });
 
     println!(
         "polyglot rust activity worker starting: id=rust-activity-worker queue={task_queue} sdk={} avro={}",
@@ -270,6 +273,46 @@ fn runtime_echo(value: Value) -> Value {
         "value": value,
         "codec": avro_observation(),
     })
+}
+
+fn receipt(request: Value) -> Result<Value> {
+    let name = request
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| Error::Codec("receipt name must be a non-empty string".into()))?;
+    let item_count = request
+        .get("item_count")
+        .and_then(Value::as_i64)
+        .filter(|count| *count >= 0)
+        .ok_or_else(|| Error::Codec("receipt item_count must be a non-negative integer".into()))?;
+    let total_cents = request
+        .get("total_cents")
+        .and_then(Value::as_i64)
+        .filter(|total| *total >= 0)
+        .ok_or_else(|| Error::Codec("receipt total_cents must be a non-negative integer".into()))?;
+    let calculation_runtime = request
+        .get("calculation_runtime")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::Codec("receipt calculation_runtime must be a string".into()))?;
+    if calculation_runtime != "python" {
+        return Err(Error::Codec(
+            "receipt requires the order calculation produced by Python".into(),
+        ));
+    }
+
+    let display_total = format!("${}.{:02}", total_cents / 100, total_cents % 100);
+
+    Ok(json!({
+        "runtime": "rust",
+        "operation": "format_receipt",
+        "calculation_runtime": calculation_runtime,
+        "name": name,
+        "item_count": item_count,
+        "total_cents": total_cents,
+        "display_total": display_total,
+        "message": format!("{name}: {item_count} items total {display_total}"),
+    }))
 }
 
 fn native_runtime_echo(value: AvroValue) -> Result<AvroValue> {
@@ -545,6 +588,37 @@ mod tests {
             json!({"typed": true})
         );
         assert_eq!(first_argument(&json!([])), Value::Null);
+    }
+
+    #[test]
+    fn receipt_formats_the_python_calculation_for_the_combined_result() {
+        let result = receipt(json!({
+            "name": "Ada",
+            "item_count": 3,
+            "total_cents": 7200,
+            "calculation_runtime": "python",
+        }))
+        .expect("Rust receipt");
+
+        assert_eq!(result["runtime"], "rust");
+        assert_eq!(result["operation"], "format_receipt");
+        assert_eq!(result["display_total"], "$72.00");
+        assert_eq!(result["message"], "Ada: 3 items total $72.00");
+    }
+
+    #[test]
+    fn receipt_rejects_a_calculation_without_python_runtime_evidence() {
+        let error = receipt(json!({
+            "name": "Ada",
+            "item_count": 3,
+            "total_cents": 7200,
+            "calculation_runtime": "php",
+        }))
+        .expect_err("non-Python calculation must fail");
+
+        assert!(error
+            .to_string()
+            .contains("order calculation produced by Python"));
     }
 
     #[test]

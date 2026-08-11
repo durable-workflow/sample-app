@@ -79,6 +79,7 @@ final class PolyglotComposeContractTest extends TestCase
             'python-workflow-worker',
             'python-activity-worker',
             'smoke',
+            'demo',
         ] as $serviceName) {
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
             $this->assertSame($resolvedPythonVersion, $buildArgs['DURABLE_WORKFLOW_PYTHON_SDK_VERSION'] ?? null);
@@ -88,7 +89,7 @@ final class PolyglotComposeContractTest extends TestCase
             );
         }
 
-        foreach (['python-activity-worker', 'smoke'] as $serviceName) {
+        foreach (['python-activity-worker', 'smoke', 'demo'] as $serviceName) {
             $buildArgs = $services[$serviceName]['build']['args'] ?? [];
             $this->assertSame($resolvedCliVersion, $buildArgs['DURABLE_WORKFLOW_CLI_VERSION'] ?? null);
         }
@@ -97,6 +98,7 @@ final class PolyglotComposeContractTest extends TestCase
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'polyglot-workflow-worker',
             'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
@@ -139,6 +141,7 @@ final class PolyglotComposeContractTest extends TestCase
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'polyglot-workflow-worker',
             'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
@@ -373,6 +376,7 @@ SH,
 
         foreach ([
             'php-workflow-worker',
+            'polyglot-workflow-worker',
             'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
@@ -409,6 +413,69 @@ SH,
         $this->assertArrayHasKey('php-same-activity-worker', $services);
         $this->assertStringContainsString('php_same_language', $smoke);
         $this->assertStringContainsString('python_same_language', $smoke);
+    }
+
+    public function test_featured_polyglot_workflow_uses_three_distinct_runtime_routes(): void
+    {
+        $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
+        $services = $compose['services'] ?? [];
+        $workflowWorker = $services['polyglot-workflow-worker'] ?? [];
+        $demo = $services['demo'] ?? [];
+        $queues = [
+            $workflowWorker['environment']['POLYGLOT_WORKFLOW_TASK_QUEUE'] ?? null,
+            $workflowWorker['environment']['POLYGLOT_PHP2PY_TASK_QUEUE'] ?? null,
+            $workflowWorker['environment']['POLYGLOT_TO_RUST_TASK_QUEUE'] ?? null,
+        ];
+
+        $this->assertSame(
+            ['polyglot-workflow', 'polyglot-php-to-python', 'polyglot-to-rust'],
+            $queues,
+        );
+        $this->assertCount(3, array_unique($queues));
+        $this->assertContains('--worker-id=polyglot-workflow-worker', $workflowWorker['command'] ?? []);
+        $this->assertSame(
+            ['python', '/app/scripts/polyglot_workflow_smoke.py'],
+            $demo['command'] ?? null,
+        );
+        foreach (['polyglot-workflow-worker', 'python-activity-worker', 'rust-activity-worker'] as $service) {
+            $this->assertSame('service_started', $demo['depends_on'][$service]['condition'] ?? null);
+        }
+
+        $worker = (string) file_get_contents($this->repoPath('polyglot/php_worker/worker.php'));
+        $python = (string) file_get_contents($this->repoPath('polyglot/python_worker/activities.py'));
+        $rust = (string) file_get_contents($this->repoPath('polyglot/rust_worker/src/main.rs'));
+        $command = (string) file_get_contents($this->repoPath('scripts/polyglot.sh'));
+
+        $this->assertStringContainsString("'polyglot.PolyglotWorkflow'", $worker);
+        $this->assertStringContainsString("['queue' => \$pythonQueue]", $worker);
+        $this->assertStringContainsString("['queue' => \$rustQueue]", $worker);
+        $this->assertStringContainsString('@activity.defn(name="polyglot.php-to-python.tally")', $python);
+        $this->assertStringContainsString('worker.register_activity("polyglot.php-to-rust.receipt"', $rust);
+        $this->assertStringContainsString('scripts/resolve-current-artifacts.sh', $command);
+        $this->assertStringContainsString('polyglot-workflow-worker', $command);
+        $this->assertStringContainsString('python-activity-worker', $command);
+        $this->assertStringContainsString('rust-activity-worker', $command);
+        $this->assertStringContainsString('run --rm --no-deps demo', $command);
+    }
+
+    public function test_featured_polyglot_command_runs_from_a_clean_environment(): void
+    {
+        $commands = $this->runPolyglotDemoWithFakeDocker();
+
+        $this->assertStringContainsString('compose version', $commands[0] ?? '');
+        $this->assertStringContainsString(
+            'build polyglot-workflow-worker python-activity-worker rust-activity-worker demo',
+            implode("\n", $commands),
+        );
+        $this->assertStringContainsString(
+            'pull --policy missing bootstrap server mysql redis',
+            implode("\n", $commands),
+        );
+        $this->assertStringContainsString(
+            'up --detach --no-build --wait --wait-timeout 180 server polyglot-workflow-worker python-activity-worker rust-activity-worker',
+            implode("\n", $commands),
+        );
+        $this->assertStringContainsString('run --rm --no-deps demo', $commands[array_key_last($commands)] ?? '');
     }
 
     public function test_polyglot_validation_uses_one_stable_runtime_lifecycle_for_both_cache_paths(): void
@@ -712,6 +779,7 @@ SH,
             'php-same-workflow-worker',
             'php-same-activity-worker',
             'php-workflow-worker',
+            'polyglot-workflow-worker',
             'php-to-rust-workflow-worker',
             'php-query-worker',
             'php-activity-worker',
@@ -1164,6 +1232,7 @@ SH,
         $this->assertStringContainsString('polyglot.rust-to-python.greeter', $worker);
         $this->assertStringContainsString('polyglot.rust-to-php.greeter', $worker);
         $this->assertStringContainsString('polyglot.php-to-rust.echo', $worker);
+        $this->assertStringContainsString('polyglot.php-to-rust.receipt', $worker);
         $this->assertStringContainsString('polyglot.python-to-rust.echo', $worker);
         $this->assertStringContainsString('verify_official_avro_runtime', $worker);
     }
@@ -1235,6 +1304,51 @@ BASH);
             $command .= ' '.escapeshellarg($name.'='.$value);
         }
         $command .= ' bash '.escapeshellarg($this->repoPath('scripts/polyglot-validation.sh')).' 2>&1';
+
+        try {
+            exec($command, $output, $exitCode);
+            $this->assertSame(0, $exitCode, implode("\n", $output));
+
+            $commands = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $this->assertIsArray($commands);
+
+            return array_values($commands);
+        } finally {
+            @unlink($dockerPath);
+            @unlink($logPath);
+            @rmdir($temporaryDirectory);
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runPolyglotDemoWithFakeDocker(): array
+    {
+        $temporaryDirectory = sys_get_temp_dir().'/polyglot-demo-'.bin2hex(random_bytes(6));
+        $dockerPath = $temporaryDirectory.'/docker';
+        $logPath = $temporaryDirectory.'/docker.log';
+
+        mkdir($temporaryDirectory, 0700, true);
+        file_put_contents($dockerPath, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >> "$POLYGLOT_FAKE_DOCKER_LOG"
+BASH);
+        chmod($dockerPath, 0700);
+
+        $environment = [
+            'PATH' => $temporaryDirectory.PATH_SEPARATOR.getenv('PATH'),
+            'DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $this->repoPath('tests/Fixtures/synthetic-artifact-tuple.json'),
+            'POLYGLOT_COMPOSE_PROJECT_NAME' => 'sample-app-polyglot-command-test',
+            'POLYGLOT_FAKE_DOCKER_LOG' => $logPath,
+        ];
+        $command = 'env -i';
+        foreach ($environment as $name => $value) {
+            $command .= ' '.escapeshellarg($name.'='.$value);
+        }
+        $command .= ' bash '.escapeshellarg($this->repoPath('scripts/polyglot.sh')).' 2>&1';
 
         try {
             exec($command, $output, $exitCode);

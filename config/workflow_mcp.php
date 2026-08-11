@@ -6,7 +6,7 @@ use App\Workflows\Diagnostics\DiagnosticFailureWorkflow;
 use App\Workflows\Elapsed\ElapsedTimeWorkflow;
 use App\Workflows\Microservice\MicroserviceWorkflow;
 use App\Workflows\Playwright\CheckConsoleErrorsWorkflow;
-use App\Workflows\Polyglot\PhpToPythonWorkflow;
+use App\Workflows\Polyglot\PolyglotWorkflow;
 use App\Workflows\Prism\PrismWorkflow;
 use App\Workflows\Simple\SimpleWorkflow;
 use App\Workflows\Webhooks\WebhookWorkflow;
@@ -113,16 +113,14 @@ return [
                 ['name' => 'snapshotEveryNCalls', 'type' => 'int', 'default' => 0],
             ],
         ],
-        'polyglot_php_to_python' => [
-            'class' => PhpToPythonWorkflow::class,
-            'description' => 'Published-artifact polyglot smoke covering the complete PHP, Python, and Rust workflow/activity runtime matrix.',
-            'pattern' => 'cross-language activity dispatch',
-            'command' => 'while IFS= read -r assignment; do export "$assignment"; done '
-                .'< <(scripts/resolve-current-artifacts.sh); '
-                .'docker compose -f polyglot/docker-compose.yml run --rm smoke',
-            'requires' => ['polyglot/ docker compose stack', 'current artifact tuple resolver'],
+        'polyglot' => [
+            'class' => PolyglotWorkflow::class,
+            'description' => 'PHP-authored PolyglotWorkflow routes an order calculation to Python and its receipt to Rust through one Durable Workflow Server.',
+            'pattern' => 'one workflow coordinating distinct language activity queues',
+            'command' => 'scripts/polyglot.sh',
+            'requires' => ['Docker from the prepared Codespaces image'],
             'arguments' => [
-                ['name' => 'value', 'type' => 'string', 'default' => 'polyglot'],
+                ['name' => 'request', 'type' => 'array', 'description' => 'Customer name and order items.'],
             ],
         ],
         'diagnostic_failure' => [

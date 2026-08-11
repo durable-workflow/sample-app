@@ -36,7 +36,7 @@ class Conformance extends Command
         'prism',
         'ai',
         'sandbox',
-        'polyglot_php_to_python',
+        'polyglot',
         'diagnostic_failure',
     ];
 

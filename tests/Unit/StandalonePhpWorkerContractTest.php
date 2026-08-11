@@ -13,6 +13,103 @@ use PHPUnit\Framework\TestCase;
 
 final class StandalonePhpWorkerContractTest extends TestCase
 {
+    public function test_featured_workflow_routes_python_and_rust_activities_and_combines_results(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $workflowQueue = 'polyglot-workflow';
+        $pythonQueue = 'polyglot-php-to-python';
+        $rustQueue = 'polyglot-to-rust';
+        $request = [
+            'name' => 'Ada',
+            'items' => [
+                ['quantity' => 2, 'unit_price_cents' => 1500],
+                ['quantity' => 1, 'unit_price_cents' => 4200],
+            ],
+        ];
+        $calculation = [
+            'runtime' => 'python',
+            'operation' => 'calculate_order_total',
+            'item_count' => 2,
+            'total_cents' => 7200,
+        ];
+        $receipt = [
+            'runtime' => 'rust',
+            'operation' => 'format_receipt',
+            'calculation_runtime' => 'python',
+            'name' => 'Ada',
+            'item_count' => 2,
+            'total_cents' => 7200,
+            'display_total' => '$72.00',
+            'message' => 'Ada: 2 items total $72.00',
+        ];
+        $codec = (new Client('http://server:8080'))->payloadCodec();
+        $replayer = new Replayer($codec);
+        $handler = \polyglotWorkflow($workflowQueue, $pythonQueue, $rustQueue);
+
+        $first = $replayer->replay($handler, [], [$request], $workflowQueue)->commands[0];
+        $this->assertSame('schedule_activity', $first['type'] ?? null);
+        $this->assertSame('polyglot.php-to-python.tally', $first['activity_type'] ?? null);
+        $this->assertSame($pythonQueue, $first['queue'] ?? null);
+        $this->assertSame([$request['items']], $codec->decodeEnvelope($first['arguments'] ?? null));
+
+        $pythonHistory = [
+            [
+                'event_type' => 'ActivityScheduled',
+                'payload' => ['sequence' => 1, 'activity_type' => 'polyglot.php-to-python.tally'],
+            ],
+            [
+                'event_type' => 'ActivityCompleted',
+                'payload' => [
+                    'sequence' => 1,
+                    'activity_type' => 'polyglot.php-to-python.tally',
+                    'result' => $codec->envelope($calculation),
+                ],
+            ],
+        ];
+        $second = $replayer->replay($handler, $pythonHistory, [$request], $workflowQueue)->commands[0];
+        $this->assertSame('schedule_activity', $second['type'] ?? null);
+        $this->assertSame('polyglot.php-to-rust.receipt', $second['activity_type'] ?? null);
+        $this->assertSame($rustQueue, $second['queue'] ?? null);
+        $this->assertSame([[
+            'name' => 'Ada',
+            'item_count' => 2,
+            'total_cents' => 7200,
+            'calculation_runtime' => 'python',
+        ]], $codec->decodeEnvelope($second['arguments'] ?? null));
+
+        $completeHistory = [
+            ...$pythonHistory,
+            [
+                'event_type' => 'ActivityScheduled',
+                'payload' => ['sequence' => 2, 'activity_type' => 'polyglot.php-to-rust.receipt'],
+            ],
+            [
+                'event_type' => 'ActivityCompleted',
+                'payload' => [
+                    'sequence' => 2,
+                    'activity_type' => 'polyglot.php-to-rust.receipt',
+                    'result' => $codec->envelope($receipt),
+                ],
+            ],
+        ];
+        $complete = $replayer->replay($handler, $completeHistory, [$request], $workflowQueue)->commands[0];
+        $output = $codec->decodeEnvelope($complete['result'] ?? null);
+
+        $this->assertSame('complete_workflow', $complete['type'] ?? null);
+        $this->assertSame('PolyglotWorkflow', $output['workflow'] ?? null);
+        $this->assertSame('php', $output['workflow_runtime'] ?? null);
+        $this->assertSame(['calculation' => 'python', 'receipt' => 'rust'], $output['activity_runtimes'] ?? null);
+        $this->assertSame([
+            'workflow' => $workflowQueue,
+            'python_activity' => $pythonQueue,
+            'rust_activity' => $rustQueue,
+        ], $output['task_queues'] ?? null);
+        $this->assertSame($calculation, $output['python_calculation'] ?? null);
+        $this->assertSame($receipt, $output['rust_receipt'] ?? null);
+        $this->assertStringContainsString($receipt['message'], (string) ($output['summary'] ?? ''));
+    }
+
     public function test_type_roundtrip_constructs_and_checks_native_binary_values(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';

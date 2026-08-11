@@ -21,7 +21,8 @@ if (! class_exists(Client::class)) {
 
 const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
-    'polyglot.php-to-python.PhpToPythonWorkflow',
+    'polyglot.PolyglotWorkflow',
+    'polyglot.php-to-python.greeter',
     'polyglot.php-to-python.type-roundtrip',
     'polyglot.php-to-python.binary-type-roundtrip',
     'polyglot.php-to-python.typed-error',
@@ -330,8 +331,87 @@ function typeRoundtripWorkflow(string $activityType): Closure
     };
 }
 
+function polyglotWorkflow(string $workflowQueue, string $pythonQueue, string $rustQueue): Closure
+{
+    return static function (WorkflowContext $context, array $request) use ($workflowQueue, $pythonQueue, $rustQueue): Generator {
+        $name = (string) ($request['name'] ?? 'Ada');
+        $items = is_array($request['items'] ?? null) ? $request['items'] : [
+            ['quantity' => 2, 'unit_price_cents' => 1500],
+            ['quantity' => 1, 'unit_price_cents' => 4200],
+        ];
+
+        $calculation = yield $context->activity(
+            'polyglot.php-to-python.tally',
+            [$items],
+            ['queue' => $pythonQueue],
+        );
+        $receipt = yield $context->activity(
+            'polyglot.php-to-rust.receipt',
+            [[
+                'name' => $name,
+                'item_count' => is_array($calculation) ? ($calculation['item_count'] ?? null) : null,
+                'total_cents' => is_array($calculation) ? ($calculation['total_cents'] ?? null) : null,
+                'calculation_runtime' => is_array($calculation) ? ($calculation['runtime'] ?? null) : null,
+            ]],
+            ['queue' => $rustQueue],
+        );
+
+        return [
+            'workflow' => 'PolyglotWorkflow',
+            'workflow_runtime' => 'php',
+            'activity_runtimes' => [
+                'calculation' => is_array($calculation) ? ($calculation['runtime'] ?? null) : null,
+                'receipt' => is_array($receipt) ? ($receipt['runtime'] ?? null) : null,
+            ],
+            'task_queues' => [
+                'workflow' => $workflowQueue,
+                'python_activity' => $pythonQueue,
+                'rust_activity' => $rustQueue,
+            ],
+            'request' => [
+                'name' => $name,
+                'items' => $items,
+            ],
+            'python_calculation' => $calculation,
+            'rust_receipt' => $receipt,
+            'summary' => sprintf(
+                'PHP orchestrated a Python order calculation and a Rust receipt: %s',
+                is_array($receipt) ? (string) ($receipt['message'] ?? 'receipt unavailable') : 'receipt unavailable',
+            ),
+        ];
+    };
+}
+
+function phpToPythonWorkflow(): Closure
+{
+    return static function (WorkflowContext $context, string $value): Generator {
+        $reverse = yield $context->activity('polyglot.php-to-python.reverse', [$value]);
+        $tally = yield $context->activity('polyglot.php-to-python.tally', [[
+            ['quantity' => 2, 'unit_price_cents' => 1500],
+            ['quantity' => 1, 'unit_price_cents' => 4200],
+        ]]);
+
+        return [
+            'workflow_runtime' => 'php',
+            'activity_runtime' => is_array($reverse) ? ($reverse['runtime'] ?? null) : null,
+            'input' => $value,
+            'reverse' => $reverse,
+            'tally' => $tally,
+        ];
+    };
+}
+
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 {
+    $workflowQueue = getenv('POLYGLOT_WORKFLOW_TASK_QUEUE') ?: 'polyglot-workflow';
+    $pythonQueue = getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python';
+    $rustQueue = getenv('POLYGLOT_TO_RUST_TASK_QUEUE') ?: 'polyglot-to-rust';
+
+    $worker->registerWorkflow(
+        'polyglot.PolyglotWorkflow',
+        polyglotWorkflow($workflowQueue, $pythonQueue, $rustQueue),
+    );
+
     $worker->registerWorkflow(
         'polyglot.php.greeter',
         static function (WorkflowContext $context, array $request): Generator {
@@ -348,24 +428,7 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
         },
     );
 
-    $worker->registerWorkflow(
-        'polyglot.php-to-python.PhpToPythonWorkflow',
-        static function (WorkflowContext $context, string $value): Generator {
-            $reverse = yield $context->activity('polyglot.php-to-python.reverse', [$value]);
-            $tally = yield $context->activity('polyglot.php-to-python.tally', [[
-                ['quantity' => 2, 'unit_price_cents' => 1500],
-                ['quantity' => 1, 'unit_price_cents' => 4200],
-            ]]);
-
-            return [
-                'workflow_runtime' => 'php',
-                'activity_runtime' => is_array($reverse) ? ($reverse['runtime'] ?? null) : null,
-                'input' => $value,
-                'reverse' => $reverse,
-                'tally' => $tally,
-            ];
-        },
-    );
+    $worker->registerWorkflow('polyglot.php-to-python.greeter', phpToPythonWorkflow());
 
     $worker->registerWorkflow(
         'polyglot.php-to-python.type-roundtrip',

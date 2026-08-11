@@ -11,6 +11,7 @@ build_services=(
   php-same-workflow-worker
   php-same-activity-worker
   php-workflow-worker
+  polyglot-workflow-worker
   php-to-rust-workflow-worker
   php-query-worker
   php-activity-worker
@@ -26,6 +27,7 @@ topology_services=(
   php-same-workflow-worker
   php-same-activity-worker
   php-workflow-worker
+  polyglot-workflow-worker
   php-to-rust-workflow-worker
   php-query-worker
   php-activity-worker
@@ -58,6 +60,7 @@ compose_diagnostics() {
     php-same-workflow-worker \
     php-same-activity-worker \
     php-workflow-worker \
+    polyglot-workflow-worker \
     php-to-rust-workflow-worker \
     php-query-worker \
     php-activity-worker \
