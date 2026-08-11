@@ -196,6 +196,15 @@ BASH));
     {
         $script = (string) file_get_contents($this->repoPath('scripts/setup-service-mode-app.sh'));
 
+        $this->assertStringContainsString(
+            '${DURABLE_WORKFLOW_PHP_SDK_VERSION:?Resolve the current PHP SDK version first}',
+            $script,
+        );
+        $this->assertStringContainsString(
+            '"durable-workflow/sdk:${DURABLE_WORKFLOW_PHP_SDK_VERSION}"',
+            $script,
+        );
+        $this->assertStringNotContainsString('durable-workflow/sdk:^2.0@RC', $script);
         $this->assertStringContainsString('if [[ "$role" == observer ]]', $script);
         $this->assertStringContainsString('php artisan waterline:publish --no-interaction', $script);
         $this->assertLessThan(
@@ -226,6 +235,83 @@ BASH));
                 $composer['require'][$package] ?? null,
                 $tuple['artifacts'][$artifact] ?? null,
             );
+        }
+    }
+
+    public function test_composer_artifact_validation_records_the_exact_installable_graph(): void
+    {
+        $tuple = json_decode(
+            (string) file_get_contents($this->repoPath('polyglot/qualified-artifact-tuple.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $process = new Process([
+            PHP_BINARY,
+            $this->repoPath('scripts/ci/validate-composer-artifact-graph.php'),
+        ]);
+        $process->mustRun();
+
+        $evidence = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(
+            'durable-workflow.sample-app.composer-artifact-graph/v1',
+            $evidence['schema'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'server' => $tuple['artifacts']['server'] ?? null,
+                'sdk-php' => $tuple['artifacts']['sdk-php'] ?? null,
+                'workflow' => $tuple['artifacts']['workflow'] ?? null,
+                'waterline' => $tuple['artifacts']['waterline'] ?? null,
+            ],
+            $evidence['artifacts'] ?? null,
+        );
+        $this->assertSame(
+            $tuple['artifacts']['sdk-php'] ?? null,
+            $evidence['waterline-requires-sdk-php'] ?? null,
+        );
+    }
+
+    public function test_composer_artifact_validation_rejects_a_stale_root_sdk_pin(): void
+    {
+        $composer = json_decode(
+            (string) file_get_contents($this->repoPath('composer.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $tuple = json_decode(
+            (string) file_get_contents($this->repoPath('polyglot/qualified-artifact-tuple.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $qualifiedSdk = $tuple['artifacts']['sdk-php'] ?? null;
+        $staleSdk = '2.0.0-rc.1';
+        $this->assertIsString($qualifiedSdk);
+        $this->assertNotSame($qualifiedSdk, $staleSdk);
+        $composer['require']['durable-workflow/sdk'] = $staleSdk;
+        $temporaryComposer = tempnam(sys_get_temp_dir(), 'sample-app-composer-');
+        $this->assertNotFalse($temporaryComposer);
+        $this->assertNotFalse(file_put_contents(
+            $temporaryComposer,
+            json_encode($composer, JSON_THROW_ON_ERROR),
+        ));
+
+        try {
+            $process = new Process([
+                PHP_BINARY,
+                $this->repoPath('scripts/ci/validate-composer-artifact-graph.php'),
+                $temporaryComposer,
+                $this->repoPath('composer.lock'),
+                $this->repoPath('polyglot/qualified-artifact-tuple.json'),
+            ]);
+            $process->run();
+
+            $this->assertSame(1, $process->getExitCode());
+            $this->assertStringContainsString(
+                "durable-workflow/sdk root requirement \"{$staleSdk}\" does not match qualified sdk-php {$qualifiedSdk}",
+                $process->getErrorOutput(),
+            );
+        } finally {
+            @unlink($temporaryComposer);
         }
     }
 

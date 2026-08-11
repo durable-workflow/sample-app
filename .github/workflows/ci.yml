@@ -71,6 +71,9 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
+      - name: Record the exact resolved Durable Workflow graph
+        run: php scripts/ci/validate-composer-artifact-graph.php
+
       - name: Prepare environment file
         run: cp .env.example .env
 
@@ -192,6 +195,7 @@ jobs:
         run: |
           python3 scripts/ci/test-workflow-routing.py
           python3 -m unittest discover -s polyglot/python_worker/tests -v
+          php scripts/ci/validate-composer-artifact-graph.php
           git diff --check
           while IFS= read -r -d '' script; do
             bash -n "$script"

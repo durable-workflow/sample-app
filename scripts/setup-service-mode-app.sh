@@ -37,10 +37,11 @@ file_put_contents($path, $source);
 '
         ;;
     observer)
+        : "${DURABLE_WORKFLOW_PHP_SDK_VERSION:?Resolve the current PHP SDK version first}"
         : "${DURABLE_WORKFLOW_WORKFLOW_VERSION:?Resolve the current Workflow version first}"
         : "${DURABLE_WORKFLOW_WATERLINE_VERSION:?Resolve the current Waterline version first}"
         composer require --no-update \
-            "durable-workflow/sdk:^2.0@RC" \
+            "durable-workflow/sdk:${DURABLE_WORKFLOW_PHP_SDK_VERSION}" \
             "durable-workflow/workflow:${DURABLE_WORKFLOW_WORKFLOW_VERSION}" \
             "durable-workflow/waterline:${DURABLE_WORKFLOW_WATERLINE_VERSION}"
         composer update \
