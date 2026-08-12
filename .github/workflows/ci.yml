@@ -49,7 +49,7 @@ jobs:
           --health-retries=10
 
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2
@@ -63,7 +63,7 @@ jobs:
         run: composer validate --strict --no-check-all
 
       - name: Cache Composer packages
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: vendor
           key: ${{ github.event_name }}-${{ runner.os }}-php-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
@@ -142,7 +142,7 @@ jobs:
           --health-retries=20
 
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2
@@ -185,7 +185,7 @@ jobs:
     steps:
       - name: Check out candidate source
         if: ${{ github.server_url != 'https://github.com' }}
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
