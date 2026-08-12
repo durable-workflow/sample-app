@@ -26,6 +26,19 @@ When setup finishes, choose either deployment path:
 | [Service mode](#service-mode) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + standalone Server |
 | [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
 
+Enrolled in Durable Workflow Cloud controlled early access and evaluating
+Rust? Follow the dedicated
+[Rust Cloud quickstart](https://durable-workflow.com/docs/2.0/polyglot/rust-cloud-quickstart/).
+From this Codespace it culminates in one memorable command:
+
+```bash
+scripts/rust-cloud.sh run
+```
+
+The guide provides the namespace runtime URL and separate client/worker
+credential setup, exact SDK and CLI selection, completed result, clean worker
+shutdown, and Managed Waterline check. It uses a development build.
+
 <!-- codespaces-path: service-mode -->
 ### Service mode
 

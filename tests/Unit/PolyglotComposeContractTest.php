@@ -1214,7 +1214,7 @@ SH,
         $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
         $services = $compose['services'] ?? [];
         $cargo = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.toml'));
-        $cargoLock = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.lock'));
+        $lock = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.lock'));
         $dockerfile = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Dockerfile'));
         $worker = (string) file_get_contents($this->repoPath('polyglot/rust_worker/src/main.rs'));
 
@@ -1223,8 +1223,13 @@ SH,
         $this->assertSame('workflow', $services['rust-workflow-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
         $this->assertSame('activity', $services['rust-activity-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
         $this->assertSame(1, preg_match('/durable-workflow = "=(2\.0\.0-(?:beta|rc)\.\d+)"/', $cargo, $matches));
-        $this->assertStringContainsString("name = \"durable-workflow\"\nversion = \"{$matches[1]}\"", $cargoLock);
+        $this->assertSame('2.0.0-rc.12', $matches[1]);
+        $this->assertMatchesRegularExpression(
+            '/name = "durable-workflow"\nversion = "'.preg_quote($matches[1], '/').'"/',
+            $lock,
+        );
         $this->assertStringContainsString('apache-avro = "=0.21.0"', $cargo);
+        $this->assertStringContainsString('COPY Cargo.toml Cargo.lock ./', $dockerfile);
         $this->assertStringContainsString('cargo add "durable-workflow@=${DURABLE_WORKFLOW_RUST_SDK_VERSION}"', $dockerfile);
         $this->assertStringNotContainsString('cargo update -p durable-workflow --precise', $dockerfile);
         $this->assertStringNotContainsString('path =', $cargo);
