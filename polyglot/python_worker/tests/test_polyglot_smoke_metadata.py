@@ -293,6 +293,7 @@ class WorkerRegistrationReadinessTest(unittest.IsolatedAsyncioTestCase):
                 "php-same-workflow-worker",
                 "php-same-activity-worker",
                 "php-workflow-worker",
+                "polyglot-workflow-worker",
                 "php-to-rust-workflow-worker",
                 "php-query-worker",
                 "php-activity-worker",

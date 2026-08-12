@@ -6,10 +6,15 @@
 #       Python-authored workflow + Python activities, all polled by a
 #       single Python worker on `polyglot-python`.
 #
-#   - php-workflow-worker + python-activity-worker / php_to_python scenario
+#   - polyglot-workflow-worker + Python and Rust activity workers / featured demo
+#       A PHP-authored `polyglot.PolyglotWorkflow` runs on
+#       `polyglot-workflow`, dispatches an order calculation to Python on
+#       `polyglot-php-to-python`, then dispatches receipt formatting to Rust on
+#       `polyglot-to-rust` during the same workflow execution.
+#
+#   - php-workflow-worker + python-activity-worker / php_to_python matrix cell
 #       A framework-neutral `durable-workflow/sdk` worker registers the
-#       PHP-authored
-#       `polyglot.php-to-python.PhpToPythonWorkflow` on
+#       PHP-authored `polyglot.php-to-python.greeter` on
 #       `polyglot-php-to-python`. A separate Python container registers
 #       the `polyglot.php-to-python.*` activities on the same queue, so
 #       the workflow's scheduled activities cross the language boundary
@@ -214,6 +219,21 @@ services:
         condition: service_healthy
     command: ["php", "/app/worker.php", "--task-queue=polyglot-php-to-python", "--worker-id=php-workflow-worker", "--poll-timeout=5"]
 
+  polyglot-workflow-worker:
+    build: *php-sdk-worker-build
+    image: *php-sdk-worker-image
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_WORKFLOW_TASK_QUEUE: polyglot-workflow
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
+    depends_on:
+      server:
+        condition: service_healthy
+    command: ["php", "/app/worker.php", "--task-queue=polyglot-workflow", "--worker-id=polyglot-workflow-worker", "--poll-timeout=5"]
+
   php-to-rust-workflow-worker:
     build: *php-sdk-worker-build
     image: *php-sdk-worker-image
@@ -367,6 +387,7 @@ services:
       DURABLE_WORKFLOW_ARTIFACT_PROBE_URL: "http://waterline:8081/polyglot/conformance/artifacts"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PHP_TASK_QUEUE: polyglot-php
+      POLYGLOT_WORKFLOW_TASK_QUEUE: polyglot-workflow
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
       POLYGLOT_RUST_TASK_QUEUE: polyglot-rust
@@ -381,6 +402,8 @@ services:
       php-same-activity-worker:
         condition: service_started
       php-workflow-worker:
+        condition: service_started
+      polyglot-workflow-worker:
         condition: service_started
       php-to-rust-workflow-worker:
         condition: service_started
@@ -397,3 +420,32 @@ services:
       waterline:
         condition: service_healthy
     command: ["bash", "/app/scripts/smoke.sh"]
+
+  demo:
+    build:
+      context: ./python_worker
+      args:
+        DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
+        DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+        FASTAVRO_PYTHON_VERSION: *durable-python-fastavro-version
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: "http://server:8080"
+      DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_SERVER_IMAGE: *durable-server-image
+      DURABLE_WORKFLOW_PHP_SDK_VERSION: *durable-php-sdk-version
+      DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
+      DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
+      POLYGLOT_WORKFLOW_TASK_QUEUE: polyglot-workflow
+      POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
+      POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
+    depends_on:
+      server:
+        condition: service_healthy
+      polyglot-workflow-worker:
+        condition: service_started
+      python-activity-worker:
+        condition: service_started
+      rust-activity-worker:
+        condition: service_started
+    command: ["python", "/app/scripts/polyglot_workflow_smoke.py"]

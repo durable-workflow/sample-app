@@ -1,9 +1,10 @@
 # Durable Workflow Sample App
 
-This Laravel 13 application has two first-class ways to run Durable Workflow
-2.0: an embedded Laravel engine and a standalone service with PHP and Python
-workers. Both paths run in a GitHub Codespace on the supported 2.0 prerelease
-train. Stable Durable Workflow 2.0 has not been released yet.
+This Laravel 13 application demonstrates Durable Workflow 2.0 through two
+first-class deployment paths: Service mode with a standalone Server and
+first-party language workers, or an engine embedded in Laravel. Both paths run
+in a GitHub Codespace on the supported 2.0 prerelease train. Stable Durable
+Workflow 2.0 has not been released yet.
 
 > **Looking for the Laravel 12 / Durable Workflow 1.x version?** It's preserved on the [`Laravel-12` branch](https://github.com/durable-workflow/sample-app/tree/Laravel-12). Older blog posts and tutorials that reference v1 patterns (e.g. `Workflow\Workflow`, `yield activity(...)`, `Workflow\Activity`) target that branch.
 
@@ -18,13 +19,65 @@ installs the repository's Composer and npm dependencies. PHP, Node, Composer,
 Chromium, and operating-system packages are already in the image, so they are
 not rebuilt for each Codespace.
 
-When setup finishes, choose either runnable path:
+When setup finishes, choose either deployment path:
 
 | Path | Best fit | Runtime |
 | --- | --- | --- |
+| [Service mode](#service-mode) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + standalone Server |
 | [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
-| [Service mode](#service-mode) | A Laravel application calling a standalone Server with language-neutral workers | Server + Laravel SDK worker + Python SDK worker |
 
+Enrolled in Durable Workflow Cloud controlled early access and evaluating
+Rust? Follow the dedicated
+[Rust Cloud quickstart](https://durable-workflow.com/docs/2.0/polyglot/rust-cloud-quickstart/).
+From this Codespace it culminates in one memorable command:
+
+```bash
+scripts/rust-cloud.sh run
+```
+
+The guide provides the namespace runtime URL and separate client/worker
+credential setup, exact SDK and CLI selection, completed result, clean worker
+shutdown, and Managed Waterline check. It uses a development build.
+
+<!-- codespaces-path: service-mode -->
+### Service mode
+
+Service mode is the first-party PHP, Python, and Rust story. After Codespaces
+reports that setup is complete, run its featured `PolyglotWorkflow` sample:
+
+```bash
+scripts/polyglot.sh
+```
+
+This one command resolves the current installable Server, PHP SDK, Python SDK,
+and Rust SDK artifacts; builds their worker images; waits for all three workers;
+and starts `PolyglotWorkflow`. The PHP-authored workflow routes an order
+calculation to the Python activity queue, sends that calculation to the Rust
+receipt activity queue, and combines both results. Its output identifies the
+PHP workflow runtime, both activity runtimes, all three task queues, the current
+artifact versions, and the completed receipt.
+
+Docker and the complete PHP/Python/Rust toolchain are included in the prepared
+Codespaces image. The command does not require a package-install step or any
+tool outside the repository and its Compose stack. Repeat it for another run;
+the isolated `sample-app-polyglot-demo` project remains available between runs.
+The exhaustive directional codec, replay, signal, query, and Waterline checks
+remain in the [polyglot matrix guide](polyglot/README.md#complete-runtime-matrix).
+
+#### Laravel integration variation
+
+For framework integration work, an optional narrower variation uses the
+standalone Server with Laravel's SDK bridge plus PHP and Python activities:
+
+```bash
+scripts/service-mode.sh
+```
+
+It remains documented as an advanced [Laravel integration
+variation](polyglot/README.md#laravel-integration-variation), not a separate
+deployment path.
+
+<!-- codespaces-path: embedded-laravel -->
 ### Embedded Laravel
 
 Codespaces setup has already created the environment, generated the application
@@ -51,45 +104,13 @@ php artisan test
 The embedded stack uses the Codespace's `sample-app` Compose state. Workflow
 instances receive generated identities, so the command is safe to run again.
 
-### Service mode
-
-From the same Codespace checkout, run one command:
-
-```bash
-scripts/service-mode.sh
-```
-
-The command resolves the current supported 2.0 artifact tuple, pulls the
-published Server and prepared runtime images, and starts an isolated
-`sample-app-service-mode` Compose project without building an SDK or runtime
-image. The Laravel SDK bridge resolves its workflow and PHP activity through
-the service container, sends worker diagnostics to Laravel's logger, and then
-routes a second activity to the Python worker.
-
-The terminal reports the generated workflow ID, both activity results, startup,
-result, and browser-check timing, and a Waterline URL for that exact run. It also
-retains a browser screenshot beside the timing record. The stack remains
-available at forwarded port 18081 for inspection. Run the command again at any
-time; each journey uses a new workflow ID and does not share database or Redis
-state with embedded mode.
-
-The implementation is intentionally application-shaped:
-
-- `config/durable-workflow.php` configures the Laravel bridge and handler services;
-- `app/Workflows/ServiceMode/` contains the attributed workflow and injected PHP activity;
-- `app:service-mode` injects `WorkflowClientInterface`, waits for the result, and supports the SDK test fake;
-- `polyglot/service_mode/python_worker.py` handles the cross-language activity.
-
-For the full PHP/Python/Rust runtime matrix, replay fixtures, signals, queries,
-and codec checks, continue to the [`polyglot/` guide](polyglot/README.md).
-
 ## Observe a run
 
 Check the two observability surfaces separately:
 
 | Surface | Use it for | Where to look |
 |---------|------------|---------------|
-| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | The exact run URL printed by either path, or `/waterline` |
+| Waterline and the workflow database | Durable workflow truth: run status, typed history, signals, updates, timers, retries, failures, and operator actions. | The run URL printed by application journeys, or `/waterline` when the selected stack includes it |
 | Worker logs and SDK metrics | Runtime behavior: poll latency, task duration, exporter wiring, custom application metrics, and worker-side errors before they become durable failures. | Laravel logs for PHP workers; SDK metrics endpoints for external workers |
 
 Waterline proves that the durable run exists and shows what the engine or
@@ -343,7 +364,7 @@ Use this index when you want a specific Durable Workflow pattern instead of anot
 | Wrap an AI activity loop in durable retry/validation | `App\Workflows\Prism\PrismWorkflow` | `php artisan app:prism` | `prism` |
 | Build a signal-driven AI agent with compensation | `App\Workflows\Ai\AiWorkflow` | `php artisan app:ai` | `ai` |
 | Orchestrate an ephemeral agent sandbox with durable lifecycle | `DurableWorkflow\AI\Workflows\SandboxAgentWorkflow` | `php artisan app:sandbox` | `sandbox` |
-| Run the polyglot conformance smoke (complete PHP/Python/Rust runtime matrix) | PHP-authored workflows plus the Python and Rust workers in `polyglot/` | `while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh); docker compose -f polyglot/docker-compose.yml run --rm smoke` | `polyglot_php_to_python` |
+| Run one PHP workflow that combines Python and Rust activity results | `App\Workflows\Polyglot\PolyglotWorkflow` | `scripts/polyglot.sh` | `polyglot` |
 | Exercise machine-readable failure diagnosis and repair refusal | `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` | `/mcp/workflows` `start_workflow` with `workflow=diagnostic_failure` | `diagnostic_failure` |
 
 #### Migrating from Durable Workflow 1.x
@@ -555,7 +576,7 @@ Available workflows are defined in `config/workflow_mcp.php`. By default, every 
 - `prism` → `App\Workflows\Prism\PrismWorkflow` (requires `OPENAI_API_KEY`)
 - `ai` → `App\Workflows\Ai\AiWorkflow` (requires `OPENAI_API_KEY`, then accepts `send` signals and `receive` updates)
 - `sandbox` → `DurableWorkflow\AI\Workflows\SandboxAgentWorkflow` (package-owned lifecycle and recovery; defaults to the development-only local subprocess provider, set `DURABLE_AI_SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` for E2B Cloud)
-- `polyglot_php_to_python` → `App\Workflows\Polyglot\PhpToPythonWorkflow` (requires the current artifact tuple resolver and the `polyglot/` docker compose stack with the PHP and Python workers running; the stack smoke also exercises Python-authored workflows)
+- `polyglot` → `App\Workflows\Polyglot\PolyglotWorkflow` (run `scripts/polyglot.sh` to start the standalone PHP workflow worker plus distinct Python and Rust activity workers against the current artifact tuple)
 - `diagnostic_failure` → `App\Workflows\Diagnostics\DiagnosticFailureWorkflow` (no credentials; intentionally records a durable activity failure so MCP clients can prove `diagnose_workflow` and `repair_workflow` behavior)
 
 To add more workflows, update the config file:

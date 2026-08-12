@@ -1,10 +1,39 @@
 # Polyglot Sample
 
-This directory contains the direct service-mode journey and the complete
-PHP/Python/Rust validation stack. Both run against a standalone Durable
-Workflow Server and use published 2.0 artifacts.
+This directory contains the primary service-mode `PolyglotWorkflow` and the
+complete PHP/Python/Rust validation stack. It also holds a narrower Laravel
+integration variation. Every scenario runs against a standalone Durable
+Workflow Server and uses published 2.0 artifacts.
 
-## Service-mode quickstart
+For a first Rust run in Durable Workflow Cloud controlled early access rather
+than this exhaustive self-hosted matrix, use the dedicated
+[Rust Cloud quickstart](https://durable-workflow.com/docs/2.0/polyglot/rust-cloud-quickstart/)
+and the repository's `scripts/rust-cloud.sh run` entry point. That path uses one
+Rust workflow/activity pair, separate client and worker credentials, the
+Cloud-aware CLI, a development build, and Managed Waterline verification.
+
+## Service mode: PolyglotWorkflow
+
+From a Sample App Codespace after setup reports ready, run:
+
+```bash
+scripts/polyglot.sh
+```
+
+The PHP-authored `polyglot.PolyglotWorkflow` runs on `polyglot-workflow`. It
+routes an order-total activity to the Python worker on
+`polyglot-php-to-python`, then passes that result to the Rust receipt activity
+on `polyglot-to-rust`. The Server dispatches both activity tasks; neither
+runtime is simulated by PHP. The final result names all three runtimes and
+queues and combines the Python total with the Rust receipt.
+
+The command resolves the current installable artifact tuple, builds the three
+workers through their normal package managers, waits for their exact handler
+registrations, and runs the workflow. Docker, Composer, Python, and Rust are
+already present in the prepared Codespaces image, so there is no manual setup
+or hidden host command.
+
+### Laravel integration variation
 
 From a Sample App Codespace, run:
 
@@ -29,12 +58,13 @@ runs safe.
 
 ## Complete runtime matrix
 
-The full `docker-compose.yml` demonstration proves the control plane is
-language-neutral across nine PHP, Python, and Rust workflow/activity cells. It
-drives workflow start, signal, query, result retrieval, replay, and codec checks
-through the published `dw` CLI and inspects the same runs through Waterline.
+The full `docker-compose.yml` validation first runs `PolyglotWorkflow`, then
+proves the control plane is language-neutral across nine directional PHP,
+Python, and Rust workflow/activity cells. It drives workflow start, signal,
+query, result retrieval, replay, and codec checks through the published `dw`
+CLI and inspects the same runs through Waterline.
 
-The root app's embedded Laravel path, this service-mode quickstart, and the full
+The root app's embedded Laravel path, the service-mode examples, and the full
 matrix each use separate Compose projects and state.
 
 ## What it exercises
@@ -53,11 +83,11 @@ Nine workflow/activity runtime cells run end to end:
 | Python to Rust | Python (`sdk-python`) | Rust (`sdk-rust`) | `python_workflow/workflow.py` + `rust_worker/src/main.rs` |
 | PHP to Rust | PHP (`durable-workflow/sdk`) | Rust (`sdk-rust`) | `php_worker/worker.php` + `rust_worker/src/main.rs` |
 
-The PHP-authored scenario is the wire-level cross-language test:
+The PHP-to-Python matrix cell remains a focused directional conformance test:
 
 - `php-workflow-worker` is a framework-neutral Composer project that installs
   the exact published `durable-workflow/sdk` release and registers
-  `polyglot.php-to-python.PhpToPythonWorkflow` on the
+  `polyglot.php-to-python.greeter` on the
   `polyglot-php-to-python` task queue. Its image contains neither Laravel nor
   the embedded `durable-workflow/workflow` engine.
 - `python-activity-worker` is a Python container that registers
@@ -160,7 +190,7 @@ polyglot/
 │       ├── polyglot_smoke.py           drives all scenarios and emits metadata
 │       ├── php_same_language_smoke.py  PHP-authoring sanity driver
 │       ├── python_workflow_smoke.py    Python-authoring smoke driver
-│       ├── php_to_python_smoke.py      PHP→Python smoke driver
+│       ├── polyglot_workflow_smoke.py  featured PHP→Python→Rust driver
 │       └── python_to_php_smoke.py      Python→PHP smoke driver
 ├── rust_worker/
 │   ├── Cargo.toml                      crates.io-only worker dependencies
@@ -198,6 +228,14 @@ matrix at each language boundary; JSON is exercised only when explicitly
 selected as the fallback codec.
 
 ## Running locally
+
+Run the featured workflow with the same one-command path used in Codespaces:
+
+```bash
+scripts/polyglot.sh
+```
+
+For the complete conformance matrix, use an isolated project name:
 
 ```bash
 while IFS= read -r assignment; do export "$assignment"; done < <(scripts/resolve-current-artifacts.sh)

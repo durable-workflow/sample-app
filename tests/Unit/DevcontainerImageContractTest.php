@@ -150,7 +150,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('FROM docker:27.5.1-cli AS docker-cli', $dockerfile);
         $this->assertStringContainsString('FROM rust:1.86.0-slim-bookworm AS rust', $dockerfile);
         $this->assertStringContainsString('FROM mariadb:11.4 AS mysql-seed', $dockerfile);
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.12', $dockerfile);
+        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.13', $dockerfile);
         $this->assertStringContainsString('COPY --from=docker-cli /usr/local/bin/docker', $dockerfile);
         $this->assertStringContainsString('COPY --from=rust /usr/local/cargo /usr/local/cargo', $dockerfile);
         $this->assertStringContainsString('COPY --from=rust /usr/local/rustup /usr/local/rustup', $dockerfile);
