@@ -9,6 +9,10 @@ updates:
       time: '05:17'
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+    groups:
+      npm-maintenance:
+        patterns:
+          - '*'
 
   - package-ecosystem: github-actions
     directory: /
@@ -18,3 +22,7 @@ updates:
       time: '05:27'
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+    groups:
+      actions-maintenance:
+        patterns:
+          - '*'
