@@ -1217,13 +1217,18 @@ SH,
         $lock = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.lock'));
         $dockerfile = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Dockerfile'));
         $worker = (string) file_get_contents($this->repoPath('polyglot/rust_worker/src/main.rs'));
+        $tuple = json_decode(
+            (string) file_get_contents($this->repoPath('polyglot/qualified-artifact-tuple.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         $this->assertArrayHasKey('rust-workflow-worker', $services);
         $this->assertArrayHasKey('rust-activity-worker', $services);
         $this->assertSame('workflow', $services['rust-workflow-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
         $this->assertSame('activity', $services['rust-activity-worker']['environment']['POLYGLOT_RUST_MODE'] ?? null);
         $this->assertSame(1, preg_match('/durable-workflow = "=(2\.0\.0-(?:beta|rc)\.\d+)"/', $cargo, $matches));
-        $this->assertSame('2.0.0-rc.12', $matches[1]);
+        $this->assertSame($tuple['artifacts']['sdk-rust'] ?? null, $matches[1]);
         $this->assertMatchesRegularExpression(
             '/name = "durable-workflow"\nversion = "'.preg_quote($matches[1], '/').'"/',
             $lock,

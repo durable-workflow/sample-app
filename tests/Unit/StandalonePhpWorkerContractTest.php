@@ -421,6 +421,25 @@ final class StandalonePhpWorkerContractTest extends TestCase
         $this->assertSame($firstSignal, $result['signal'] ?? null);
     }
 
+    public function test_signal_workflow_suspends_on_the_current_fiber_runtime_while_waiting(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $codec = (new Client('http://server:8080'))->payloadCodec();
+        $result = (new Replayer($codec))->replay(
+            \signalQueryWorkflow(),
+            [],
+            [['workflow_runtime' => 'php']],
+            'polyglot-php-to-python',
+        );
+
+        $this->assertSame([[
+            'type' => 'open_condition_wait',
+            'condition_key' => 'polyglot.signal.polyglot-signal',
+            'condition_definition_fingerprint' => hash('sha256', 'polyglot.signal.polyglot-signal'),
+        ]], $result->commands);
+    }
+
     /**
      * @param  list<array{method: string, uri: string, body: array<string, mixed>|null}>  $requests
      * @return array{method: string, uri: string, body: array<string, mixed>|null}

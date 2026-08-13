@@ -317,8 +317,8 @@ function completeNativeBinaryRoundtrip(array $payload, mixed $echo): array
 
 function typeRoundtripWorkflow(string $activityType): Closure
 {
-    return static function (WorkflowContext $context, array $payload) use ($activityType): Generator {
-        $echo = yield $context->activity($activityType, [nativeBinaryPayload($payload)]);
+    return static function (WorkflowContext $context, array $payload) use ($activityType): array {
+        $echo = $context->activity($activityType, [nativeBinaryPayload($payload)]);
         $roundtrip = completeNativeBinaryRoundtrip($payload, $echo);
 
         return [
@@ -333,19 +333,19 @@ function typeRoundtripWorkflow(string $activityType): Closure
 
 function polyglotWorkflow(string $workflowQueue, string $pythonQueue, string $rustQueue): Closure
 {
-    return static function (WorkflowContext $context, array $request) use ($workflowQueue, $pythonQueue, $rustQueue): Generator {
+    return static function (WorkflowContext $context, array $request) use ($workflowQueue, $pythonQueue, $rustQueue): array {
         $name = (string) ($request['name'] ?? 'Ada');
         $items = is_array($request['items'] ?? null) ? $request['items'] : [
             ['quantity' => 2, 'unit_price_cents' => 1500],
             ['quantity' => 1, 'unit_price_cents' => 4200],
         ];
 
-        $calculation = yield $context->activity(
+        $calculation = $context->activity(
             'polyglot.php-to-python.tally',
             [$items],
             ['queue' => $pythonQueue],
         );
-        $receipt = yield $context->activity(
+        $receipt = $context->activity(
             'polyglot.php-to-rust.receipt',
             [[
                 'name' => $name,
@@ -384,9 +384,9 @@ function polyglotWorkflow(string $workflowQueue, string $pythonQueue, string $ru
 
 function phpToPythonWorkflow(): Closure
 {
-    return static function (WorkflowContext $context, string $value): Generator {
-        $reverse = yield $context->activity('polyglot.php-to-python.reverse', [$value]);
-        $tally = yield $context->activity('polyglot.php-to-python.tally', [[
+    return static function (WorkflowContext $context, string $value): array {
+        $reverse = $context->activity('polyglot.php-to-python.reverse', [$value]);
+        $tally = $context->activity('polyglot.php-to-python.tally', [[
             ['quantity' => 2, 'unit_price_cents' => 1500],
             ['quantity' => 1, 'unit_price_cents' => 4200],
         ]]);
@@ -397,6 +397,27 @@ function phpToPythonWorkflow(): Closure
             'input' => $value,
             'reverse' => $reverse,
             'tally' => $tally,
+        ];
+    };
+}
+
+function signalQueryWorkflow(): Closure
+{
+    return static function (WorkflowContext $context, array $request): ?array {
+        $deliveries = $context->signals('polyglot-signal');
+        if (count($deliveries) < 2) {
+            Fiber::suspend(new WorkflowCommand('open_condition_wait', 'condition_wait', [
+                'condition_key' => 'polyglot.signal.polyglot-signal',
+                'condition_definition_fingerprint' => hash('sha256', 'polyglot.signal.polyglot-signal'),
+            ]));
+
+            return null;
+        }
+
+        return [
+            'workflow_runtime' => 'php',
+            'request' => $request,
+            'signal' => normalizeSignalValue($deliveries[0]),
         ];
     };
 }
@@ -414,9 +435,9 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php.greeter',
-        static function (WorkflowContext $context, array $request): Generator {
-            $marker = yield $context->activity('polyglot.php.marker', [$request]);
-            $description = yield $context->activity('polyglot.php.describe', [$marker]);
+        static function (WorkflowContext $context, array $request): array {
+            $marker = $context->activity('polyglot.php.marker', [$request]);
+            $description = $context->activity('polyglot.php.describe', [$marker]);
 
             return [
                 'workflow_runtime' => 'php',
@@ -442,9 +463,9 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php-to-python.typed-error',
-        static function (WorkflowContext $context, array $request) use ($codec): Generator {
+        static function (WorkflowContext $context, array $request) use ($codec): array {
             try {
-                yield $context->activity('polyglot.php-to-python.typed-error', [$request]);
+                $context->activity('polyglot.php-to-python.typed-error', [$request]);
             } catch (ActivityFailed $failure) {
                 return [
                     'workflow_runtime' => 'php',
@@ -465,8 +486,8 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php-to-rust.greeter',
-        static function (WorkflowContext $context, array $request): Generator {
-            $echo = yield $context->activity('polyglot.php-to-rust.echo', [$request]);
+        static function (WorkflowContext $context, array $request): array {
+            $echo = $context->activity('polyglot.php-to-rust.echo', [$request]);
 
             return [
                 'workflow_runtime' => 'php',
@@ -489,23 +510,7 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
     $worker->registerWorkflow(
         'polyglot.php.signal-query',
-        static function (WorkflowContext $context, array $request): Generator {
-            $deliveries = $context->signals('polyglot-signal');
-            if (count($deliveries) < 2) {
-                yield new WorkflowCommand('open_condition_wait', 'condition_wait', [
-                    'condition_key' => 'polyglot.signal.polyglot-signal',
-                    'condition_definition_fingerprint' => hash('sha256', 'polyglot.signal.polyglot-signal'),
-                ]);
-
-                return null;
-            }
-
-            return [
-                'workflow_runtime' => 'php',
-                'request' => $request,
-                'signal' => normalizeSignalValue($deliveries[0]),
-            ];
-        },
+        signalQueryWorkflow(),
     );
 
     $worker->declareSignal(

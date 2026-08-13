@@ -295,11 +295,12 @@ field.
 
 ## Codec round-trip notes
 
-All scenarios use the `avro` codec by default — that is the v2
-default. Native scalars, lists, maps, bytes, and UTF-8 strings flow through
-the fixed Value schema; values that need explicit codec
-negotiation (PHP `BackedEnum`, Python `dataclasses`, `Decimal`,
-`datetime`) are listed in the codec round-trip contract linked above.
+Durable Workflow 2.0 uses Avro as its only durable payload codec. Native
+scalars, lists, maps, bytes, and UTF-8 strings flow through the fixed Value
+schema. Convert values outside that portable model, including PHP
+`BackedEnum` values and Python `dataclasses`, `Decimal`, and `datetime`
+instances, through the language SDK's Value adapters before they cross a
+workflow boundary. Every durable envelope remains Avro.
 PHP uses the SDK's `AvroBinaryValue` adapter to distinguish byte strings from
 text, while Python uses `bytes` and Rust uses `AvroValue::Bytes`.
 
