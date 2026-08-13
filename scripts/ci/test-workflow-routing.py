@@ -64,6 +64,7 @@ class WorkflowRoutingTest(unittest.TestCase):
 
         php = self.assert_job_condition(ci, "test", GITHUB_ONLY)
         microservice = self.assert_job_condition(ci, "microservice-test", GITHUB_ONLY)
+        action_policy = self.assert_job_condition(ci, "action-policy", GITHUB_ONLY)
         php_qualification = job_block(ci, "target-branch-qualification")
         polyglot_matrix = self.assert_job_condition(polyglot, "smoke", GITHUB_ONLY)
         polyglot_qualification = self.assert_job_condition(
@@ -98,12 +99,25 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertIn("composer audit --locked", microservice)
         self.assertIn("run: php artisan test", microservice)
         self.assertNotIn("actions/cache", microservice)
+        self.assertIn("repository: durable-workflow/.github", action_policy)
+        self.assertIn("ref: main", action_policy)
+        self.assertIn("persist-credentials: false", action_policy)
+        self.assertIn("qualification_policy.py validate", action_policy)
+        self.assertIn("--target sample-app", action_policy)
+        self.assertIn("--workflow-directory .github/workflows", action_policy)
+        self.assertNotIn("secrets.", action_policy)
         self.assertIn("name: Target branch qualification", php_qualification)
-        self.assertIn("needs: [test, microservice-test]", php_qualification)
+        self.assertIn(
+            "needs: [test, microservice-test, action-policy]", php_qualification
+        )
         self.assertIn(f"if: {GITHUB_ONLY}", php_qualification)
         self.assertIn('run: test "$TEST_RESULT" = success', php_qualification)
         self.assertIn(
             'run: test "$MICROSERVICE_TEST_RESULT" = success',
+            php_qualification,
+        )
+        self.assertIn(
+            'run: test "$ACTION_POLICY_RESULT" = success',
             php_qualification,
         )
 
