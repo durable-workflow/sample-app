@@ -40,14 +40,29 @@ do
   require_env "$name"
 done
 
-if [[ "$DURABLE_WORKFLOW_RUNTIME_URL" == */api || \
-      ! "$DURABLE_WORKFLOW_RUNTIME_URL" =~ /api/runtime/v1/namespaces/[^/]+/?$ ]]; then
+if [[ "$mode" == "run" ]]; then
+  require_env DURABLE_WORKFLOW_CLIENT_TOKEN
+fi
+
+runtime_url="$DURABLE_WORKFLOW_RUNTIME_URL"
+runtime_namespace="$DURABLE_WORKFLOW_RUNTIME_NAMESPACE"
+worker_token="$DURABLE_WORKFLOW_WORKER_TOKEN"
+client_token="${DURABLE_WORKFLOW_CLIENT_TOKEN:-}"
+export -n runtime_url runtime_namespace worker_token client_token task_queue
+unset \
+  DURABLE_WORKFLOW_CLIENT_TOKEN \
+  DURABLE_WORKFLOW_RUNTIME_NAMESPACE \
+  DURABLE_WORKFLOW_RUNTIME_URL \
+  DURABLE_WORKFLOW_TASK_QUEUE \
+  DURABLE_WORKFLOW_WORKER_TOKEN
+
+if [[ "$runtime_url" == */api || \
+      ! "$runtime_url" =~ /api/runtime/v1/namespaces/[^/]+/?$ ]]; then
   printf '%s\n' \
     'rust-cloud: DURABLE_WORKFLOW_RUNTIME_URL must be the complete namespace runtime URL ending at the namespace identifier, without a terminal /api' >&2
   exit 2
 fi
 
-export DURABLE_WORKFLOW_TASK_QUEUE="$task_queue"
 require_command cargo
 
 artifact_assignments="$("$repo_root/scripts/resolve-current-artifacts.sh")"
@@ -75,13 +90,25 @@ if [[ ! -f "$lock_file" ]]; then
   exit 2
 fi
 
+cargo_target_dir="${CARGO_TARGET_DIR:-$repo_root/rust-cloud/target}"
+if [[ "$cargo_target_dir" != /* ]]; then
+  cargo_target_dir="$PWD/$cargo_target_dir"
+fi
+worker_binary="$cargo_target_dir/debug/durable-workflow-rust-cloud-quickstart"
+
 case "$mode" in
   worker)
     printf '==> Rust Cloud: development worker on queue %s\n' "$task_queue"
-    exec cargo run --locked --manifest-path "$manifest"
+    printf '%s\n' '==> Rust Cloud: building the development worker'
+    cargo build --locked --manifest-path "$manifest"
+    exec env \
+      DURABLE_WORKFLOW_RUNTIME_URL="$runtime_url" \
+      DURABLE_WORKFLOW_RUNTIME_NAMESPACE="$runtime_namespace" \
+      DURABLE_WORKFLOW_TASK_QUEUE="$task_queue" \
+      DURABLE_WORKFLOW_WORKER_TOKEN="$worker_token" \
+      "$worker_binary"
     ;;
   run)
-    require_env DURABLE_WORKFLOW_CLIENT_TOKEN
     require_command dw
     reported_cli_version="$(dw --version)"
     if [[ -z "$current_cli_version" || "$reported_cli_version" != *"$current_cli_version"* ]]; then
@@ -103,8 +130,11 @@ printf '%s\n' "$reported_cli_version" | tee "$evidence_dir/cli-version.txt"
 
 printf '%s\n' '==> Rust Cloud: building the development worker'
 cargo build --locked --manifest-path "$manifest"
-worker_binary="$repo_root/rust-cloud/target/debug/durable-workflow-rust-cloud-quickstart"
-"$worker_binary" >"$evidence_dir/worker.log" 2>&1 &
+DURABLE_WORKFLOW_RUNTIME_URL="$runtime_url" \
+DURABLE_WORKFLOW_RUNTIME_NAMESPACE="$runtime_namespace" \
+DURABLE_WORKFLOW_TASK_QUEUE="$task_queue" \
+DURABLE_WORKFLOW_WORKER_TOKEN="$worker_token" \
+  "$worker_binary" >"$evidence_dir/worker.log" 2>&1 &
 worker_pid=$!
 
 cleanup() {
@@ -122,10 +152,11 @@ if ! kill -0 "$worker_pid" 2>/dev/null; then
 fi
 
 printf '==> Rust Cloud: starting workflow %s\n' "$workflow_id"
-if ! dw workflow:start \
-    --server="$DURABLE_WORKFLOW_RUNTIME_URL" \
-    --namespace="$DURABLE_WORKFLOW_RUNTIME_NAMESPACE" \
-    --token="$DURABLE_WORKFLOW_CLIENT_TOKEN" \
+if ! DURABLE_WORKFLOW_CLIENT_TOKEN="$client_token" \
+  dw workflow:start \
+    --server="$runtime_url" \
+    --namespace="$runtime_namespace" \
+    --token="$client_token" \
     --type=sample.rust-cloud.greeter \
     --task-queue="$task_queue" \
     --workflow-id="$workflow_id" \

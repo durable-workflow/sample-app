@@ -12,4 +12,7 @@ Use `scripts/rust-cloud.sh run` for the complete one-terminal path or
 
 The source manifest and checked-in lockfile pin the current supported Rust SDK
 release. The entry script verifies the published artifact tuple, then uses the
-locked graph for version evidence and builds.
+locked graph for version evidence and builds. It removes the client and worker
+credentials from its ambient environment before resolution and compilation,
+then exposes the runtime settings and worker credential only in the worker
+environment and the client credential only in the workflow CLI environment.
