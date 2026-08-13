@@ -15,8 +15,8 @@ class ElapsedTimeWorkflow extends Workflow
     {
         // Clock reads are non-deterministic, so sideEffect() records the value
         // once and replays it instead of asking the system clock again. The
-        // recorded value must be codec-safe — prefer scalar timestamps over
-        // Carbon objects so replay stays stable under any payload codec.
+        // recorded value must fit the portable Avro Value schema — prefer
+        // scalar timestamps or explicit adapters over Carbon objects.
         $start = sideEffect(fn () => now()->getTimestamp());
 
         activity(SleepActivity::class, 3);

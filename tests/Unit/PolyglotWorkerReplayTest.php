@@ -12,9 +12,11 @@ use Composer\InstalledVersions;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
+use RuntimeException;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Workflow\QueryMethod;
@@ -22,6 +24,62 @@ use Workflow\V2\Support\WorkerProtocolVersion;
 
 final class PolyglotWorkerReplayTest extends TestCase
 {
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function unsupportedTaskCodecs(): iterable
+    {
+        yield 'JSON' => [['payload_codec' => 'json'], 'json'];
+        yield 'missing' => [[], 'missing'];
+        yield 'wrong case' => [['payload_codec' => 'AVRO'], 'AVRO'];
+        yield 'non-string' => [['payload_codec' => ['avro']], 'array'];
+    }
+
+    /** @param array<string, mixed> $codecFields */
+    #[DataProvider('unsupportedTaskCodecs')]
+    public function test_workflow_worker_requires_an_explicit_exact_avro_task_codec(
+        array $codecFields,
+        string $received,
+    ): void {
+        $http = new HttpFactory();
+        $requests = [];
+        $http->fake(function (Request $request) use ($http, &$requests) {
+            $requests[] = $request;
+
+            return $http->response(['ok' => true]);
+        });
+
+        $client = new ServerClient($http, 'http://server:8080', 'test-token', 'default');
+        $worker = new PolyglotWorker();
+        $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
+        $method = new ReflectionMethod($worker, 'processTask');
+        $method->setAccessible(true);
+        $task = [
+            'workflow_type' => 'polyglot.php.greeter',
+            'workflow_id' => 'codec-rejection',
+            'run_id' => 'run-codec-rejection',
+            'task_id' => 'task-codec-rejection',
+            'workflow_task_attempt' => 1,
+            'arguments' => Avro::envelope([['name' => 'Ada']]),
+            ...$codecFields,
+        ];
+
+        $exception = null;
+        try {
+            $method->invoke($worker, $client, 'php-worker', 'polyglot-php', $task);
+        } catch (RuntimeException $caught) {
+            $exception = $caught;
+        }
+
+        if (! $exception instanceof RuntimeException) {
+            $this->fail('Expected the PHP worker to reject a task without payload_codec=avro.');
+        }
+
+        $this->assertSame(
+            'polyglot worker requires task payload_codec=avro; received '.$received,
+            $exception->getMessage(),
+        );
+        $this->assertSame([], $requests);
+    }
+
     public function test_php_signal_query_workflow_declares_state_query(): void
     {
         $method = (new ReflectionClass(PhpSignalQueryWorkflow::class))->getMethod('state');
@@ -229,6 +287,7 @@ final class PolyglotWorkerReplayTest extends TestCase
                             'workflow_id' => 'php-signal-query-heartbeat-timeout',
                             'run_id' => 'run-php-signal-query-heartbeat-timeout',
                             'query_name' => 'state',
+                            'payload_codec' => 'avro',
                             'workflow_arguments' => Avro::envelope([['workflow_runtime' => 'php']]),
                             'history_events' => [],
                         ],
@@ -303,6 +362,7 @@ final class PolyglotWorkerReplayTest extends TestCase
                             'workflow_id' => 'php-signal-query-responsive',
                             'run_id' => 'run-php-signal-query-responsive',
                             'query_name' => 'state',
+                            'payload_codec' => 'avro',
                             'workflow_arguments' => Avro::envelope([$request]),
                             'history_events' => [],
                         ],
@@ -318,6 +378,7 @@ final class PolyglotWorkerReplayTest extends TestCase
                             'workflow_id' => 'php-signal-query-responsive',
                             'run_id' => 'run-php-signal-query-responsive',
                             'query_name' => 'state',
+                            'payload_codec' => 'avro',
                             'workflow_arguments' => Avro::envelope([$request]),
                             'history_events' => [
                                 [
@@ -950,6 +1011,8 @@ final class PolyglotWorkerReplayTest extends TestCase
      */
     private function processWorkflowTask(array $task): array
     {
+        $task += ['payload_codec' => 'avro'];
+
         $http = new HttpFactory();
         $requests = [];
 
@@ -985,6 +1048,8 @@ final class PolyglotWorkerReplayTest extends TestCase
      */
     private function processQueryTask(array $task): array
     {
+        $task += ['payload_codec' => 'avro'];
+
         $http = new HttpFactory();
         $requests = [];
 

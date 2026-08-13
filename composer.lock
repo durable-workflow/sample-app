@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "251310f4c164dada7132fd8a7a5e530e",
+    "content-hash": "1abce3445cdb6ca223ac59ccdf12b19e",
     "packages": [
         {
             "name": "apache/avro",
@@ -720,16 +720,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.0-rc.14",
+            "version": "2.0.0-rc.30",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "57a8149ae340e5eddecac9099e45a97eb64d3bb0"
+                "reference": "f8d0bb923ce2e6afef42f66100c7a0c160283796"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/57a8149ae340e5eddecac9099e45a97eb64d3bb0",
-                "reference": "57a8149ae340e5eddecac9099e45a97eb64d3bb0",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/f8d0bb923ce2e6afef42f66100c7a0c160283796",
+                "reference": "f8d0bb923ce2e6afef42f66100c7a0c160283796",
                 "shasum": ""
             },
             "require": {
@@ -770,13 +770,13 @@
                         "laravel": "^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.0-rc.14",
+                    "product-train": "2.0.0-rc.30",
                     "payload-codecs": [
                         "avro"
                     ],
                     "control-plane-version": "2",
                     "worker-protocol-version": "1.13",
-                    "supported-server-versions": "2.0.0-rc.17"
+                    "supported-server-versions": "2.0.0-rc.32"
                 }
             },
             "autoload": {
@@ -807,24 +807,23 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-08-10T04:25:26+00:00"
+            "time": "2026-08-13T15:18:15+00:00"
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-rc.15",
+            "version": "2.0.0-rc.18",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "e801461c67e4b8e351986d035e885450cbd0b46a"
+                "reference": "e96144a9611f48b77189b327b9ff96273c7e1a90"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/e801461c67e4b8e351986d035e885450cbd0b46a",
-                "reference": "e801461c67e4b8e351986d035e885450cbd0b46a",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/e96144a9611f48b77189b327b9ff96273c7e1a90",
+                "reference": "e96144a9611f48b77189b327b9ff96273c7e1a90",
                 "shasum": ""
             },
             "require": {
-                "durable-workflow/sdk": "2.0.0-rc.14",
                 "illuminate/support": "^9.0|^10.0|^11.0|^12.0|^13.0",
                 "php": "^8.0.2"
             },
@@ -832,6 +831,7 @@
                 "laravel-workflow/waterline": "self.version"
             },
             "require-dev": {
+                "durable-workflow/sdk": "2.0.0-rc.14",
                 "durable-workflow/workflow": "2.0.0-rc.14",
                 "fakerphp/faker": "^1.9.1",
                 "mockery/mockery": "^1.4.4",
@@ -840,6 +840,7 @@
                 "phpunit/phpunit": "^11.5.3"
             },
             "suggest": {
+                "durable-workflow/sdk": "Required only for service-mode observation through a standalone Durable Workflow server.",
                 "durable-workflow/workflow": "Required only for embedded Laravel workflow observation; service mode uses durable-workflow/sdk."
             },
             "type": "library",
@@ -853,7 +854,7 @@
                     ]
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.0-rc.15"
+                    "product-train": "2.0.0-rc.18"
                 }
             },
             "autoload": {
@@ -871,25 +872,25 @@
                     "email": "richard.lee.mcdaniel@gmail.com"
                 }
             ],
-            "description": "An elegant UI for monitoring Laravel Workflows.",
+            "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.15"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.18"
             },
-            "time": "2026-08-11T08:48:57+00:00"
+            "time": "2026-08-13T13:46:37+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.0-rc.14",
+            "version": "2.0.0-rc.31",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "018d1a99f5a39452b02c68d5737f81c31f19f67f"
+                "reference": "a4ce321a31ba5f4d9c25964cde81109bf253c5aa"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/018d1a99f5a39452b02c68d5737f81c31f19f67f",
-                "reference": "018d1a99f5a39452b02c68d5737f81c31f19f67f",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/a4ce321a31ba5f4d9c25964cde81109bf253c5aa",
+                "reference": "a4ce321a31ba5f4d9c25964cde81109bf253c5aa",
                 "shasum": ""
             },
             "require": {
@@ -919,7 +920,7 @@
                     ]
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.0-rc.14"
+                    "product-train": "2.0.0-rc.31"
                 }
             },
             "autoload": {
@@ -944,9 +945,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-rc.14"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.0-rc.31"
             },
-            "time": "2026-08-09T21:48:39+00:00"
+            "time": "2026-08-13T03:34:07+00:00"
         },
         {
             "name": "egulias/email-validator",

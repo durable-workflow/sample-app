@@ -359,6 +359,8 @@ class PolyglotWorker extends Command
      */
     private function processTask(ServerClient $client, string $workerId, string $taskQueue, array $task): void
     {
+        $this->assertAvroTaskCodec($task);
+
         $workflowType = (string) ($task['workflow_type'] ?? '');
         $workflowId = (string) ($task['workflow_id'] ?? '');
         $runId = (string) ($task['run_id'] ?? '');
@@ -487,6 +489,8 @@ class PolyglotWorker extends Command
      */
     private function processActivityTask(ServerClient $client, string $workerId, array $task): void
     {
+        $this->assertAvroTaskCodec($task);
+
         $activityType = (string) ($task['activity_type'] ?? '');
         $taskId = (string) ($task['task_id'] ?? '');
         $activityAttemptId = (string) ($task['activity_attempt_id'] ?? '');
@@ -551,6 +555,8 @@ class PolyglotWorker extends Command
      */
     private function processQueryTask(ServerClient $client, string $workerId, array $task): void
     {
+        $this->assertAvroTaskCodec($task);
+
         $queryTaskId = (string) ($task['query_task_id'] ?? '');
         $queryAttempt = (int) ($task['query_task_attempt'] ?? 1);
         $workflowType = (string) ($task['workflow_type'] ?? '');
@@ -701,7 +707,6 @@ class PolyglotWorker extends Command
     private function decodeArguments(array $task): array
     {
         $envelope = $task['arguments'] ?? $task['workflow_arguments'] ?? null;
-        $taskCodec = (string) ($task['payload_codec'] ?? 'avro');
 
         if ($this->isMissingPayloadPlaceholder($envelope)) {
             return [];
@@ -711,16 +716,31 @@ class PolyglotWorker extends Command
             return [];
         }
 
-        if ($taskCodec !== 'avro' && ! is_array($envelope)) {
-            throw new RuntimeException(sprintf(
-                'polyglot worker received workflow arguments under unsupported codec %s',
-                $taskCodec,
-            ));
-        }
-
         $decoded = Avro::decodeEnvelope($envelope);
 
         return is_array($decoded) ? array_values($decoded) : [$decoded];
+    }
+
+    /** @param array<string, mixed> $task */
+    private function assertAvroTaskCodec(array $task): void
+    {
+        $taskCodec = $task['payload_codec'] ?? null;
+
+        if ($taskCodec === 'avro') {
+            return;
+        }
+
+        $received = match (true) {
+            $taskCodec === null => 'missing',
+            $taskCodec === '' => 'empty',
+            is_string($taskCodec) => $taskCodec,
+            default => get_debug_type($taskCodec),
+        };
+
+        throw new RuntimeException(sprintf(
+            'polyglot worker requires task payload_codec=avro; received %s',
+            $received,
+        ));
     }
 
     /**

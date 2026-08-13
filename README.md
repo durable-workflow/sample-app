@@ -509,7 +509,7 @@ Don't do this inside workflow code:
 $startedAt = now();
 ```
 
-The direct `now()` call looks harmless, but replay can run the method again later and produce a different value than the one that originally drove branching, timeouts, or output. Prefer scalar values inside `sideEffect()` callbacks — integer timestamps, ISO-8601 strings, UUIDs — so the recorded value survives any configured payload codec on replay; returning a Carbon instance can decode as a plain string under non-JSON codecs such as Avro. The `ElapsedTimeWorkflow` sample keeps clock reads behind `sideEffect()` as integer timestamps, and the `SimpleWorkflow`, `PrismWorkflow`, and `AiWorkflow` samples keep external work inside activities for the same reason.
+The direct `now()` call looks harmless, but replay can run the method again later and produce a different value than the one that originally drove branching, timeouts, or output. Prefer portable Avro Value types inside `sideEffect()` callbacks — integer timestamps, ISO-8601 strings, UUIDs — so the recorded value has the same meaning on replay. Convert domain objects such as Carbon instances through an explicit adapter instead of relying on PHP object serialization. The `ElapsedTimeWorkflow` sample keeps clock reads behind `sideEffect()` as integer timestamps, and the `SimpleWorkflow`, `PrismWorkflow`, and `AiWorkflow` samples keep external work inside activities for the same reason.
 
 In addition to the basic example workflow, you can try these other workflows included in this sample app:
 

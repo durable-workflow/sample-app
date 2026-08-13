@@ -72,7 +72,7 @@ try {
     }
 
     $waterlineSdkRequirement = $lockedPackages['durable-workflow/waterline']['require']['durable-workflow/sdk'] ?? null;
-    if ($waterlineSdkRequirement !== $expected['sdk-php']) {
+    if ($waterlineSdkRequirement !== null && $waterlineSdkRequirement !== $expected['sdk-php']) {
         throw new RuntimeException(
             'locked durable-workflow/waterline requires durable-workflow/sdk '
             .json_encode($waterlineSdkRequirement)

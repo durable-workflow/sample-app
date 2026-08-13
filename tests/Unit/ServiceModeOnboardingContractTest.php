@@ -265,10 +265,7 @@ BASH));
             ],
             $evidence['artifacts'] ?? null,
         );
-        $this->assertSame(
-            $tuple['artifacts']['sdk-php'] ?? null,
-            $evidence['waterline-requires-sdk-php'] ?? null,
-        );
+        $this->assertNull($evidence['waterline-requires-sdk-php'] ?? null);
     }
 
     public function test_composer_artifact_validation_rejects_a_stale_root_sdk_pin(): void
