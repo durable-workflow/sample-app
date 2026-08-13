@@ -26,6 +26,7 @@
         "laravel/sail": "^1.41",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
+        "opis/json-schema": "^2.4",
         "phpunit/phpunit": "^12.0"
     },
     "autoload": {
