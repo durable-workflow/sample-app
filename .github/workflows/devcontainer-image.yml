@@ -16,6 +16,7 @@ on:
       - microservice/composer.lock
       - package.json
       - package-lock.json
+      - scripts/ci/qualify-devcontainer-database-overrides.sh
       - scripts/ci/qualify-devcontainer-image.sh
       - scripts/ci/summarize-devcontainer-evidence.py
   schedule:

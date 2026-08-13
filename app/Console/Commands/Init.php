@@ -95,18 +95,18 @@ class Init extends Command
     protected function seedEnvDefaults(): void
     {
         $defaults = [
-            'DB_HOST' => 'mysql',
-            'DB_DATABASE' => 'sample',
-            'DB_USERNAME' => 'laravel',
-            'DB_PASSWORD' => 'password',
+            'DB_HOST' => $this->runtimeEnvironmentValue('DB_HOST', 'mysql'),
+            'DB_DATABASE' => $this->runtimeEnvironmentValue('DB_DATABASE', 'sample'),
+            'DB_USERNAME' => $this->runtimeEnvironmentValue('DB_USERNAME', 'laravel'),
+            'DB_PASSWORD' => $this->runtimeEnvironmentValue('DB_PASSWORD', 'password'),
             'QUEUE_CONNECTION' => 'redis',
             'CACHE_STORE' => 'redis',
             'REDIS_HOST' => 'redis',
-            'SHARED_DB_HOST' => 'mysql',
+            'SHARED_DB_HOST' => $this->runtimeEnvironmentValue('SHARED_DB_HOST', 'mysql'),
             'SHARED_DB_PORT' => '3306',
-            'SHARED_DB_DATABASE' => 'sample',
-            'SHARED_DB_USERNAME' => 'laravel',
-            'SHARED_DB_PASSWORD' => 'password',
+            'SHARED_DB_DATABASE' => $this->runtimeEnvironmentValue('SHARED_DB_DATABASE', 'sample'),
+            'SHARED_DB_USERNAME' => $this->runtimeEnvironmentValue('SHARED_DB_USERNAME', 'laravel'),
+            'SHARED_DB_PASSWORD' => $this->runtimeEnvironmentValue('SHARED_DB_PASSWORD', 'password'),
         ];
 
         foreach ($defaults as $key => $value) {
@@ -114,6 +114,13 @@ class Init extends Command
         }
 
         $this->reloadEnvConfig();
+    }
+
+    protected function runtimeEnvironmentValue(string $key, string $default): string
+    {
+        $value = getenv($key);
+
+        return is_string($value) && $value !== '' ? $value : $default;
     }
 
     /**

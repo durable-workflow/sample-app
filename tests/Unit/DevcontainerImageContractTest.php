@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Console\Commands\Init;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
@@ -49,6 +50,31 @@ final class DevcontainerImageContractTest extends TestCase
             );
         }
 
+        foreach (['DB_DATABASE', 'SHARED_DB_DATABASE'] as $key) {
+            $this->assertSame('${DB_DATABASE:-sample}', $services['laravel']['environment'][$key] ?? null);
+        }
+        foreach (['DB_USERNAME', 'SHARED_DB_USERNAME'] as $key) {
+            $this->assertSame('${DB_USERNAME:-laravel}', $services['laravel']['environment'][$key] ?? null);
+        }
+        foreach (['DB_PASSWORD', 'SHARED_DB_PASSWORD'] as $key) {
+            $this->assertSame('${DB_PASSWORD:-password}', $services['laravel']['environment'][$key] ?? null);
+        }
+        $this->assertSame('mysql', $services['laravel']['environment']['DB_HOST'] ?? null);
+        $this->assertSame('mysql', $services['laravel']['environment']['SHARED_DB_HOST'] ?? null);
+        $this->assertSame('mysql', $services['microservice']['environment']['SHARED_DB_HOST'] ?? null);
+        $this->assertSame(
+            '${DB_DATABASE:-sample}',
+            $services['microservice']['environment']['SHARED_DB_DATABASE'] ?? null,
+        );
+        $this->assertSame(
+            '${DB_USERNAME:-laravel}',
+            $services['microservice']['environment']['SHARED_DB_USERNAME'] ?? null,
+        );
+        $this->assertSame(
+            '${DB_PASSWORD:-password}',
+            $services['microservice']['environment']['SHARED_DB_PASSWORD'] ?? null,
+        );
+
         $this->assertSame('../../:/var/www/html', $services['laravel']['volumes'][0] ?? null);
         $this->assertSame('laravel-vendor:/var/www/html/vendor', $services['laravel']['volumes'][1] ?? null);
         $this->assertSame('/var/run/docker.sock:/var/run/docker.sock', $services['laravel']['volumes'][2] ?? null);
@@ -70,6 +96,14 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertSame(
             ['/usr/local/bin/seed-mysql-volume'],
             $services['mysql-seed']['entrypoint'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'MYSQL_DATABASE' => '${DB_DATABASE:-sample}',
+                'MYSQL_USER' => '${DB_USERNAME:-laravel}',
+                'MYSQL_PASSWORD' => '${DB_PASSWORD:-password}',
+            ],
+            $services['mysql-seed']['environment'] ?? null,
         );
         $this->assertSame(
             [
@@ -287,7 +321,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertTrue(is_executable($this->repoPath('.devcontainer/docker/seed-mysql-volume')));
     }
 
-    public function test_mysql_seed_initializes_only_fresh_or_interrupted_data_directories(): void
+    public function test_mysql_seed_uses_the_preseed_only_for_the_default_fresh_volume(): void
     {
         $filesystem = new Filesystem;
         $temporaryDirectory = sys_get_temp_dir().'/sample-app-mysql-seed-'.bin2hex(random_bytes(8));
@@ -295,6 +329,8 @@ final class DevcontainerImageContractTest extends TestCase
         $seedArchive = $temporaryDirectory.'/mysql-seed.tar';
         $dataDirectory = $temporaryDirectory.'/data';
         $interruptedDirectory = $temporaryDirectory.'/interrupted';
+        $overrideDirectory = $temporaryDirectory.'/override';
+        $interruptedOverrideDirectory = $temporaryDirectory.'/interrupted-override';
         $unexpectedDirectory = $temporaryDirectory.'/unexpected';
         $filesystem->mkdir([
             $seedSource.'/mysql',
@@ -302,6 +338,8 @@ final class DevcontainerImageContractTest extends TestCase
             $seedSource.'/testing',
             $dataDirectory,
             $interruptedDirectory,
+            $overrideDirectory,
+            $interruptedOverrideDirectory,
             $unexpectedDirectory,
         ], 0700);
         file_put_contents($seedSource.'/.sample-app-codespaces-seed', "seed\n");
@@ -328,8 +366,17 @@ BASH);
             $environment = [
                 'PATH' => $temporaryDirectory.':'.getenv('PATH'),
                 'FAKE_ID_UID' => '0',
+                'MYSQL_DATABASE' => 'sample',
+                'MYSQL_USER' => 'laravel',
+                'MYSQL_PASSWORD' => 'password',
                 'SAMPLE_APP_MYSQL_DATA_DIR' => $dataDirectory,
                 'SAMPLE_APP_MYSQL_SEED_ARCHIVE' => $seedArchive,
+            ];
+            $overrideEnvironment = [
+                ...$environment,
+                'MYSQL_DATABASE' => 'custom_database',
+                'MYSQL_USER' => 'custom_user',
+                'MYSQL_PASSWORD' => 'custom_password',
             ];
             $seed = new Process(
                 ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
@@ -347,6 +394,21 @@ BASH);
             $seed->mustRun();
             $this->assertFileExists($dataDirectory.'/sample/persistent-user-data');
 
+            $existingOverride = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: $overrideEnvironment,
+            );
+            $existingOverride->mustRun();
+            $this->assertFileExists($dataDirectory.'/sample/persistent-user-data');
+
+            $freshOverride = new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: [...$overrideEnvironment, 'SAMPLE_APP_MYSQL_DATA_DIR' => $overrideDirectory],
+            );
+            $freshOverride->mustRun();
+            $this->assertStringContainsString('leaving the fresh volume', $freshOverride->getOutput());
+            $this->assertSame([], array_values(array_diff(scandir($overrideDirectory) ?: [], ['.', '..'])));
+
             file_put_contents($interruptedDirectory.'/.sample-app-seed-in-progress', "partial\n");
             file_put_contents($interruptedDirectory.'/partial-data', "replace\n");
             (new Process(
@@ -356,6 +418,20 @@ BASH);
             $this->assertFileDoesNotExist($interruptedDirectory.'/partial-data');
             $this->assertFileExists($interruptedDirectory.'/sample/application-table');
             $this->assertFileDoesNotExist($interruptedDirectory.'/.sample-app-seed-in-progress');
+
+            file_put_contents($interruptedOverrideDirectory.'/.sample-app-seed-in-progress', "partial\n");
+            file_put_contents($interruptedOverrideDirectory.'/partial-data', "replace\n");
+            (new Process(
+                ['bash', $this->repoPath('.devcontainer/docker/seed-mysql-volume')],
+                env: [
+                    ...$overrideEnvironment,
+                    'SAMPLE_APP_MYSQL_DATA_DIR' => $interruptedOverrideDirectory,
+                ],
+            ))->mustRun();
+            $this->assertSame(
+                [],
+                array_values(array_diff(scandir($interruptedOverrideDirectory) ?: [], ['.', '..'])),
+            );
 
             file_put_contents($unexpectedDirectory.'/unknown-data', "unknown\n");
             $unexpected = new Process(
@@ -375,6 +451,58 @@ BASH);
             $this->assertSame(1, $nonRoot->getExitCode());
         } finally {
             $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_setup_persists_runtime_database_overrides(): void
+    {
+        $overrides = [
+            'DB_HOST' => 'database.internal',
+            'DB_DATABASE' => 'custom_database',
+            'DB_USERNAME' => 'custom_user',
+            'DB_PASSWORD' => 'custom_password',
+            'SHARED_DB_HOST' => 'shared-database.internal',
+            'SHARED_DB_DATABASE' => 'custom_shared_database',
+            'SHARED_DB_USERNAME' => 'custom_shared_user',
+            'SHARED_DB_PASSWORD' => 'custom_shared_password',
+        ];
+        $originalEnvironment = [];
+        $command = new class extends Init
+        {
+            /** @var array<string, string> */
+            public array $seededEnvironment = [];
+
+            /** @return array<string, string> */
+            public function seedEnvironment(): array
+            {
+                $this->seedEnvDefaults();
+
+                return $this->seededEnvironment;
+            }
+
+            protected function setEnvVariable(string $key, string $value): void
+            {
+                $this->seededEnvironment[$key] = $value;
+            }
+
+            protected function reloadEnvConfig(): void {}
+        };
+
+        try {
+            foreach ($overrides as $key => $value) {
+                $originalEnvironment[$key] = getenv($key);
+                putenv("{$key}={$value}");
+            }
+
+            $seededEnvironment = $command->seedEnvironment();
+
+            foreach ($overrides as $key => $value) {
+                $this->assertSame($value, $seededEnvironment[$key] ?? null);
+            }
+        } finally {
+            foreach ($originalEnvironment as $key => $value) {
+                putenv($value === false ? $key : "{$key}={$value}");
+            }
         }
     }
 
@@ -647,6 +775,7 @@ BASH,
     public function test_qualification_never_builds_and_records_fresh_and_warm_phases(): void
     {
         $script = $this->contents('scripts/ci/qualify-devcontainer-image.sh');
+        $databaseOverrides = $this->contents('scripts/ci/qualify-devcontainer-database-overrides.sh');
         $entrypoint = $this->contents('.devcontainer/docker/start-container');
 
         $this->assertStringNotContainsString('docker compose build', $script);
@@ -678,6 +807,16 @@ BASH,
         $this->assertStringContainsString('docker version >/dev/null', $script);
         $this->assertStringContainsString('docker compose version >/dev/null', $script);
         $this->assertStringContainsString('second_app_key', $script);
+        $this->assertStringContainsString('qualify-devcontainer-database-overrides.sh', $script);
+        $this->assertStringContainsString('database_override_ms', $script);
+        $this->assertStringContainsString('DB_DATABASE=codespaces_override', $databaseOverrides);
+        $this->assertStringContainsString('test ! -e /var/lib/mysql/.sample-app-codespaces-seed', $databaseOverrides);
+        $this->assertStringContainsString('php artisan migrate:status --pending=1', $databaseOverrides);
+        $this->assertStringContainsString('codespaces_testing_probe', $databaseOverrides);
+        $this->assertStringContainsString('codespaces-override-probe@example.invalid', $databaseOverrides);
+        $this->assertStringContainsString('run --rm --no-deps mysql-seed', $databaseOverrides);
+        $this->assertStringContainsString('force-recreate --wait laravel microservice', $databaseOverrides);
+        $this->assertTrue(is_executable($this->repoPath('scripts/ci/qualify-devcontainer-database-overrides.sh')));
         $this->assertStringContainsString('status --porcelain --untracked-files=no', $script);
         $this->assertStringContainsString('http://localhost/', $script);
         $this->assertStringContainsString('exec -T laravel sshd -t', $script);
@@ -701,6 +840,7 @@ BASH,
             'container_readiness',
             'dependency_bootstrap',
             'application_readiness',
+            'database_override_ms',
             'fresh_total_ms',
             'warm_rebuild_ms',
         ] as $timingKey) {

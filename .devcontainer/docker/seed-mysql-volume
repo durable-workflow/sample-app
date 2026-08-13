@@ -5,15 +5,12 @@ set -euo pipefail
 data_dir="${SAMPLE_APP_MYSQL_DATA_DIR:-/var/lib/mysql}"
 seed_archive="${SAMPLE_APP_MYSQL_SEED_ARCHIVE:-/usr/local/share/sample-app/mysql-datadir.tar}"
 progress_marker="${data_dir}/.sample-app-seed-in-progress"
+requested_database="${MYSQL_DATABASE:-sample}"
+requested_user="${MYSQL_USER:-laravel}"
+requested_password="${MYSQL_PASSWORD:-password}"
 
 if [[ "$(id -u)" != 0 ]]; then
     printf '%s\n' 'The MySQL seed service must run as root so numeric database ownership is preserved.' >&2
-    exit 1
-fi
-
-if [[ ! -s "$seed_archive" ]]; then
-    printf 'The MySQL seed archive is missing or empty: %s\n' "$seed_archive" >&2
-    printf '%s\n' 'Pull the current development image and rebuild the Codespace.' >&2
     exit 1
 fi
 
@@ -29,6 +26,19 @@ elif [[ -n "$(find "$data_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
     printf 'Refusing to seed non-empty MySQL data directory without an initialized system database: %s\n' \
         "$data_dir" >&2
     printf '%s\n' 'Inspect or remove the affected Codespaces volume before rebuilding.' >&2
+    exit 1
+fi
+
+if [[ "$requested_database" != sample \
+    || "$requested_user" != laravel \
+    || "$requested_password" != password ]]; then
+    printf '%s\n' 'Database overrides requested; leaving the fresh volume for MariaDB initialization.'
+    exit 0
+fi
+
+if [[ ! -s "$seed_archive" ]]; then
+    printf 'The MySQL seed archive is missing or empty: %s\n' "$seed_archive" >&2
+    printf '%s\n' 'Pull the current development image and rebuild the Codespace.' >&2
     exit 1
 fi
 

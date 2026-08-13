@@ -90,6 +90,9 @@ export DOCKER_DEFAULT_PLATFORM="$platform"
 export SAMPLE_APP_DEVCONTAINER_IMAGE="$image"
 export SAMPLE_APP_DEVCONTAINER_PULL_POLICY=never
 export SAMPLE_APP_UID="$(id -u)"
+export DB_DATABASE=sample
+export DB_USERNAME=laravel
+export DB_PASSWORD=password
 export APP_PORT=18080
 export MICROSERVICE_PORT=18001
 export VITE_PORT=15173
@@ -132,6 +135,16 @@ verify_database_schema() {
                 --execute="$1"
         }
 
+        query_testing_database() {
+            mariadb \
+                --user="$MYSQL_USER" \
+                --password="$MYSQL_PASSWORD" \
+                --database=testing \
+                --batch \
+                --skip-column-names \
+                --execute="$1"
+        }
+
         expected_migration_count=49
         expected_table_count=49
         migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
@@ -146,6 +159,42 @@ verify_database_schema() {
             echo "Codespaces schema created ${table_count} tables; expected ${expected_table_count}." >&2
             exit 1
         fi
+
+        query_testing_database "DROP TABLE IF EXISTS codespaces_testing_probe"
+        query_testing_database "CREATE TABLE codespaces_testing_probe (value VARCHAR(32) NOT NULL)"
+        query_testing_database "INSERT INTO codespaces_testing_probe (value) VALUES (\"usable\")"
+        [ "$(query_testing_database "SELECT value FROM codespaces_testing_probe")" = usable ]
+        query_testing_database "DROP TABLE codespaces_testing_probe"
+    '
+}
+
+record_database_persistence_probe() {
+    "${compose[@]}" exec -T mysql sh -euc '
+        mariadb \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            --database="$MYSQL_DATABASE" \
+            --execute="DELETE FROM users WHERE email = \"codespaces-default-probe@example.invalid\";
+                INSERT INTO users (name, email, password, created_at, updated_at)
+                VALUES (\"Codespaces default probe\", \"codespaces-default-probe@example.invalid\", \"not-a-login\", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+    '
+}
+
+verify_and_remove_database_persistence_probe() {
+    "${compose[@]}" exec -T mysql sh -euc '
+        persisted_count="$(mariadb \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            --database="$MYSQL_DATABASE" \
+            --batch \
+            --skip-column-names \
+            --execute="SELECT COUNT(*) FROM users WHERE email = \"codespaces-default-probe@example.invalid\"")"
+        [ "$persisted_count" = 1 ]
+        mariadb \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            --database="$MYSQL_DATABASE" \
+            --execute="DELETE FROM users WHERE email = \"codespaces-default-probe@example.invalid\""
     '
 }
 
@@ -232,6 +281,7 @@ if [[ -z "$seed_container_id" \
     exit 1
 fi
 
+"${compose[@]}" exec -T mysql test -e /var/lib/mysql/.sample-app-codespaces-seed
 verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
@@ -318,12 +368,14 @@ fi
 '
 
 warm_rebuild_started_ms="$(timestamp_ms)"
+record_database_persistence_probe
 "${compose[@]}" run --rm --no-deps mysql-seed
 verify_database_schema
 "${compose[@]}" stop laravel microservice mysql
 "${compose[@]}" up --detach --no-build --wait mysql redis
 "${compose[@]}" up --detach --no-build --force-recreate --wait laravel microservice
 "${compose[@]}" exec -T --user laravel laravel curl --fail --silent http://localhost/up >/dev/null
+verify_and_remove_database_persistence_probe
 "${compose[@]}" exec -T --user laravel laravel bash -euc '
     migration_name=create_codespaces_future_migration_probe_table
     php artisan make:migration "$migration_name" \
@@ -366,6 +418,10 @@ if (( warm_rebuild_ms >= max_warm_ms )); then
     exit 1
 fi
 
+database_override_started_ms="$(timestamp_ms)"
+"${repo_root}/scripts/ci/qualify-devcontainer-database-overrides.sh"
+database_override_ms="$(duration_ms "$database_override_started_ms")"
+
 mkdir -p "$(dirname "$timing_output")"
 IMAGE="$image" \
 PLATFORM="$platform" \
@@ -381,6 +437,7 @@ IMAGE_BUILD_MS="$image_build_ms" \
 CONTAINER_READINESS_MS="$container_readiness_ms" \
 DEPENDENCY_BOOTSTRAP_MS="$dependency_bootstrap_ms" \
 APPLICATION_READINESS_MS="$application_readiness_ms" \
+DATABASE_OVERRIDE_MS="$database_override_ms" \
 FRESH_TOTAL_MS="$fresh_total_ms" \
 REGISTRY="$registry" \
 REQUIRE_ANONYMOUS_PULL="$require_anonymous_pull" \
@@ -423,6 +480,7 @@ payload = {
         "container_readiness": int(os.environ["CONTAINER_READINESS_MS"]),
         "dependency_bootstrap": int(os.environ["DEPENDENCY_BOOTSTRAP_MS"]),
         "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
+        "database_override": int(os.environ["DATABASE_OVERRIDE_MS"]),
         "warm_rebuild": int(os.environ["WARM_REBUILD_MS"]),
     },
     "fresh_total_ms": int(os.environ["FRESH_TOTAL_MS"]),

@@ -8,6 +8,14 @@ services:
             - 'host.docker.internal:host-gateway'
         environment:
             SAMPLE_APP_UID: '${SAMPLE_APP_UID:-}'
+            DB_HOST: mysql
+            DB_DATABASE: '${DB_DATABASE:-sample}'
+            DB_USERNAME: '${DB_USERNAME:-laravel}'
+            DB_PASSWORD: '${DB_PASSWORD:-password}'
+            SHARED_DB_HOST: mysql
+            SHARED_DB_DATABASE: '${DB_DATABASE:-sample}'
+            SHARED_DB_USERNAME: '${DB_USERNAME:-laravel}'
+            SHARED_DB_PASSWORD: '${DB_PASSWORD:-password}'
         ports:
             - '${APP_PORT:-18080}:80'
             - '${VITE_PORT:-15173}:${VITE_PORT:-15173}'
@@ -35,6 +43,10 @@ services:
             - 'host.docker.internal:host-gateway'
         environment:
             SAMPLE_APP_UID: '${SAMPLE_APP_UID:-}'
+            SHARED_DB_HOST: mysql
+            SHARED_DB_DATABASE: '${DB_DATABASE:-sample}'
+            SHARED_DB_USERNAME: '${DB_USERNAME:-laravel}'
+            SHARED_DB_PASSWORD: '${DB_PASSWORD:-password}'
         working_dir: /var/www/html/microservice
         ports:
             - '${MICROSERVICE_PORT:-18001}:80'
@@ -54,6 +66,10 @@ services:
         pull_policy: '${SAMPLE_APP_DEVCONTAINER_PULL_POLICY:-always}'
         user: root
         entrypoint: ["/usr/local/bin/seed-mysql-volume"]
+        environment:
+            MYSQL_DATABASE: '${DB_DATABASE:-sample}'
+            MYSQL_USER: '${DB_USERNAME:-laravel}'
+            MYSQL_PASSWORD: '${DB_PASSWORD:-password}'
         volumes:
             - type: volume
               source: laravel-mysql
