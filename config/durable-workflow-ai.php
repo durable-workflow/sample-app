@@ -10,6 +10,12 @@ return [
     // unavailable unless the provider has an independent cleanup guarantee.
     'lease_ttl_seconds' => (int) env('DURABLE_AI_SANDBOX_LEASE_TTL', 900),
 
+    'demo' => [
+        // The package enforces this as a local-provider-only lifecycle event.
+        // Applications can disable the Sample App command boundary separately.
+        'allow_local_loss_injection' => (bool) env('DURABLE_AI_ALLOW_LOCAL_LOSS_INJECTION', true),
+    ],
+
     'drivers' => [
         // Development/test-only. This subprocess workspace runs with the
         // Laravel worker's privileges and is not a security isolation boundary.

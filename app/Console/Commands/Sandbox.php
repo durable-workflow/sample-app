@@ -13,27 +13,50 @@ class Sandbox extends Command
     protected $signature = 'app:sandbox
         {--provider= : Sandbox provider override (defaults to config(\'durable-workflow-ai.default\'))}
         {--snapshot-every=2 : Snapshot the workspace after every N tool calls (0 disables snapshots)}
-        {--inject-loss-after= : For the local provider, evict the sandbox after N successful tool calls to exercise restore}
+        {--inject-loss-after= : Inject local sandbox loss after N completed tool calls without journaling a tool effect}
         {--wait-seconds=180 : Seconds to wait for the workflow to reach a terminal state}';
 
     protected $description = 'Run the durable sandbox orchestration sample against the configured provider';
 
     public function handle(): int
     {
-        $toolCalls = $this->demoToolCalls($this->positiveIntOption('inject-loss-after'));
+        $toolCalls = $this->demoToolCalls();
         $provider = $this->stringOption('provider');
         $snapshotEvery = (int) $this->option('snapshot-every');
+        $injectLossAfter = $this->positiveIntOption('inject-loss-after');
         $waitSeconds = $this->positiveIntOption('wait-seconds') ?? 180;
+        $selectedProvider = $provider ?? (string) config('durable-workflow-ai.default');
+
+        if ($injectLossAfter !== null && $selectedProvider !== 'local') {
+            $this->error('Loss injection is development/test-only and requires the local sandbox provider.');
+
+            return self::FAILURE;
+        }
+
+        if ($injectLossAfter !== null
+            && ! (bool) config('durable-workflow-ai.demo.allow_local_loss_injection', false)) {
+            $this->error('Local sandbox loss injection is disabled by application configuration.');
+
+            return self::FAILURE;
+        }
 
         $this->line(sprintf(
             'Starting sandbox agent workflow against [%s] provider with %d tool call%s...',
-            $provider ?? config('durable-workflow-ai.default'),
+            $selectedProvider,
             count($toolCalls),
             count($toolCalls) === 1 ? '' : 's',
         ));
 
         $workflow = WorkflowStub::make(SandboxAgentWorkflow::class);
-        $workflow->start($toolCalls, $provider, $snapshotEvery);
+        $workflow->start(
+            $toolCalls,
+            $provider,
+            $snapshotEvery,
+            false,
+            [],
+            false,
+            $injectLossAfter,
+        );
 
         $deadline = time() + $waitSeconds;
 
@@ -86,23 +109,14 @@ class Sandbox extends Command
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function demoToolCalls(?int $injectLossAfter = null): array
+    private function demoToolCalls(): array
     {
-        $calls = [
+        return [
             ['type' => 'write_file', 'args' => ['path' => 'README.md', 'contents' => "# durable sandbox demo\n"]],
             ['type' => 'shell', 'args' => ['command' => 'ls -1']],
             ['type' => 'read_file', 'args' => ['path' => 'README.md']],
             ['type' => 'shell', 'args' => ['command' => 'echo session-complete']],
         ];
-
-        if ($injectLossAfter !== null) {
-            array_splice($calls, $injectLossAfter, 0, [[
-                'type' => 'evict',
-                'args' => ['reason' => 'documented local recovery injection'],
-            ]]);
-        }
-
-        return $calls;
     }
 
     private function stringOption(string $name): ?string

@@ -41,12 +41,15 @@ run_sample() {
   local expected="$3"
   local output
   local status
+  local -a command_args
   local timeout_seconds="${SAMPLE_APP_SAMPLE_TIMEOUT_SECONDS:-180}"
+
+  read -r -a command_args <<< "$command"
 
   printf '\n==> %s\n' "$name"
 
   set +e
-  output="$(timeout "${timeout_seconds}s" docker compose exec -T app php artisan "$command" 2>&1)"
+  output="$(timeout "${timeout_seconds}s" docker compose exec -T app php artisan "${command_args[@]}" 2>&1)"
   status=$?
   set -e
 
@@ -148,6 +151,10 @@ run_sample "simple workflow" "app:workflow" "workflow_activity_other"
 run_sample "elapsed workflow" "app:elapsed" "Elapsed Time: [0-9]+ seconds"
 run_sample "microservice workflow" "app:microservice" "workflow_activity_other"
 run_sample "webhook workflow" "app:webhook" "Hello world"
+run_sample \
+  "sandbox checkpoint recovery" \
+  "app:sandbox --snapshot-every=2 --inject-loss-after=2" \
+  "Workflow complete\..*recoveries=1"
 
 if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
   printf '\n==> full sample-app conformance surface\n'

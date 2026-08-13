@@ -449,7 +449,7 @@ Run the sample with:
 ```bash
 php artisan app:sandbox                              # local subprocess provider
 php artisan app:sandbox --snapshot-every=2           # snapshot every 2 tool calls
-php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2  # force local restore
+php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2  # inject local loss after the checkpoint
 DURABLE_AI_SANDBOX_DRIVER=e2b E2B_API_KEY=… php artisan app:sandbox
 ```
 
@@ -525,7 +525,7 @@ In addition to the basic example workflow, you can try these other workflows inc
 
 * `php artisan app:ai` - NEW! Uses Laravel AI SDK to build a durable travel agent. The agent asks questions and books hotels, flights, and rental cars. If a booking error occurs, the workflow ensures prior bookings are canceled; an inactivity timeout closes the conversation without rolling back successful interactive bookings. For repeatable checks, pass one or more `--message="..."` options and optionally `--inactivity-timeout=5`; use `--inject-failure=hotel`, `--inject-failure=flight`, or `--inject-failure=car` to exercise compensation. `--booking-plan-json='{"text":"...","bookings":[...]}'` lets deterministic scripted checks run a single planned turn while still exercising the workflow, booking activities, and compensation.
 
-* `php artisan app:sandbox` - Package integration demo for `durable-workflow/ai`. The command dispatches a short tool sequence through the reusable sandbox workflow. Use `--snapshot-every=2 --inject-loss-after=2` to exercise local recovery, or set `DURABLE_AI_SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to use E2B Cloud. The local subprocess provider is development/test-only and is not a security isolation boundary; E2B suspend/resume is unavailable until paused resources have an independent durable cleanup deadline.
+* `php artisan app:sandbox` - Package integration demo for `durable-workflow/ai`. The command dispatches a short tool sequence through the reusable sandbox workflow. Use `--snapshot-every=2 --inject-loss-after=2` to inject one local lifecycle loss outside the tool journal and exercise recovery, or set `DURABLE_AI_SANDBOX_DRIVER=e2b` plus `E2B_API_KEY` to use E2B Cloud. The local subprocess provider is development/test-only and is not a security isolation boundary; E2B suspend/resume is unavailable until paused resources have an independent durable cleanup deadline.
 
 Try them out to see workflows in action across different use cases!
 

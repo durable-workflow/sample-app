@@ -10,7 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "durable-workflow/ai": "2.0.0-rc.3",
+        "durable-workflow/ai": "dev-main",
         "durable-workflow/sdk": "2.0.0-rc.14",
         "durable-workflow/waterline": "2.0.0-rc.15",
         "durable-workflow/workflow": "2.0.0-rc.14",

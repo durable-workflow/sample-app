@@ -4,9 +4,9 @@ This application is a small integration example for the reusable
 [`durable-workflow/ai`](https://github.com/durable-workflow/ai) package. The
 package owns provider contracts, handles, typed calls/results, lifecycle
 activities, recovery, leases, cleanup, E2B HTTP integration, and Laravel
-registration. Composer resolves the supported 2.0 prerelease channel, while
-`composer.lock` retains the exact package selected for this reproducible Sample
-App build. The Sample App keeps only:
+registration. Composer resolves the package's `main` source contract, while
+`composer.lock` retains the exact public commit selected for this reproducible
+Sample App build. The Sample App keeps only:
 
 - `app/Console/Commands/Sandbox.php`, which starts the package workflow with a
   short tool-call demonstration;
@@ -24,10 +24,13 @@ The `local` provider is a development/test-only subprocess workspace. It runs
 commands with the Laravel worker's privileges, is not a security isolation
 boundary, and must not execute untrusted input.
 
-The loss-injection command snapshots the workspace, removes the active local
-workspace, then demonstrates package recovery. Recovery restores the latest
-snapshot and replays every completed later operation, including nonzero exits,
-with the original stable operation IDs before continuing.
+The loss-injection command snapshots the workspace, then runs a dedicated local
+lifecycle injection after the second completed tool call. The injection removes
+the active workspace and enters package recovery without becoming a successful
+tool result or a reconstruction-journal entry. Recovery restores the latest
+snapshot, preserves the `README.md` written before that checkpoint, and
+continues with the read and final shell call. Genuine completed operations after
+a snapshot are still replayed with their original stable operation IDs.
 
 ## Run with E2B
 

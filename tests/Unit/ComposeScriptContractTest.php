@@ -28,6 +28,11 @@ final class ComposeScriptContractTest extends TestCase
             $script,
         );
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800', $script);
+        $this->assertStringContainsString(
+            '"app:sandbox --snapshot-every=2 --inject-loss-after=2"',
+            $script,
+        );
+        $this->assertStringContainsString('"Workflow complete\\..*recoveries=1"', $script);
         $this->assertStringContainsString('prepared_app_container_id="$(docker compose ps -q app)"', $script);
         $this->assertStringContainsString('prepared_worker_container_id="$(docker compose ps -q worker)"', $script);
         $this->assertStringContainsString('SAMPLE_APP_CONFORMANCE_REUSE_PREPARED=1', $script);
@@ -39,6 +44,7 @@ final class ComposeScriptContractTest extends TestCase
             "\n  restart_worker_after_schema_refresh\n",
             'run_sample "simple workflow"',
             'run_sample "webhook workflow"',
+            '"sandbox checkpoint recovery"',
             'SAMPLE_APP_CONFORMANCE_AFTER_SMOKE',
         );
     }

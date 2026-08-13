@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use DurableWorkflow\AI\Activities\DeleteSnapshotActivity;
+use DurableWorkflow\AI\Activities\DestroySandboxActivity;
+use DurableWorkflow\AI\Activities\DispatchToolCallActivity;
+use DurableWorkflow\AI\Activities\InjectSandboxLossActivity;
+use DurableWorkflow\AI\Activities\ProvisionSandboxActivity;
+use DurableWorkflow\AI\Activities\RestoreSandboxActivity;
+use DurableWorkflow\AI\Activities\SnapshotSandboxActivity;
 use DurableWorkflow\AI\Exceptions\UnsupportedSandboxCapabilityException;
 use DurableWorkflow\AI\Laravel\SandboxManager;
 use DurableWorkflow\AI\Providers\LocalSubprocessSandboxProvider;
@@ -12,6 +19,7 @@ use DurableWorkflow\AI\Workflows\SandboxAgentWorkflow;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
+use Workflow\V2\WorkflowStub;
 
 final class SandboxPackageIntegrationTest extends TestCase
 {
@@ -33,6 +41,112 @@ final class SandboxPackageIntegrationTest extends TestCase
         $this->assertNotContains(
             'suspendBetweenCalls',
             array_column(config('workflow_mcp.workflows.sandbox.arguments'), 'name'),
+        );
+    }
+
+    public function test_documented_loss_injection_recovers_the_snapshot_and_continues(): void
+    {
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'database.connections.shared' => [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+                'foreign_key_constraints' => true,
+            ],
+        ]);
+        Artisan::call('migrate:fresh', ['--force' => true]);
+        WorkflowStub::fake();
+        $workspaces = ['original' => []];
+        $snapshots = [];
+        $dispatches = [];
+        $injections = [];
+
+        WorkflowStub::mock(ProvisionSandboxActivity::class, [
+            'id' => 'original',
+            'provider' => 'local',
+            'metadata' => [],
+        ]);
+        WorkflowStub::mock(DispatchToolCallActivity::class, function ($context, array $handle, array $call) use (&$dispatches, &$workspaces): array {
+            $sandboxId = $handle['id'];
+            $type = $call['type'];
+            $args = $call['args'];
+            $dispatches[] = "{$sandboxId}:{$type}";
+
+            if ($type === 'write_file') {
+                $workspaces[$sandboxId][$args['path']] = $args['contents'];
+
+                return ['exit_code' => 0, 'stdout' => 'wrote '.$args['path'], 'stderr' => ''];
+            }
+
+            if ($type === 'read_file') {
+                return [
+                    'exit_code' => 0,
+                    'stdout' => $workspaces[$sandboxId][$args['path']] ?? '',
+                    'stderr' => '',
+                ];
+            }
+
+            return [
+                'exit_code' => 0,
+                'stdout' => $args['command'] === 'ls -1' ? "README.md\n" : "session-complete\n",
+                'stderr' => '',
+            ];
+        });
+        WorkflowStub::mock(SnapshotSandboxActivity::class, function ($context, array $handle) use (&$snapshots, &$workspaces): string {
+            $snapshotId = 'snapshot-'.(count($snapshots) + 1);
+            $snapshots[$snapshotId] = $workspaces[$handle['id']];
+
+            return $snapshotId;
+        });
+        WorkflowStub::mock(InjectSandboxLossActivity::class, function ($context, array $handle, string $operationId) use (&$injections, &$workspaces): string {
+            $injections[] = $operationId;
+            unset($workspaces[$handle['id']]);
+
+            return $operationId;
+        });
+        WorkflowStub::mock(RestoreSandboxActivity::class, function ($context, string $snapshotId) use (&$snapshots, &$workspaces): array {
+            $workspaces['restored'] = $snapshots[$snapshotId];
+
+            return ['id' => 'restored', 'provider' => 'local', 'metadata' => []];
+        });
+        WorkflowStub::mock(DeleteSnapshotActivity::class, true);
+        WorkflowStub::mock(DestroySandboxActivity::class, true);
+
+        $status = Artisan::call('app:sandbox', [
+            '--snapshot-every' => '2',
+            '--inject-loss-after' => '2',
+            '--wait-seconds' => '5',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $status, $output);
+        $this->assertStringContainsString('recoveries=1', $output);
+        $this->assertStringContainsString('# durable sandbox demo', $output);
+        $this->assertStringContainsString('session-complete', $output);
+        $this->assertSame([
+            'original:write_file',
+            'original:shell',
+            'restored:read_file',
+            'restored:shell',
+        ], $dispatches);
+        $this->assertCount(1, $injections);
+        $this->assertStringStartsWith('dwaiv1_', $injections[0]);
+        $this->assertSame("# durable sandbox demo\n", $workspaces['restored']['README.md']);
+    }
+
+    public function test_loss_injection_rejects_non_local_provider_configuration(): void
+    {
+        $status = Artisan::call('app:sandbox', [
+            '--provider' => 'e2b',
+            '--inject-loss-after' => '2',
+        ]);
+
+        $this->assertSame(1, $status);
+        $this->assertStringContainsString(
+            'requires the local sandbox provider',
+            Artisan::output(),
         );
     }
 

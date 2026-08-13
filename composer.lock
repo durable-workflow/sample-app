@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6dc8393a61d55ff4be007b5226c21a01",
+    "content-hash": "251310f4c164dada7132fd8a7a5e530e",
     "packages": [
         {
             "name": "apache/avro",
@@ -655,16 +655,16 @@
         },
         {
             "name": "durable-workflow/ai",
-            "version": "2.0.0-rc.3",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/ai.git",
-                "reference": "4a9a1c77f256a68ae5b494349fc3f8b636110569"
+                "reference": "e2fee66bb83d01b9df54f436a753e524895130f3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/ai/zipball/4a9a1c77f256a68ae5b494349fc3f8b636110569",
-                "reference": "4a9a1c77f256a68ae5b494349fc3f8b636110569",
+                "url": "https://api.github.com/repos/durable-workflow/ai/zipball/e2fee66bb83d01b9df54f436a753e524895130f3",
+                "reference": "e2fee66bb83d01b9df54f436a753e524895130f3",
                 "shasum": ""
             },
             "require": {
@@ -678,6 +678,7 @@
                 "phpstan/phpstan": "^2.1",
                 "phpunit/phpunit": "^11.0|^12.0"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -687,9 +688,11 @@
                 },
                 "durable-workflow": {
                     "contracts": {
-                        "sandbox-provider": "1.0"
+                        "sandbox-provider": "1.0",
+                        "sandbox-provider.snapshot-deletion": "1.0",
+                        "sandbox-provider.snapshot-reconciliation": "1.0"
                     },
-                    "product-train": "2.0.0-rc.3"
+                    "product-train": "2.0.0-rc.9"
                 }
             },
             "autoload": {
@@ -711,9 +714,9 @@
             ],
             "support": {
                 "issues": "https://github.com/durable-workflow/ai/issues",
-                "source": "https://github.com/durable-workflow/ai/tree/2.0.0-rc.3"
+                "source": "https://github.com/durable-workflow/ai/tree/main"
             },
-            "time": "2026-08-10T04:02:24+00:00"
+            "time": "2026-08-13T12:44:03+00:00"
         },
         {
             "name": "durable-workflow/sdk",
@@ -9326,7 +9329,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "durable-workflow/ai": 5,
+        "durable-workflow/ai": 20,
         "durable-workflow/sdk": 5,
         "durable-workflow/waterline": 5,
         "durable-workflow/workflow": 5
