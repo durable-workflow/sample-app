@@ -6,7 +6,6 @@ namespace App\Workflows\ServiceMode;
 
 use DurableWorkflow\Attribute\Workflow;
 use DurableWorkflow\Worker\WorkflowContext;
-use Generator;
 
 final class WelcomeWorkflow
 {
@@ -17,15 +16,15 @@ final class WelcomeWorkflow
     public const PYTHON_TASK_QUEUE = 'sample-service-python';
 
     #[Workflow(self::TYPE)]
-    public function run(WorkflowContext $context, string $name): Generator
+    public function run(WorkflowContext $context, string $name): array
     {
-        $prepared = yield $context->activity(
+        $prepared = $context->activity(
             PrepareWelcomeActivity::TYPE,
             [$name],
             ['start_to_close_timeout' => 30],
         );
 
-        $decorated = yield $context->activity(
+        $decorated = $context->activity(
             'sample.service-mode.python.decorate',
             [$prepared],
             [

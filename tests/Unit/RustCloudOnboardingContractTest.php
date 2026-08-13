@@ -18,7 +18,7 @@ final class RustCloudOnboardingContractTest extends TestCase
 
         preg_match('/^durable-workflow = "=(?<version>[^"]+)"$/m', $manifest, $match);
 
-        $this->assertSame('2.0.0-rc.12', $match['version'] ?? null);
+        $this->assertSame($this->qualifiedArtifactVersion('sdk-rust'), $match['version'] ?? null);
         $this->assertMatchesRegularExpression(
             '/name = "durable-workflow"\nversion = "'.preg_quote($match['version'], '/').'"/',
             $lock,
@@ -155,7 +155,7 @@ printf 'cargo-%s|%s|%s|%s|%s|%s\n' \
   "${DURABLE_WORKFLOW_RUNTIME_NAMESPACE-<unset>}" \
   "${DURABLE_WORKFLOW_TASK_QUEUE-<unset>}" >> "$RUST_CLOUD_ENV_LOG"
 if [[ "${1:-}" == "tree" ]]; then
-  printf '%s\n' 'durable-workflow v2.0.0-rc.12'
+  printf 'durable-workflow v%s\n' "${DURABLE_WORKFLOW_RUST_SDK_VERSION:?}"
 elif [[ "${1:-}" != "build" ]]; then
   printf 'unexpected cargo command: %s\n' "$*" >&2
   exit 64
@@ -176,7 +176,7 @@ printf '%s|%s|%s|%s|%s|%s\n' \
   "${DURABLE_WORKFLOW_RUNTIME_NAMESPACE-<unset>}" \
   "${DURABLE_WORKFLOW_TASK_QUEUE-<unset>}" >> "$RUST_CLOUD_ENV_LOG"
 if [[ "$role" == "dw-version" ]]; then
-  printf '%s\n' 'dw 2.0.0-rc.12'
+  printf 'dw %s\n' "${DURABLE_WORKFLOW_CLI_VERSION:?}"
 elif [[ "${RUST_CLOUD_PROBE_CLI_FAILURE:-0}" == "1" ]]; then
   printf '%s\n' 'controlled workflow failure' >&2
   exit 23
@@ -227,10 +227,10 @@ PYTHON);
                 'CARGO_TARGET_DIR' => $targetDirectory,
                 'DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $this->repoPath('tests/Fixtures/release-candidate-artifact-tuple.json'),
                 'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',
-                'DURABLE_WORKFLOW_CLI_VERSION' => '2.0.0-rc.12',
+                'DURABLE_WORKFLOW_CLI_VERSION' => $this->qualifiedArtifactVersion('cli'),
                 'DURABLE_WORKFLOW_RUNTIME_NAMESPACE' => 'example',
                 'DURABLE_WORKFLOW_RUNTIME_URL' => 'https://cloud.example/api/runtime/v1/namespaces/example',
-                'DURABLE_WORKFLOW_RUST_SDK_VERSION' => '2.0.0-rc.12',
+                'DURABLE_WORKFLOW_RUST_SDK_VERSION' => $this->qualifiedArtifactVersion('sdk-rust'),
                 'DURABLE_WORKFLOW_TASK_QUEUE' => 'credential-probe',
                 'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-secret',
                 'RUST_CLOUD_ENV_LOG' => $environmentLog,
@@ -323,6 +323,20 @@ PYTHON);
     {
         file_put_contents($path, $contents);
         chmod($path, 0700);
+    }
+
+    private function qualifiedArtifactVersion(string $artifact): string
+    {
+        $tuple = json_decode(
+            (string) file_get_contents($this->repoPath('polyglot/qualified-artifact-tuple.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        $version = $tuple['artifacts'][$artifact] ?? null;
+        $this->assertIsString($version);
+
+        return $version;
     }
 
     private function repoPath(string $path): string
