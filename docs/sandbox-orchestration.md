@@ -4,8 +4,9 @@ This application is a small integration example for the reusable
 [`durable-workflow/ai`](https://github.com/durable-workflow/ai) package. The
 package owns provider contracts, handles, typed calls/results, lifecycle
 activities, recovery, leases, cleanup, E2B HTTP integration, and Laravel
-registration. The app pins the package's `2.0.0-rc.3` release candidate and can
-install that published artifact from Packagist. The Sample App keeps only:
+registration. Composer resolves the supported 2.0 prerelease channel, while
+`composer.lock` retains the exact package selected for this reproducible Sample
+App build. The Sample App keeps only:
 
 - `app/Console/Commands/Sandbox.php`, which starts the package workflow with a
   short tool-call demonstration;
@@ -53,7 +54,8 @@ deduplication. An uncertain retry after execution but before acknowledgement can
 therefore repeat a mutating tool effect.
 
 See the package's
-[delivery and recovery contract](https://github.com/durable-workflow/ai/blob/2.0.0-rc.3/docs/delivery-and-recovery.md)
+[delivery and recovery contract](https://github.com/durable-workflow/ai/blob/main/docs/delivery-and-recovery.md)
 and
-[provider-author guide](https://github.com/durable-workflow/ai/blob/2.0.0-rc.3/docs/provider-author-guide.md)
-for the versioned public contract and third-party adapter requirements.
+[provider-author guide](https://github.com/durable-workflow/ai/blob/main/docs/provider-author-guide.md)
+for the supported-channel contract and third-party adapter requirements. Use
+the package ref recorded in `composer.lock` when reproducing this exact build.

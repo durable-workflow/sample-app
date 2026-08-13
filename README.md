@@ -115,11 +115,12 @@ Check the two observability surfaces separately:
 
 Waterline proves that the durable run exists and shows what the engine or
 standalone Server committed. Worker metrics remain a separate runtime surface.
-Minimal Python worker Prometheus wiring uses the moving 2.0 prerelease
-constraint rather than a copied release-candidate number:
+Minimal Python worker Prometheus wiring uses the compatibility-qualified SDK
+from the public quickstart contract:
 
 ```bash
-python -m pip install --pre 'durable-workflow[prometheus]~=2.0'
+curl -fsSL https://durable-workflow.com/install-sdk.sh | \
+  DURABLE_WORKFLOW_PYTHON_EXTRAS=prometheus sh -s -- python
 ```
 
 ```python
