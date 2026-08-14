@@ -1,4 +1,5 @@
 {
+    "name": "sample-app",
     "private": true,
     "type": "module",
     "scripts": {
