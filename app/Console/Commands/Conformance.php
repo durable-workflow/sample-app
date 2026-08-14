@@ -135,7 +135,7 @@ class Conformance extends Command
         $this->runProcessSurface(
             'sandbox_snapshot',
             ['php', 'artisan', 'app:sandbox', '--snapshot-every=2', '--wait-seconds=180'],
-            '/Workflow complete\..*snap_/s',
+            '/Workflow complete\..*snapshots=created:2,cleaned:2,retained:none/s',
             self::SANDBOX_PROCESS_TIMEOUT_SECONDS,
         );
         $this->runProcessSurface(

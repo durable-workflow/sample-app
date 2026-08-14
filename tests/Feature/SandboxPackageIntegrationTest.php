@@ -44,19 +44,47 @@ final class SandboxPackageIntegrationTest extends TestCase
         );
     }
 
+    public function test_snapshot_command_reports_created_and_cleaned_workflow_owned_checkpoints(): void
+    {
+        $this->configureWorkflowStorage();
+        WorkflowStub::fake();
+
+        WorkflowStub::mock(ProvisionSandboxActivity::class, [
+            'id' => 'sandbox-1',
+            'provider' => 'local',
+            'metadata' => [],
+        ]);
+        WorkflowStub::mock(DispatchToolCallActivity::class, [
+            'exit_code' => 0,
+            'stdout' => 'ok',
+            'stderr' => '',
+        ]);
+        WorkflowStub::mock(SnapshotSandboxActivity::class, function (): string {
+            static $snapshot = 0;
+
+            return 'snapshot-'.++$snapshot;
+        });
+        WorkflowStub::mock(DeleteSnapshotActivity::class, true);
+        WorkflowStub::mock(DestroySandboxActivity::class, true);
+
+        $status = Artisan::call('app:sandbox', [
+            '--snapshot-every' => '2',
+            '--wait-seconds' => '5',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $status, $output);
+        $this->assertMatchesRegularExpression(
+            '/Workflow complete\..*recoveries=0 snapshots=created:2,cleaned:2,retained:none/',
+            $output,
+        );
+        WorkflowStub::assertDispatchedTimes(SnapshotSandboxActivity::class, 2);
+        WorkflowStub::assertDispatchedTimes(DeleteSnapshotActivity::class, 2);
+    }
+
     public function test_documented_loss_injection_recovers_the_snapshot_and_continues(): void
     {
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => ':memory:',
-            'database.connections.shared' => [
-                'driver' => 'sqlite',
-                'database' => ':memory:',
-                'prefix' => '',
-                'foreign_key_constraints' => true,
-            ],
-        ]);
-        Artisan::call('migrate:fresh', ['--force' => true]);
+        $this->configureWorkflowStorage();
         WorkflowStub::fake();
         $workspaces = ['original' => []];
         $snapshots = [];
@@ -123,6 +151,10 @@ final class SandboxPackageIntegrationTest extends TestCase
 
         $this->assertSame(0, $status, $output);
         $this->assertStringContainsString('recoveries=1', $output);
+        $this->assertStringContainsString(
+            'snapshots=created:2,cleaned:2,retained:none',
+            $output,
+        );
         $this->assertStringContainsString('# durable sandbox demo', $output);
         $this->assertStringContainsString('session-complete', $output);
         $this->assertSame([
@@ -134,6 +166,7 @@ final class SandboxPackageIntegrationTest extends TestCase
         $this->assertCount(1, $injections);
         $this->assertStringStartsWith('dwaiv1_', $injections[0]);
         $this->assertSame("# durable sandbox demo\n", $workspaces['restored']['README.md']);
+        WorkflowStub::assertDispatchedTimes(DeleteSnapshotActivity::class, 2);
     }
 
     public function test_loss_injection_rejects_non_local_provider_configuration(): void
@@ -171,5 +204,20 @@ final class SandboxPackageIntegrationTest extends TestCase
         }
 
         Http::assertNothingSent();
+    }
+
+    private function configureWorkflowStorage(): void
+    {
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'database.connections.shared' => [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+                'foreign_key_constraints' => true,
+            ],
+        ]);
+        Artisan::call('migrate:fresh', ['--force' => true]);
     }
 }

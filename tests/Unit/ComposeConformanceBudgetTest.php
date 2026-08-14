@@ -259,7 +259,7 @@ case "$*" in
     printf 'Hello world\n'
     ;;
   *"php artisan app:sandbox --snapshot-every=2 --inject-loss-after=2"*)
-    printf 'Workflow complete. provider=local sandbox=fake recoveries=1 snapshots=none\n'
+    printf 'Workflow complete. provider=local sandbox=fake recoveries=1 snapshots=created:2,cleaned:2,retained:none\n'
     ;;
 esac
 

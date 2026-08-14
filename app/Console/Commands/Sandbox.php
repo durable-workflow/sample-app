@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use DurableWorkflow\AI\Activities\DeleteSnapshotActivity;
+use DurableWorkflow\AI\Activities\SnapshotSandboxActivity;
 use DurableWorkflow\AI\Workflows\SandboxAgentWorkflow;
 use Illuminate\Console\Command;
+use Workflow\V2\Enums\ActivityStatus;
 use Workflow\V2\WorkflowStub;
 
 class Sandbox extends Command
@@ -86,12 +89,32 @@ class Sandbox extends Command
         }
 
         $output = $workflow->output();
+        $snapshotLifecycle = $this->snapshotLifecycle($workflow);
+        $expectedSnapshots = $snapshotEvery > 0
+            ? intdiv(count($toolCalls), $snapshotEvery)
+            : 0;
+
+        if ($snapshotLifecycle['created'] !== $expectedSnapshots
+            || $snapshotLifecycle['cleaned'] !== $snapshotLifecycle['created']
+            || ($output['latest_snapshot'] ?? null) !== null) {
+            $this->error(sprintf(
+                'Snapshot lifecycle incomplete. expected=%d created=%d cleaned=%d retained=%s',
+                $expectedSnapshots,
+                $snapshotLifecycle['created'],
+                $snapshotLifecycle['cleaned'],
+                ($output['latest_snapshot'] ?? null) === null ? 'none' : 'yes',
+            ));
+
+            return self::FAILURE;
+        }
+
         $this->info(sprintf(
-            'Workflow complete. provider=%s sandbox=%s recoveries=%d snapshots=%s',
+            'Workflow complete. provider=%s sandbox=%s recoveries=%d snapshots=created:%d,cleaned:%d,retained:none',
             $output['provider'] ?? '?',
             $output['sandbox_id'] ?? '?',
             (int) ($output['recovery_count'] ?? 0),
-            $output['latest_snapshot'] ?? 'none',
+            $snapshotLifecycle['created'],
+            $snapshotLifecycle['cleaned'],
         ));
 
         foreach (($output['tool_results'] ?? []) as $i => $result) {
@@ -104,6 +127,32 @@ class Sandbox extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{created: int, cleaned: int}
+     */
+    private function snapshotLifecycle(WorkflowStub $workflow): array
+    {
+        $run = $workflow->run();
+
+        if ($run === null) {
+            return ['created' => 0, 'cleaned' => 0];
+        }
+
+        $completedActivities = $run->activityExecutions()
+            ->where('status', ActivityStatus::Completed->value)
+            ->whereIn('activity_class', [
+                SnapshotSandboxActivity::class,
+                DeleteSnapshotActivity::class,
+            ])
+            ->get(['activity_class'])
+            ->countBy('activity_class');
+
+        return [
+            'created' => (int) $completedActivities->get(SnapshotSandboxActivity::class, 0),
+            'cleaned' => (int) $completedActivities->get(DeleteSnapshotActivity::class, 0),
+        ];
     }
 
     /**
