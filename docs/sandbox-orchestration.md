@@ -57,8 +57,9 @@ deduplication. An uncertain retry after execution but before acknowledgement can
 therefore repeat a mutating tool effect.
 
 See the package's
-[delivery and recovery contract](https://github.com/durable-workflow/ai/blob/main/docs/delivery-and-recovery.md)
+[delivery and recovery contract](https://github.com/durable-workflow/ai/blob/e2fee66bb83d01b9df54f436a753e524895130f3/docs/delivery-and-recovery.md)
 and
-[provider-author guide](https://github.com/durable-workflow/ai/blob/main/docs/provider-author-guide.md)
+[provider-author guide](https://github.com/durable-workflow/ai/blob/e2fee66bb83d01b9df54f436a753e524895130f3/docs/provider-author-guide.md)
 for the supported-channel contract and third-party adapter requirements. Use
 the package ref recorded in `composer.lock` when reproducing this exact build.
+Composer updates synchronize these immutable link targets from that lock entry.
