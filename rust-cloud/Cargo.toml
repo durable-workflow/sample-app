@@ -5,5 +5,5 @@ edition = "2021"
 publish = false
 
 [dependencies]
-durable-workflow = "=2.0.0-rc.31"
+durable-workflow = "=2.0.0-rc.32"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "signal"] }
