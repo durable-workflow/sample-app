@@ -274,6 +274,38 @@ class TaskCodecRejectionEvidenceTest(unittest.TestCase):
             set(surface["unsupported_codec_cases"]),
         )
 
+    def test_accepts_python_probe_pep_440_version_for_required_artifact(self) -> None:
+        probes = self.probes()
+        python_probe = probes["python"]
+        assert isinstance(python_probe, dict)
+        artifact = python_probe["artifact"]
+        assert isinstance(artifact, dict)
+        artifact["version"] = PYTHON_PEP_440_VERSION
+
+        surface = polyglot_smoke.task_codec_rejection_surface(probes)
+
+        self.assertEqual("passed", surface["status"])
+        self.assertEqual([], surface["findings"])
+
+    def test_rejects_stale_python_probe_pep_440_version(self) -> None:
+        probes = self.probes()
+        python_probe = probes["python"]
+        assert isinstance(python_probe, dict)
+        artifact = python_probe["artifact"]
+        assert isinstance(artifact, dict)
+        artifact["version"] = "1.9.9rc1"
+
+        surface = polyglot_smoke.task_codec_rejection_surface(probes)
+
+        self.assertEqual("failed", surface["status"])
+        self.assertTrue(
+            any(
+                "python task codec probe artifact version '1.9.9rc1' does not match required"
+                in finding
+                for finding in surface["findings"]
+            )
+        )
+
     def test_rejects_an_sdk_that_defaults_an_absent_root_task_codec(self) -> None:
         probes = self.probes()
         python_probe = probes["python"]

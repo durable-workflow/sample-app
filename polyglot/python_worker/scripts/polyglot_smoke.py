@@ -434,6 +434,18 @@ def artifact_versions_match(artifact: str, actual: str, expected: str) -> bool:
     )
 
 
+def artifact_version_from_text(artifact: str, value: str | None) -> str | None:
+    if artifact == "sdk-python" and value:
+        pep_440_prerelease = re.fullmatch(
+            r"\s*(\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)(?:\+[0-9A-Za-z.-]+)?)\s*",
+            value,
+        )
+        if pep_440_prerelease:
+            return pep_440_prerelease.group(1)
+
+    return semantic_version_from_text(value)
+
+
 def artifact_version_findings(
     versions: dict[str, str | None],
 ) -> tuple[dict[str, dict[str, str | None]], dict[str, str]]:
@@ -479,7 +491,11 @@ def task_codec_probe_findings(probe: Any, runtime: str) -> list[str]:
     if not isinstance(artifact, dict) or artifact.get("name") != artifact_name:
         findings.append(f"{runtime} task codec probe did not identify {artifact_name}")
     else:
-        observed_version = semantic_version_from_text(artifact.get("version"))
+        raw_version = artifact.get("version")
+        observed_version = artifact_version_from_text(
+            artifact_key,
+            raw_version if isinstance(raw_version, str) else None,
+        )
         required_version = REQUIRED_ARTIFACT_VERSIONS[artifact_key]
         if observed_version is None or not artifact_versions_match(
             artifact_key,
