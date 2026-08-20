@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1abce3445cdb6ca223ac59ccdf12b19e",
+    "content-hash": "2ec838f8082ebdf58a858d43a574f8d0",
     "packages": [
         {
             "name": "apache/avro",
-            "version": "1.12.1",
+            "version": "1.12.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/apache/avro.git",
-                "reference": "9110c693767c1dde2665b2b57939333478b12036"
+                "reference": "8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/apache/avro/zipball/9110c693767c1dde2665b2b57939333478b12036",
-                "reference": "9110c693767c1dde2665b2b57939333478b12036",
+                "url": "https://api.github.com/repos/apache/avro/zipball/8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772",
+                "reference": "8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772",
                 "shasum": ""
             },
             "require": {
@@ -64,9 +64,9 @@
             "support": {
                 "email": "dev@avro.apache.org",
                 "issues": "https://issues.apache.org/jira/browse/AVRO",
-                "source": "https://github.com/apache/avro/tree/release-1.12.1"
+                "source": "https://github.com/apache/avro/tree/release-1.12.2"
             },
-            "time": "2025-09-05T07:25:14+00:00"
+            "time": "2026-08-07T12:56:37+00:00"
         },
         {
             "name": "aws/aws-crt-php",
@@ -720,23 +720,23 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.0-rc.30",
+            "version": "2.0.0-rc.37",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "f8d0bb923ce2e6afef42f66100c7a0c160283796"
+                "reference": "28b89d7f31186f5b41a23c249c3a0f939d89e5db"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/f8d0bb923ce2e6afef42f66100c7a0c160283796",
-                "reference": "f8d0bb923ce2e6afef42f66100c7a0c160283796",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/28b89d7f31186f5b41a23c249c3a0f939d89e5db",
+                "reference": "28b89d7f31186f5b41a23c249c3a0f939d89e5db",
                 "shasum": ""
             },
             "require": {
                 "apache/avro": "^1.12",
                 "composer-runtime-api": "^2.0",
                 "ext-json": "*",
-                "guzzlehttp/guzzle": "^7.8",
+                "guzzlehttp/guzzle": "^7.8|^8.0",
                 "php": "^8.1",
                 "psr/container": "^1.1|^2.0",
                 "psr/http-client": "^1.0",
@@ -751,7 +751,7 @@
             },
             "suggest": {
                 "ext-pcntl": "Required by framework console workers for graceful SIGINT and SIGTERM handling.",
-                "laravel/framework": "Enables the auto-discovered Laravel 12 and 13 service-mode bridge.",
+                "laravel/framework": "Enables the auto-discovered Laravel 9 through 13 service-mode bridge.",
                 "symfony/console": "Required with symfony/framework-bundle to run the Symfony 6.4, 7, and 8 worker command.",
                 "symfony/framework-bundle": "Enables the Symfony 6.4, 7, and 8 service-mode bundle."
             },
@@ -767,16 +767,16 @@
                 },
                 "durable-workflow": {
                     "frameworks": {
-                        "laravel": "^12.0|^13.0",
+                        "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.0-rc.30",
+                    "product-train": "2.0.0-rc.37",
                     "payload-codecs": [
                         "avro"
                     ],
                     "control-plane-version": "2",
                     "worker-protocol-version": "1.13",
-                    "supported-server-versions": "2.0.0-rc.32"
+                    "supported-server-versions": "2.0.0-rc.33"
                 }
             },
             "autoload": {
@@ -807,7 +807,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-08-13T15:18:15+00:00"
+            "time": "2026-08-20T13:23:41+00:00"
         },
         {
             "name": "durable-workflow/waterline",

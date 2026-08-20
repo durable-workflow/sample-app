@@ -125,6 +125,41 @@ run_step() {
   return "$status"
 }
 
+capture_task_codec_probe() {
+  local result_name="$1"
+  local name="$2"
+  local timeout_seconds="$3"
+  shift 3
+  local output
+  local status
+
+  printf '\n==> %s\n' "$name"
+  set +e
+  output="$(timeout "${timeout_seconds}s" "$@")"
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
+    failure_context="$name"
+    if [[ "$status" -eq 124 ]]; then
+      printf 'polyglot-validation: %s timed out after %ss\n' "$name" "$timeout_seconds" >&2
+    else
+      printf 'polyglot-validation: %s exited with unexpected status %d\n' "$name" "$status" >&2
+    fi
+    return "$status"
+  fi
+  if ! python3 -c 'import json, sys; json.load(sys.stdin)' <<<"$output"; then
+    failure_context="$name"
+    printf 'polyglot-validation: %s did not emit valid JSON evidence\n' "$name" >&2
+    return 1
+  fi
+
+  printf -v "$result_name" '%s' "$output"
+  if [[ "$status" -eq 1 ]]; then
+    printf 'polyglot-validation: %s reported a rejected qualification; preserving evidence for the final run metadata\n' "$name" >&2
+  fi
+}
+
 assert_server_stable() {
   local context="$1"
   local current_container_id
@@ -194,6 +229,21 @@ run_step \
   "${POLYGLOT_IMAGE_PULL_TIMEOUT_SECONDS:-180}" \
   docker compose pull --policy missing bootstrap server mysql redis
 
+php_task_codec_rejection_evidence=""
+python_task_codec_rejection_evidence=""
+capture_task_codec_probe \
+  php_task_codec_rejection_evidence \
+  "probing PHP task codec rejection boundaries" \
+  "${POLYGLOT_TASK_CODEC_PROBE_TIMEOUT_SECONDS:-90}" \
+  docker compose run --rm --no-deps php-workflow-worker \
+  php /app/task_codec_rejection_probe.php
+capture_task_codec_probe \
+  python_task_codec_rejection_evidence \
+  "probing Python task codec rejection boundaries" \
+  "${POLYGLOT_TASK_CODEC_PROBE_TIMEOUT_SECONDS:-90}" \
+  docker compose run --rm --no-deps python-activity-worker \
+  python /app/scripts/task_codec_rejection_probe.py
+
 run_step \
   "starting the complete polyglot topology with one server bootstrap" \
   "${POLYGLOT_TOPOLOGY_TIMEOUT_SECONDS:-240}" \
@@ -223,7 +273,12 @@ assert_server_stable "worker registration"
 run_step \
   "running polyglot smoke against the stable server" \
   "${POLYGLOT_SMOKE_TIMEOUT_SECONDS:-600}" \
-  docker compose run --rm --no-deps smoke
+  docker compose run \
+    --rm \
+    --no-deps \
+    -e "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=$php_task_codec_rejection_evidence" \
+    -e "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=$python_task_codec_rejection_evidence" \
+    smoke
 
 assert_server_stable "polyglot smoke"
 printf '\npolyglot-validation: %s validation passed on server container %s\n' \

@@ -8,6 +8,7 @@ use DurableWorkflow\Codec\AvroBinaryValue;
 use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
+use DurableWorkflow\Exception\CodecException;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
@@ -78,6 +79,24 @@ function decodeArguments(PayloadCodec $codec, mixed $raw): array
     $decoded = (is_array($raw) || is_string($raw)) ? $codec->decodeEnvelope($raw) : $raw;
 
     return is_array($decoded) && array_is_list($decoded) ? $decoded : [$decoded];
+}
+
+/** @param array<string, mixed> $task */
+function assertAvroTaskPayloadCodec(array $task): void
+{
+    $codec = $task['payload_codec'] ?? null;
+    if ($codec === 'avro') {
+        return;
+    }
+
+    $rendered = ! array_key_exists('payload_codec', $task)
+        ? 'missing'
+        : (is_string($codec) ? sprintf('"%s"', $codec) : get_debug_type($codec));
+
+    throw new CodecException(sprintf(
+        'unsupported_payload_codec: worker task payload_codec %s is not supported by Durable Workflow 2.0; use payload_codec="avro" with the fixed Avro Value schema and single-object framing. JSON remains the HTTP document transport, not a workflow payload codec.',
+        $rendered,
+    ));
 }
 
 function normalizeSignalValue(mixed $value): mixed
@@ -574,54 +593,61 @@ function runActivityWorker(Client $client, string $workerId, string $taskQueue, 
             continue;
         }
 
-        $taskId = (string) ($task['task_id'] ?? '');
-        $attemptId = (string) ($task['activity_attempt_id'] ?? $task['attempt_id'] ?? '');
-        $leaseOwner = (string) ($task['lease_owner'] ?? $workerId);
-        $activityType = (string) ($task['activity_type'] ?? '');
-        try {
-            $arguments = decodeArguments($client->payloadCodec(), $task['arguments'] ?? null);
-            if ($activityType === 'polyglot.python-to-php.typed-error') {
-                $client->failActivityTask(
-                    $taskId,
-                    $attemptId,
-                    $leaseOwner,
-                    'php activity planned typed failure',
-                    'PolyglotPhpTypedError',
-                    true,
-                    [
-                        'origin' => 'php',
-                        'code' => 'PHP_TYPED_ERROR',
-                        'structured' => [
-                            'language' => 'php',
-                            'request' => $arguments[0] ?? null,
-                        ],
-                    ],
-                );
+        handleManualActivityTask($client, $workerId, $task);
+    }
+}
 
-                continue;
-            }
-
-            $request = is_array($arguments[0] ?? null) ? $arguments[0] : [];
-            $result = match ($activityType) {
-                'polyglot.php.marker' => runtimeMarker($activityType, $request),
-                'polyglot.php.describe' => describeRuntime($activityType, $request),
-                'polyglot.python-to-php.marker' => runtimeMarker($activityType, $request),
-                'polyglot.python-to-php.describe' => describeRuntime($activityType, $request),
-                'polyglot.python-to-php.echo', 'polyglot.rust-to-php.echo' => echoValue($request),
-                'polyglot.python-to-php.binary-echo', 'polyglot.rust-to-php.binary-echo' => echoNativeBinaryValue($request),
-                default => throw new RuntimeException("No PHP activity is registered for {$activityType}."),
-            };
-            $client->completeActivityTask($taskId, $attemptId, $leaseOwner, $result);
-        } catch (Throwable $exception) {
+/** @param array<string, mixed> $task */
+function handleManualActivityTask(Client $client, string $workerId, array $task): void
+{
+    $taskId = (string) ($task['task_id'] ?? '');
+    $attemptId = (string) ($task['activity_attempt_id'] ?? $task['attempt_id'] ?? '');
+    $leaseOwner = (string) ($task['lease_owner'] ?? $workerId);
+    $activityType = (string) ($task['activity_type'] ?? '');
+    try {
+        assertAvroTaskPayloadCodec($task);
+        $arguments = decodeArguments($client->payloadCodec(), $task['arguments'] ?? null);
+        if ($activityType === 'polyglot.python-to-php.typed-error') {
             $client->failActivityTask(
                 $taskId,
                 $attemptId,
                 $leaseOwner,
-                $exception->getMessage(),
-                $exception::class,
+                'php activity planned typed failure',
+                'PolyglotPhpTypedError',
                 true,
+                [
+                    'origin' => 'php',
+                    'code' => 'PHP_TYPED_ERROR',
+                    'structured' => [
+                        'language' => 'php',
+                        'request' => $arguments[0] ?? null,
+                    ],
+                ],
             );
+
+            return;
         }
+
+        $request = is_array($arguments[0] ?? null) ? $arguments[0] : [];
+        $result = match ($activityType) {
+            'polyglot.php.marker' => runtimeMarker($activityType, $request),
+            'polyglot.php.describe' => describeRuntime($activityType, $request),
+            'polyglot.python-to-php.marker' => runtimeMarker($activityType, $request),
+            'polyglot.python-to-php.describe' => describeRuntime($activityType, $request),
+            'polyglot.python-to-php.echo', 'polyglot.rust-to-php.echo' => echoValue($request),
+            'polyglot.python-to-php.binary-echo', 'polyglot.rust-to-php.binary-echo' => echoNativeBinaryValue($request),
+            default => throw new RuntimeException("No PHP activity is registered for {$activityType}."),
+        };
+        $client->completeActivityTask($taskId, $attemptId, $leaseOwner, $result);
+    } catch (Throwable $exception) {
+        $client->failActivityTask(
+            $taskId,
+            $attemptId,
+            $leaseOwner,
+            $exception->getMessage(),
+            $exception::class,
+            true,
+        );
     }
 }
 
@@ -654,27 +680,34 @@ function runQueryWorker(Client $client, string $workerId, string $taskQueue, int
             continue;
         }
 
-        $taskId = (string) ($task['query_task_id'] ?? $task['task_id'] ?? '');
-        $attempt = (int) ($task['query_task_attempt'] ?? 1);
-        $leaseOwner = (string) ($task['lease_owner'] ?? $workerId);
-        try {
-            $context = new QueryContext(
-                (string) ($task['workflow_id'] ?? ''),
-                (string) ($task['run_id'] ?? ''),
-                is_array($task['history_events'] ?? null) ? array_values($task['history_events']) : [],
-                $task,
-            );
-            $signals = signalValues($context, $codec, 'polyglot-signal');
-            $client->completeQueryTask($taskId, $leaseOwner, $attempt, [
-                'workflow_runtime' => 'php',
-                'stage' => $signals === [] ? 'waiting' : 'signaled',
-                'signal_count' => count($signals),
-                'signals' => $signals,
-                'request' => queryWorkflowInput($context, $codec),
-            ]);
-        } catch (Throwable $exception) {
-            $client->failQueryTask($taskId, $leaseOwner, $attempt, $exception->getMessage());
-        }
+        handleManualQueryTask($client, $workerId, $task, $codec);
+    }
+}
+
+/** @param array<string, mixed> $task */
+function handleManualQueryTask(Client $client, string $workerId, array $task, PayloadCodec $codec): void
+{
+    $taskId = (string) ($task['query_task_id'] ?? $task['task_id'] ?? '');
+    $attempt = (int) ($task['query_task_attempt'] ?? 1);
+    $leaseOwner = (string) ($task['lease_owner'] ?? $workerId);
+    try {
+        assertAvroTaskPayloadCodec($task);
+        $context = new QueryContext(
+            (string) ($task['workflow_id'] ?? ''),
+            (string) ($task['run_id'] ?? ''),
+            is_array($task['history_events'] ?? null) ? array_values($task['history_events']) : [],
+            $task,
+        );
+        $signals = signalValues($context, $codec, 'polyglot-signal');
+        $client->completeQueryTask($taskId, $leaseOwner, $attempt, [
+            'workflow_runtime' => 'php',
+            'stage' => $signals === [] ? 'waiting' : 'signaled',
+            'signal_count' => count($signals),
+            'signals' => $signals,
+            'request' => queryWorkflowInput($context, $codec),
+        ]);
+    } catch (Throwable $exception) {
+        $client->failQueryTask($taskId, $leaseOwner, $attempt, $exception->getMessage());
     }
 }
 

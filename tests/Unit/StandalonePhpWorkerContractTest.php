@@ -9,10 +9,128 @@ use DurableWorkflow\Codec\AvroBinaryValue;
 use DurableWorkflow\Transport\Transport;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\Replayer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class StandalonePhpWorkerContractTest extends TestCase
 {
+    #[DataProvider('unsupportedTaskCodecProvider')]
+    public function test_manual_workers_reject_non_avro_root_tags_before_payload_decode(
+        bool $present,
+        mixed $value,
+    ): void {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $task = [
+            'arguments' => ['codec' => 'avro', 'blob' => 'decode-must-not-run'],
+        ];
+        if ($present) {
+            $task['payload_codec'] = $value;
+        }
+
+        try {
+            \assertAvroTaskPayloadCodec($task);
+            $this->fail('The manual worker accepted a non-Avro root task codec.');
+        } catch (\Throwable $exception) {
+            $this->assertStringContainsString('unsupported_payload_codec', $exception->getMessage());
+            $this->assertStringContainsString('payload_codec="avro"', $exception->getMessage());
+            $this->assertStringNotContainsString('invalid_payload_framing', $exception->getMessage());
+        }
+
+        foreach (['activity', 'query'] as $path) {
+            [$client, $transport] = $this->recordingClient();
+            $manualTask = [
+                'task_id' => 'manual-task',
+                'query_task_id' => 'manual-task',
+                'activity_attempt_id' => 'manual-attempt',
+                'lease_owner' => 'manual-worker',
+                'activity_type' => 'polyglot.php.marker',
+                'workflow_id' => 'manual-workflow',
+                'run_id' => 'manual-run',
+                'arguments' => ['codec' => 'avro', 'blob' => 'decode-must-not-run'],
+                'workflow_arguments' => ['codec' => 'avro', 'blob' => 'decode-must-not-run'],
+            ];
+            if ($present) {
+                $manualTask['payload_codec'] = $value;
+            }
+
+            if ($path === 'activity') {
+                \handleManualActivityTask($client, 'manual-worker', $manualTask);
+            } else {
+                \handleManualQueryTask($client, 'manual-worker', $manualTask, $client->payloadCodec());
+            }
+
+            $this->assertCount(1, $transport->requests, $path);
+            $this->assertStringEndsWith('/fail', $transport->requests[0]['uri'], $path);
+            $failure = json_encode($transport->requests[0]['body'], JSON_THROW_ON_ERROR);
+            $this->assertStringContainsString('unsupported_payload_codec', $failure, $path);
+            $this->assertStringNotContainsString('invalid_payload_framing', $failure, $path);
+        }
+    }
+
+    /** @return iterable<string, array{bool, mixed}> */
+    public static function unsupportedTaskCodecProvider(): iterable
+    {
+        yield 'missing' => [false, null];
+        yield 'empty' => [true, ''];
+        yield 'json' => [true, 'json'];
+        yield 'unknown' => [true, 'custom'];
+        yield 'wrong case' => [true, 'Avro'];
+        yield 'null' => [true, null];
+        yield 'non-string' => [true, ['avro']];
+    }
+
+    public function test_manual_workers_accept_avro_without_inspecting_customer_codec_like_keys(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $client = new Client('http://server:8080');
+        $arguments = [[
+            'payload_codec' => 'customer-owned',
+            'codec' => 'json',
+            'metadata' => ['payload_codec' => ['malformed']],
+        ]];
+        $task = [
+            'payload_codec' => 'avro',
+            'arguments' => $client->payloadCodec()->envelope($arguments),
+        ];
+
+        \assertAvroTaskPayloadCodec($task);
+
+        $this->assertSame($arguments, \decodeArguments($client->payloadCodec(), $task['arguments']));
+
+        foreach (['activity', 'query'] as $path) {
+            [$manualClient, $transport] = $this->recordingClient();
+            $manualTask = [
+                'task_id' => 'manual-task',
+                'query_task_id' => 'manual-task',
+                'activity_attempt_id' => 'manual-attempt',
+                'lease_owner' => 'manual-worker',
+                'activity_type' => 'polyglot.php.marker',
+                'workflow_id' => 'manual-workflow',
+                'run_id' => 'manual-run',
+                'payload_codec' => 'avro',
+                'arguments' => $manualClient->payloadCodec()->envelope($arguments),
+                'workflow_arguments' => $manualClient->payloadCodec()->envelope($arguments),
+                'history_events' => [],
+            ];
+
+            if ($path === 'activity') {
+                \handleManualActivityTask($manualClient, 'manual-worker', $manualTask);
+            } else {
+                \handleManualQueryTask(
+                    $manualClient,
+                    'manual-worker',
+                    $manualTask,
+                    $manualClient->payloadCodec(),
+                );
+            }
+
+            $this->assertCount(1, $transport->requests, $path);
+            $this->assertStringEndsWith('/complete', $transport->requests[0]['uri'], $path);
+        }
+    }
+
     public function test_featured_workflow_routes_python_and_rust_activities_and_combines_results(): void
     {
         require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
@@ -329,6 +447,7 @@ final class StandalonePhpWorkerContractTest extends TestCase
             'workflow_task_attempt' => 1,
             'lease_owner' => 'php-signal-contract-worker',
             'workflow_type' => 'polyglot.php.signal-query',
+            'payload_codec' => 'avro',
             'workflow_id' => 'php-signal-contract-workflow',
             'run_id' => 'php-signal-contract-run',
             'arguments' => $codecClient->payloadCodec()->envelope([['workflow_runtime' => 'php']]),
@@ -453,5 +572,24 @@ final class StandalonePhpWorkerContractTest extends TestCase
         }
 
         $this->fail("No request ended with {$suffix}.");
+    }
+
+    /** @return array{Client, object} */
+    private function recordingClient(): array
+    {
+        $transport = new class implements Transport
+        {
+            /** @var list<array{method: string, uri: string, body: array<string, mixed>|null}> */
+            public array $requests = [];
+
+            public function send(string $method, string $uri, array $headers, ?array $body = null): ?array
+            {
+                $this->requests[] = compact('method', 'uri', 'body');
+
+                return ['acknowledged' => true];
+            }
+        };
+
+        return [new Client('http://server:8080', transport: $transport), $transport];
     }
 }

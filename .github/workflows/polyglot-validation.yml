@@ -26,6 +26,11 @@ jobs:
       # advances only after the release train has completed validation.
       DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
       POLYGLOT_BUILD_CACHE_MODE: ${{ matrix.cache_mode }}
+      POLYGLOT_QUALIFICATION_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POLYGLOT_QUALIFICATION_RUN_ID: ${{ github.run_id }}
+      POLYGLOT_QUALIFICATION_RUN_ATTEMPT: ${{ github.run_attempt }}
+      POLYGLOT_QUALIFICATION_WORKFLOW: ${{ github.workflow }}
+      POLYGLOT_QUALIFICATION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

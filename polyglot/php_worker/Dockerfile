@@ -28,6 +28,7 @@ RUN test -n "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
     && ! composer show laravel/framework
 
 COPY worker.php ./
+COPY task_codec_rejection_probe.php ./
 COPY replay_fixtures ./replay_fixtures
 
 RUN php worker.php --mode=replay-fixtures

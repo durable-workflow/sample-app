@@ -4,7 +4,7 @@
   "source": "https://github.com/durable-workflow/sample-app/actions/workflows/smoke.yml",
   "artifacts": {
     "cli": "2.0.0-rc.12",
-    "sdk-php": "2.0.0-rc.30",
+    "sdk-php": "2.0.0-rc.37",
     "sdk-python": "2.0.0-rc.20",
     "sdk-rust": "2.0.0-rc.30",
     "server": "2.0.0-rc.32",

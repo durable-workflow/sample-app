@@ -8,6 +8,7 @@ import re
 import sys
 import types
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -206,6 +207,126 @@ class ArtifactVersionFindingsTest(unittest.TestCase):
             f"cargo add durable-workflow@={PYTHON_SDK_VERSION}",
             rust["pin"],
         )
+
+
+class TaskCodecRejectionEvidenceTest(unittest.TestCase):
+    def probe(self, runtime: str) -> dict[str, object]:
+        artifact_key, artifact_name = polyglot_smoke.TASK_CODEC_ARTIFACTS[runtime]
+        paths = polyglot_smoke.TASK_CODEC_PROBE_PATHS[runtime]
+        rejections = [
+            {
+                "runtime": runtime,
+                "worker": worker,
+                "path": path,
+                "codec_case": codec_case,
+                "status": "rejected_before_decode_or_handler",
+            }
+            for worker, path in paths
+            for codec_case in polyglot_smoke.UNSUPPORTED_TASK_CODEC_CASES
+        ]
+        controls = [
+            {
+                "runtime": runtime,
+                "worker": worker,
+                "path": path,
+                "codec_case": "avro",
+                "status": "decoded_and_handled",
+            }
+            for worker, path in paths
+        ]
+        return {
+            "schema": "durable-workflow.sample-app.task-codec-rejection-probe",
+            "version": 1,
+            "runtime": runtime,
+            "artifact": {
+                "name": artifact_name,
+                "version": polyglot_smoke.REQUIRED_ARTIFACT_VERSIONS[artifact_key],
+            },
+            "rejection_outcomes": rejections,
+            "valid_controls": controls,
+            "summary": {
+                "status": "passed",
+                "rejection_count": len(rejections),
+                "valid_control_count": len(controls),
+                "failed_count": 0,
+            },
+        }
+
+    def probes(self) -> dict[str, object]:
+        return {runtime: self.probe(runtime) for runtime in ("php", "python")}
+
+    def test_accepts_complete_published_worker_rejection_and_valid_control_matrices(self) -> None:
+        surface = polyglot_smoke.task_codec_rejection_surface(self.probes())
+
+        self.assertEqual("passed", surface["status"])
+        self.assertEqual([], surface["findings"])
+        self.assertEqual(
+            {
+                "empty",
+                "json",
+                "missing",
+                "non_string",
+                "null",
+                "unknown",
+                "wrong_case",
+            },
+            set(surface["unsupported_codec_cases"]),
+        )
+
+    def test_rejects_an_sdk_that_defaults_an_absent_root_task_codec(self) -> None:
+        probes = self.probes()
+        python_probe = probes["python"]
+        assert isinstance(python_probe, dict)
+        outcomes = python_probe["rejection_outcomes"]
+        assert isinstance(outcomes, list)
+        missing_workflow = next(
+            outcome
+            for outcome in outcomes
+            if outcome["worker"] == "sdk"
+            and outcome["path"] == "workflow"
+            and outcome["codec_case"] == "missing"
+        )
+        missing_workflow["status"] = "failed"
+        python_probe["summary"] = {
+            **python_probe["summary"],
+            "status": "failed",
+            "failed_count": 1,
+        }
+
+        surface = polyglot_smoke.task_codec_rejection_surface(probes)
+
+        self.assertEqual("failed", surface["status"])
+        self.assertTrue(
+            any("did not reject ('sdk', 'workflow', 'missing')" in finding for finding in surface["findings"])
+        )
+
+    def test_rejects_incomplete_evidence_even_when_its_summary_claims_pass(self) -> None:
+        probes = self.probes()
+        php_probe = probes["php"]
+        assert isinstance(php_probe, dict)
+        outcomes = php_probe["rejection_outcomes"]
+        assert isinstance(outcomes, list)
+        php_probe["rejection_outcomes"] = outcomes[1:]
+
+        surface = polyglot_smoke.task_codec_rejection_surface(probes)
+
+        self.assertEqual("failed", surface["status"])
+        self.assertTrue(any("omitted rejection outcomes" in finding for finding in surface["findings"]))
+
+    def test_emits_exact_source_head_and_workflow_run_identity(self) -> None:
+        identity = {
+            "POLYGLOT_QUALIFICATION_HEAD_SHA": "a" * 40,
+            "POLYGLOT_QUALIFICATION_RUN_ID": "12345",
+            "POLYGLOT_QUALIFICATION_RUN_ATTEMPT": "2",
+            "POLYGLOT_QUALIFICATION_WORKFLOW": "polyglot-validation",
+            "POLYGLOT_QUALIFICATION_RUN_URL": "https://github.com/durable-workflow/sample-app/actions/runs/12345",
+        }
+        with unittest.mock.patch.dict(os.environ, identity):
+            source = polyglot_smoke.qualification_source_identity()
+
+        self.assertEqual("a" * 40, source["head_sha"])
+        self.assertEqual("12345", source["workflow_run"]["id"])
+        self.assertEqual(identity["POLYGLOT_QUALIFICATION_RUN_URL"], source["workflow_run"]["url"])
 
 
 class NativeBinaryEvidenceTest(unittest.TestCase):

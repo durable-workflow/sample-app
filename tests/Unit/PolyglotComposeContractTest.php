@@ -505,7 +505,10 @@ SH,
         $this->assertStringContainsString('waterline', $script);
         $this->assertStringContainsString('php-query-worker', $script);
         $this->assertStringContainsString('--readiness-only', $script);
-        $this->assertStringContainsString('docker compose run --rm --no-deps smoke', $script);
+        $this->assertStringContainsString('POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=', $script);
+        $this->assertStringContainsString('POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=', $script);
+        $this->assertStringContainsString('task_codec_rejection_probe.php', $script);
+        $this->assertStringContainsString('task_codec_rejection_probe.py', $script);
         $this->assertStringContainsString('assert_server_stable "worker registration"', $script);
         $this->assertStringContainsString('assert_server_stable "polyglot smoke"', $script);
         $this->assertStringContainsString('trap cleanup EXIT', $script);
@@ -544,7 +547,10 @@ SH,
                 static fn (string $command): bool => str_starts_with($command, 'compose up '),
             ));
             $readinessIndex = $this->firstCommandIndex($commands, '--readiness-only');
-            $smokeIndex = $this->firstCommandIndex($commands, 'compose run --rm --no-deps smoke');
+            $smokeIndex = $this->firstCommandIndex(
+                $commands,
+                'POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=',
+            );
             $startupIndex = $this->firstCommandIndex($commands, 'compose up ');
             $teardownIndex = $this->firstCommandIndex($commands, 'compose down ');
 
@@ -1292,6 +1298,8 @@ elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{.State.Running}}" ]]; then
   printf 'true\n'
 elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{if .State.Health}}{{.State.Health.Status}}{{end}}" ]]; then
   printf 'healthy\n'
+elif [[ "$*" == *"task_codec_rejection_probe.php"* || "$*" == *"task_codec_rejection_probe.py"* ]]; then
+  printf '{}\n'
 fi
 BASH);
         chmod($dockerPath, 0700);

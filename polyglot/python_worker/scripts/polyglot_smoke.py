@@ -76,6 +76,40 @@ REQUIRED_ARTIFACT_VERSIONS = {
     ),
 }
 
+UNSUPPORTED_TASK_CODEC_CASES = frozenset({
+    "missing",
+    "empty",
+    "json",
+    "unknown",
+    "wrong_case",
+    "null",
+    "non_string",
+})
+TASK_CODEC_PROBE_PATHS = {
+    "php": frozenset({
+        ("sdk", "workflow"),
+        ("sdk", "update"),
+        ("sdk", "activity"),
+        ("sdk", "query"),
+        ("manual", "activity"),
+        ("manual", "query"),
+    }),
+    "python": frozenset({
+        ("sdk", "workflow"),
+        ("sdk", "activity"),
+        ("sdk", "query"),
+        ("manual", "activity"),
+    }),
+}
+TASK_CODEC_PROBE_ENV = {
+    "php": "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE",
+    "python": "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE",
+}
+TASK_CODEC_ARTIFACTS = {
+    "php": ("sdk-php", "durable-workflow/sdk"),
+    "python": ("sdk-python", "durable-workflow"),
+}
+
 PY_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
 PHP_QUEUE = os.environ.get("POLYGLOT_PHP_TASK_QUEUE", "polyglot-php")
 WORKFLOW_QUEUE = os.environ.get("POLYGLOT_WORKFLOW_TASK_QUEUE", "polyglot-workflow")
@@ -407,6 +441,135 @@ def artifact_version_findings(
                 "actual": actual,
             }
     return stale, missing
+
+
+def qualification_source_identity() -> dict[str, Any]:
+    return {
+        "head_sha": required_env("POLYGLOT_QUALIFICATION_HEAD_SHA"),
+        "workflow_run": {
+            "id": required_env("POLYGLOT_QUALIFICATION_RUN_ID"),
+            "attempt": required_env("POLYGLOT_QUALIFICATION_RUN_ATTEMPT"),
+            "name": required_env("POLYGLOT_QUALIFICATION_WORKFLOW"),
+            "url": required_env("POLYGLOT_QUALIFICATION_RUN_URL"),
+        },
+    }
+
+
+def task_codec_probe_findings(probe: Any, runtime: str) -> list[str]:
+    findings: list[str] = []
+    if not isinstance(probe, dict):
+        return [f"{runtime} task codec probe must be a JSON object"]
+    if probe.get("schema") != "durable-workflow.sample-app.task-codec-rejection-probe":
+        findings.append(f"{runtime} task codec probe schema is not recognized")
+    if probe.get("version") != 1:
+        findings.append(f"{runtime} task codec probe version must be 1")
+    if probe.get("runtime") != runtime:
+        findings.append(f"{runtime} task codec probe reported runtime={probe.get('runtime')!r}")
+
+    artifact_key, artifact_name = TASK_CODEC_ARTIFACTS[runtime]
+    artifact = probe.get("artifact")
+    if not isinstance(artifact, dict) or artifact.get("name") != artifact_name:
+        findings.append(f"{runtime} task codec probe did not identify {artifact_name}")
+    else:
+        observed_version = semantic_version_from_text(artifact.get("version"))
+        required_version = REQUIRED_ARTIFACT_VERSIONS[artifact_key]
+        if observed_version is None or not artifact_versions_match(
+            artifact_key,
+            observed_version,
+            required_version,
+        ):
+            findings.append(
+                f"{runtime} task codec probe artifact version {artifact.get('version')!r} "
+                f"does not match required {required_version}"
+            )
+
+    required_rejections = {
+        (worker, path, codec_case)
+        for worker, path in TASK_CODEC_PROBE_PATHS[runtime]
+        for codec_case in UNSUPPORTED_TASK_CODEC_CASES
+    }
+    observed_rejections: dict[tuple[Any, Any, Any], Any] = {}
+    raw_rejections = probe.get("rejection_outcomes")
+    if not isinstance(raw_rejections, list):
+        findings.append(f"{runtime} task codec probe rejection_outcomes must be a list")
+        raw_rejections = []
+    for outcome in raw_rejections:
+        if not isinstance(outcome, dict):
+            findings.append(f"{runtime} task codec probe has a malformed rejection outcome")
+            continue
+        key = (outcome.get("worker"), outcome.get("path"), outcome.get("codec_case"))
+        if key in observed_rejections:
+            findings.append(f"{runtime} task codec probe duplicated rejection outcome {key!r}")
+        observed_rejections[key] = outcome
+    missing_rejections = sorted(required_rejections - set(observed_rejections))
+    unexpected_rejections = sorted(set(observed_rejections) - required_rejections, key=repr)
+    if missing_rejections:
+        findings.append(f"{runtime} task codec probe omitted rejection outcomes: {missing_rejections!r}")
+    if unexpected_rejections:
+        findings.append(f"{runtime} task codec probe reported unexpected rejection outcomes: {unexpected_rejections!r}")
+    for key in sorted(required_rejections & set(observed_rejections)):
+        outcome = observed_rejections[key]
+        if outcome.get("status") != "rejected_before_decode_or_handler":
+            findings.append(f"{runtime} task codec probe did not reject {key!r} before decode/handler")
+
+    required_controls = {
+        (worker, path, "avro") for worker, path in TASK_CODEC_PROBE_PATHS[runtime]
+    }
+    observed_controls: dict[tuple[Any, Any, Any], Any] = {}
+    raw_controls = probe.get("valid_controls")
+    if not isinstance(raw_controls, list):
+        findings.append(f"{runtime} task codec probe valid_controls must be a list")
+        raw_controls = []
+    for outcome in raw_controls:
+        if not isinstance(outcome, dict):
+            findings.append(f"{runtime} task codec probe has a malformed valid control")
+            continue
+        key = (outcome.get("worker"), outcome.get("path"), outcome.get("codec_case"))
+        if key in observed_controls:
+            findings.append(f"{runtime} task codec probe duplicated valid control {key!r}")
+        observed_controls[key] = outcome
+    missing_controls = sorted(required_controls - set(observed_controls))
+    unexpected_controls = sorted(set(observed_controls) - required_controls, key=repr)
+    if missing_controls:
+        findings.append(f"{runtime} task codec probe omitted valid controls: {missing_controls!r}")
+    if unexpected_controls:
+        findings.append(f"{runtime} task codec probe reported unexpected valid controls: {unexpected_controls!r}")
+    for key in sorted(required_controls & set(observed_controls)):
+        outcome = observed_controls[key]
+        if outcome.get("status") != "decoded_and_handled":
+            findings.append(f"{runtime} task codec probe did not decode and handle {key!r}")
+
+    summary = probe.get("summary")
+    if not isinstance(summary, dict) or summary.get("status") != "passed" or summary.get("failed_count") != 0:
+        findings.append(f"{runtime} task codec probe summary did not pass")
+    return findings
+
+
+def task_codec_rejection_surface(
+    probes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if probes is None:
+        probes = {}
+        for runtime, env_name in TASK_CODEC_PROBE_ENV.items():
+            raw = required_env(env_name)
+            try:
+                probes[runtime] = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"{env_name} is not valid JSON: {exc}") from exc
+
+    findings = [
+        finding
+        for runtime in ("php", "python")
+        for finding in task_codec_probe_findings(probes.get(runtime), runtime)
+    ]
+    return {
+        "surface": "task_codec_rejections",
+        "status": "passed" if not findings else "failed",
+        "required_root_codec": "avro",
+        "unsupported_codec_cases": sorted(UNSUPPORTED_TASK_CODEC_CASES),
+        "probes": probes,
+        "findings": findings,
+    }
 
 
 def waterline_asset_findings(
@@ -1644,6 +1807,15 @@ def summarize_waterline_workers(health: dict[str, Any]) -> dict[str, Any]:
 
 
 async def run_all() -> int:
+    source_identity = qualification_source_identity()
+    try:
+        task_codec_surface = task_codec_rejection_surface()
+    except Exception as exc:  # noqa: BLE001
+        task_codec_surface = {
+            "surface": "task_codec_rejections",
+            "status": "failed",
+            "findings": [str(exc)],
+        }
     php_probe, php_probe_error = fetch_php_artifact_probe()
     php_sdk_worker_error: str | None = None
     try:
@@ -1673,6 +1845,7 @@ async def run_all() -> int:
 
     if stale_artifacts or missing_artifacts or stale_assets or missing_avro_packages:
         surfaces = {
+            "task_codec_rejections": task_codec_surface,
             "artifact_versions": {
                 "surface": "artifact_versions",
                 "status": "artifact_blocked",
@@ -1688,8 +1861,9 @@ async def run_all() -> int:
         }
         metadata = {
             "schema": "durable-workflow.sample-app.polyglot-conformance.run",
-            "version": 3,
+            "version": 4,
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "source": source_identity,
             "artifactVersions": artifact_versions,
             "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
             "artifactProbe": {
@@ -1709,7 +1883,9 @@ async def run_all() -> int:
             "summary": {
                 "status": "artifact_blocked",
                 "surface_count": len(surfaces),
-                "failed_surfaces": [],
+                "failed_surfaces": [
+                    name for name, surface in surfaces.items() if surface.get("status") == "failed"
+                ],
                 "skipped_surfaces": [],
                 "artifact_versions_current": False,
                 "stale_artifacts": stale_artifacts,
@@ -1725,9 +1901,14 @@ async def run_all() -> int:
         print("\npolyglot conformance: required artifact set is not current", flush=True)
         return 1
 
-    surfaces: dict[str, dict[str, Any]] = {}
-    failed = False
+    surfaces: dict[str, dict[str, Any]] = {
+        "task_codec_rejections": task_codec_surface,
+    }
+    failed = task_codec_surface.get("status") != "passed"
     cli_runs: list[dict[str, Any]] = []
+
+    print("\n==> polyglot conformance: task codec rejection matrix", flush=True)
+    print(json.dumps(task_codec_surface, indent=2, sort_keys=True), flush=True)
 
     print("\n==> PolyglotWorkflow: PHP orchestration with Python and Rust activities", flush=True)
     try:
@@ -1821,8 +2002,9 @@ async def run_all() -> int:
     summary_status = "failed" if failed else "passed"
     metadata = {
         "schema": "durable-workflow.sample-app.polyglot-conformance.run",
-        "version": 3,
+        "version": 4,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": source_identity,
         "artifactVersions": artifact_versions,
         "requiredArtifactVersions": REQUIRED_ARTIFACT_VERSIONS,
         "artifactProbe": {

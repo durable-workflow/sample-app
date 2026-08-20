@@ -5,6 +5,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from typing import Any
 
 
 class _Definitions:
@@ -133,6 +134,99 @@ class NativeBinaryWorkerTest(unittest.TestCase):
             activities.echo_native_binary_value(
                 {"binary_base64": self.payload["binary_base64"]}
             )
+
+
+class TypedErrorTaskCodecBoundaryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rejects_every_non_avro_root_tag_before_decode_or_handler_work(self) -> None:
+        codec_cases: list[tuple[str, bool, Any]] = [
+            ("missing", False, None),
+            ("empty", True, ""),
+            ("json", True, "json"),
+            ("unknown", True, "custom"),
+            ("wrong_case", True, "Avro"),
+            ("null", True, None),
+            ("non_string", True, ["avro"]),
+        ]
+        original_serializer = activities.serializer
+
+        class DecodeMustNotRun:
+            @staticmethod
+            def decode_envelope(*_args: object, **_kwargs: object) -> object:
+                raise AssertionError("payload decode ran before the root task codec guard")
+
+        activities.serializer = DecodeMustNotRun
+        try:
+            for name, present, codec in codec_cases:
+                with self.subTest(codec=name):
+                    client = _RecordingActivityClient()
+                    task = self.task()
+                    if present:
+                        task["payload_codec"] = codec
+
+                    outcome = await activities.handle_typed_error_task(
+                        client,
+                        "typed-error-worker",
+                        task,
+                    )
+
+                    self.assertEqual("unsupported_payload_codec", outcome)
+                    self.assertEqual(1, len(client.failures))
+                    self.assertIn("unsupported_payload_codec", client.failures[0]["message"])
+                    self.assertEqual("ValueError", client.failures[0]["failure_type"])
+                    self.assertNotIn("details", client.failures[0])
+        finally:
+            activities.serializer = original_serializer
+
+    async def test_valid_avro_tag_decodes_and_reaches_the_manual_handler(self) -> None:
+        original_serializer = activities.serializer
+        decoded: list[tuple[object, object]] = []
+
+        class RecordingSerializer:
+            @staticmethod
+            def decode_envelope(raw: object, *, codec: object) -> list[dict[str, object]]:
+                decoded.append((raw, codec))
+                return [{"payload_codec": "customer-owned", "codec": "json"}]
+
+        activities.serializer = RecordingSerializer
+        try:
+            client = _RecordingActivityClient()
+            task = self.task()
+            task["payload_codec"] = "avro"
+
+            outcome = await activities.handle_typed_error_task(
+                client,
+                "typed-error-worker",
+                task,
+            )
+        finally:
+            activities.serializer = original_serializer
+
+        self.assertEqual("handled", outcome)
+        self.assertEqual([({"codec": "avro", "blob": "payload"}, "avro")], decoded)
+        self.assertEqual(1, len(client.failures))
+        failure = client.failures[0]
+        self.assertEqual("PolyglotPythonTypedError", failure["failure_type"])
+        self.assertEqual(
+            {"payload_codec": "customer-owned", "codec": "json"},
+            failure["details"]["structured"]["request"],
+        )
+
+    @staticmethod
+    def task() -> dict[str, object]:
+        return {
+            "task_id": "typed-error-task",
+            "activity_attempt_id": "typed-error-attempt",
+            "activity_type": activities.PYTHON_TYPED_ERROR_ACTIVITY,
+            "arguments": {"codec": "avro", "blob": "payload"},
+        }
+
+
+class _RecordingActivityClient:
+    def __init__(self) -> None:
+        self.failures: list[dict[str, Any]] = []
+
+    async def fail_activity_task(self, **arguments: Any) -> None:
+        self.failures.append(arguments)
 
 
 if __name__ == "__main__":
