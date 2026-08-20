@@ -830,6 +830,14 @@ BASH,
         $this->assertStringContainsString('stat --format=%g "$socket"', $entrypoint);
         $this->assertStringContainsString('usermod --append --groups "$socket_group" laravel', $entrypoint);
         $this->assertStringContainsString('gosu laravel test -w "$socket"', $entrypoint);
+        $this->assertStringContainsString(
+            '"${compose[@]}" exec -T laravel gosu laravel bash -euc',
+            $script,
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/exec -T --user laravel laravel bash -euc \'.*?docker version/s',
+            $script,
+        );
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
         $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);

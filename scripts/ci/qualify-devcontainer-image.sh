@@ -287,7 +287,7 @@ verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
+"${compose[@]}" exec -T laravel gosu laravel bash -euc '
     [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
     [[ -w . ]]
     docker version >/dev/null
