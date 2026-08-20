@@ -778,6 +778,7 @@ BASH,
         $databaseOverrides = $this->contents('scripts/ci/qualify-devcontainer-database-overrides.sh');
         $entrypoint = $this->contents('.devcontainer/docker/start-container');
         $identityWaiter = $this->contents('.devcontainer/docker/wait-for-identity-ready');
+        $identityCompose = $this->contents('scripts/ci/devcontainer-identity.sh');
         $postCreate = $this->contents('.devcontainer/post-create.sh');
 
         $this->assertStringNotContainsString('docker compose build', $script);
@@ -844,13 +845,11 @@ BASH,
         $this->assertStringContainsString('until identity_is_ready; do', $identityWaiter);
         $this->assertStringContainsString('Timed out waiting for development-container identity readiness', $identityWaiter);
         $this->assertStringContainsString(
-            'exec -T --user root laravel wait-for-devcontainer-identity',
-            $script,
+            'exec -T --user root "$service" wait-for-devcontainer-identity',
+            $identityCompose,
         );
-        $this->assertLessThan(
-            strpos($script, 'exec -T --user laravel laravel bash -euc'),
-            strpos($script, 'exec -T --user root laravel wait-for-devcontainer-identity'),
-        );
+        $this->assertStringContainsString('run_in_ready_devcontainer laravel bash -euc', $script);
+        $this->assertStringContainsString('run_in_ready_devcontainer laravel .devcontainer/post-create.sh', $databaseOverrides);
         $this->assertStringContainsString('[[ " $(id -G) " == *" ${socket_gid} "* ]]', $script);
         $this->assertStringContainsString('/usr/local/bin/wait-for-devcontainer-identity', $postCreate);
         $this->assertStringContainsString('exec sg "$socket_group"', $postCreate);
@@ -932,6 +931,90 @@ BASH);
             $this->assertSame(0, $waiter->getExitCode(), $waiter->getErrorOutput());
         } finally {
             fclose($socket);
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_database_override_cold_start_waits_for_non_default_uid_before_post_create(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-database-override-ready-'.bin2hex(random_bytes(8));
+        $marker = $temporaryDirectory.'/identity-ready';
+        $events = $temporaryDirectory.'/events';
+        $filesystem->mkdir($temporaryDirectory, 0700);
+
+        $fakeDocker = $temporaryDirectory.'/docker';
+        file_put_contents($fakeDocker, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+arguments=" $* "
+case "$arguments" in
+    *" up --detach --no-build laravel microservice ")
+        printf 'containers-started\n' >> "$FAKE_EVENTS"
+        (
+            sleep 0.15
+            printf 'uid=%s\nsocket_gid=9876\n' "$SAMPLE_APP_UID" > "$FAKE_IDENTITY_MARKER"
+            printf 'identity-ready\n' >> "$FAKE_EVENTS"
+        ) &
+        ;;
+    *" exec -T --user root laravel wait-for-devcontainer-identity ")
+        printf 'wait-started\n' >> "$FAKE_EVENTS"
+        for ((attempt = 0; attempt < 100; attempt++)); do
+            if [[ -r "$FAKE_IDENTITY_MARKER" ]] \
+                && grep -Fx "uid=$SAMPLE_APP_UID" "$FAKE_IDENTITY_MARKER" >/dev/null; then
+                printf 'wait-completed\n' >> "$FAKE_EVENTS"
+                exit 0
+            fi
+            sleep 0.02
+        done
+        exit 1
+        ;;
+    *" exec -T --user laravel laravel .devcontainer/post-create.sh ")
+        grep -Fx "uid=$SAMPLE_APP_UID" "$FAKE_IDENTITY_MARKER" >/dev/null
+        printf 'post-create-started\n' >> "$FAKE_EVENTS"
+        ;;
+    *" up --detach --no-build --wait ")
+        printf 'services-healthy\n' >> "$FAKE_EVENTS"
+        ;;
+    *)
+        printf 'Unexpected docker command: %s\n' "$*" >&2
+        exit 64
+        ;;
+esac
+BASH);
+        chmod($fakeDocker, 0700);
+
+        $process = new Process(
+            [
+                'bash',
+                '-euc',
+                'source "$1"; bootstrap_devcontainer_application',
+                'bash',
+                $this->repoPath('scripts/ci/qualify-devcontainer-database-overrides.sh'),
+            ],
+            env: [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'FAKE_EVENTS' => $events,
+                'FAKE_IDENTITY_MARKER' => $marker,
+                'SAMPLE_APP_UID' => '12345',
+            ],
+        );
+
+        try {
+            $process->mustRun();
+            $this->assertSame(
+                [
+                    'containers-started',
+                    'wait-started',
+                    'identity-ready',
+                    'wait-completed',
+                    'post-create-started',
+                    'services-healthy',
+                ],
+                file($events, FILE_IGNORE_NEW_LINES),
+            );
+        } finally {
             $filesystem->remove($temporaryDirectory);
         }
     }

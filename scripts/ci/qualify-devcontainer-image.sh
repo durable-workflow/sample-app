@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="${repo_root}/.devcontainer/docker/docker-compose.yml"
+source "${repo_root}/scripts/ci/devcontainer-identity.sh"
 image="${1:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM [TIMING_OUTPUT]}"
 platform="${2:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM [TIMING_OUTPUT]}"
 timing_output="${3:-${repo_root}/devcontainer-qualification-timing.json}"
@@ -287,11 +288,7 @@ verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
-if ! "${compose[@]}" exec -T --user root laravel wait-for-devcontainer-identity; then
-    "${compose[@]}" logs --no-color --timestamps --tail=200 laravel >&2 || true
-    exit 1
-fi
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
+run_in_ready_devcontainer laravel bash -euc '
     [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
     [[ -w . ]]
     socket_gid="$(stat --format=%g /var/run/docker.sock)"
@@ -405,7 +402,7 @@ verify_database_schema
 "${compose[@]}" stop laravel microservice mysql
 "${compose[@]}" up --detach --no-build --wait mysql redis
 "${compose[@]}" up --detach --no-build --force-recreate --wait laravel microservice
-"${compose[@]}" exec -T --user laravel laravel curl --fail --silent http://localhost/up >/dev/null
+run_in_ready_devcontainer laravel curl --fail --silent http://localhost/up >/dev/null
 verify_and_remove_database_persistence_probe
 "${compose[@]}" exec -T --user laravel laravel bash -euc '
     migration_name=create_codespaces_future_migration_probe_table

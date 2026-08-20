@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="${repo_root}/.devcontainer/docker/docker-compose.yml"
 compose=(docker compose --file "$compose_file")
+source "${repo_root}/scripts/ci/devcontainer-identity.sh"
 
 export DB_DATABASE=codespaces_override
 export DB_USERNAME=codespaces_user
@@ -47,7 +48,7 @@ verify_database_contract() {
 }
 
 verify_application_contract() {
-    "${compose[@]}" exec -T --user laravel laravel bash -euc '
+    run_in_ready_devcontainer laravel bash -euc '
         grep -Fx "DB_DATABASE=$DB_DATABASE" .env
         grep -Fx "DB_USERNAME=$DB_USERNAME" .env
         grep -Fx "DB_PASSWORD=$DB_PASSWORD" .env
@@ -66,6 +67,12 @@ verify_application_contract() {
     '
 }
 
+bootstrap_devcontainer_application() {
+    "${compose[@]}" up --detach --no-build laravel microservice
+    run_in_ready_devcontainer laravel .devcontainer/post-create.sh
+    "${compose[@]}" up --detach --no-build --wait
+}
+
 cleanup() {
     local status=$?
     trap - EXIT
@@ -78,6 +85,10 @@ cleanup() {
     "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
     exit "$status"
 }
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
 trap cleanup EXIT
 
 "${compose[@]}" down --volumes --remove-orphans
@@ -93,9 +104,7 @@ fi
 "${compose[@]}" exec -T mysql test ! -e /var/lib/mysql/.sample-app-codespaces-seed
 verify_database_contract
 
-"${compose[@]}" up --detach --no-build laravel microservice
-"${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
-"${compose[@]}" up --detach --no-build --wait
+bootstrap_devcontainer_application
 verify_application_contract
 
 "${compose[@]}" exec -T mysql sh -euc '
