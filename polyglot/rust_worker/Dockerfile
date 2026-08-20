@@ -30,6 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /build/target/release/durable-workflow-polyglot-rust-worker /usr/local/bin/polyglot-rust-worker
+COPY --from=build /build/target/release/task_codec_rejection_probe /usr/local/bin/task-codec-rejection-probe
 
 USER 65532:65532
 

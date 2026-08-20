@@ -88,6 +88,7 @@ CODEC_CASES: tuple[tuple[str, bool, object], ...] = (
     ("wrong_case", True, "Avro"),
     ("null", True, None),
     ("non_string", True, ["avro"]),
+    ("malformed", True, "avro\0"),
 )
 
 

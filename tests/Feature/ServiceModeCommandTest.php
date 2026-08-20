@@ -11,7 +11,7 @@ use DurableWorkflow\Bridge\Laravel\Facades\DurableWorkflow;
 use DurableWorkflow\Bridge\Laravel\LaravelWorkflowClient;
 use DurableWorkflow\Bridge\Laravel\LaravelWorkflowClientInterface;
 use DurableWorkflow\Bridge\ServiceConfiguration;
-use DurableWorkflow\WorkflowClientInterface;
+use DurableWorkflow\Client;
 use Illuminate\Support\Facades\Artisan;
 use ReflectionClass;
 use Symfony\Component\Process\Process;
@@ -85,10 +85,10 @@ final class ServiceModeCommandTest extends TestCase
             config()->set('durable-workflow.namespace', 'sample');
             config()->set('durable-workflow.task_queue', 'service-mode-worker-queue');
 
-            $this->assertFalse($this->app->resolved(WorkflowClientInterface::class));
+            $this->assertFalse($this->app->resolved(Client::class));
             $command = $this->app->make(ServiceMode::class);
             $this->assertInstanceOf(LaravelWorkflowClientInterface::class, $this->commandClient($command));
-            $this->assertFalse($this->app->resolved(WorkflowClientInterface::class));
+            $this->assertFalse($this->app->resolved(Client::class));
 
             $status = Artisan::call('durable-workflow:worker', ['--poll-timeout' => '0']);
             $output = Artisan::output();
@@ -120,7 +120,7 @@ final class ServiceModeCommandTest extends TestCase
                 PrepareWelcomeActivity::TYPE,
                 $requests[0]['body']['supported_activity_types'] ?? [],
             );
-            $this->assertFalse($this->app->resolved(WorkflowClientInterface::class));
+            $this->assertFalse($this->app->resolved(Client::class));
         } finally {
             $runtime->stop();
             @unlink($requestLog);

@@ -507,8 +507,10 @@ SH,
         $this->assertStringContainsString('--readiness-only', $script);
         $this->assertStringContainsString('POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=', $script);
         $this->assertStringContainsString('POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=', $script);
+        $this->assertStringContainsString('POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE=', $script);
         $this->assertStringContainsString('task_codec_rejection_probe.php', $script);
         $this->assertStringContainsString('task_codec_rejection_probe.py', $script);
+        $this->assertStringContainsString('task-codec-rejection-probe', $script);
         $this->assertStringContainsString('assert_server_stable "worker registration"', $script);
         $this->assertStringContainsString('assert_server_stable "polyglot smoke"', $script);
         $this->assertStringContainsString('trap cleanup EXIT', $script);
@@ -1223,6 +1225,9 @@ SH,
         $lock = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Cargo.lock'));
         $dockerfile = (string) file_get_contents($this->repoPath('polyglot/rust_worker/Dockerfile'));
         $worker = (string) file_get_contents($this->repoPath('polyglot/rust_worker/src/main.rs'));
+        $codecProbe = (string) file_get_contents(
+            $this->repoPath('polyglot/rust_worker/src/bin/task_codec_rejection_probe.rs'),
+        );
         $tuple = json_decode(
             (string) file_get_contents($this->repoPath('polyglot/qualified-artifact-tuple.json')),
             true,
@@ -1242,6 +1247,7 @@ SH,
         $this->assertStringContainsString('apache-avro = "=0.21.0"', $cargo);
         $this->assertStringContainsString('COPY Cargo.toml Cargo.lock ./', $dockerfile);
         $this->assertStringContainsString('cargo add "durable-workflow@=${DURABLE_WORKFLOW_RUST_SDK_VERSION}"', $dockerfile);
+        $this->assertStringContainsString('task_codec_rejection_probe', $dockerfile);
         $this->assertStringNotContainsString('cargo update -p durable-workflow --precise', $dockerfile);
         $this->assertStringNotContainsString('path =', $cargo);
         $this->assertStringContainsString('polyglot.rust.greeter', $worker);
@@ -1251,6 +1257,9 @@ SH,
         $this->assertStringContainsString('polyglot.php-to-rust.receipt', $worker);
         $this->assertStringContainsString('polyglot.python-to-rust.echo', $worker);
         $this->assertStringContainsString('verify_official_avro_runtime', $worker);
+        $this->assertStringContainsString('.run_once()', $codecProbe);
+        $this->assertStringContainsString('unsupported_payload_codec', $codecProbe);
+        $this->assertStringContainsString('handler_calls == 0', $codecProbe);
     }
 
     public function test_waterline_config_exposes_v2_engine_source_and_namespace(): void
@@ -1298,7 +1307,7 @@ elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{.State.Running}}" ]]; then
   printf 'true\n'
 elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{if .State.Health}}{{.State.Health.Status}}{{end}}" ]]; then
   printf 'healthy\n'
-elif [[ "$*" == *"task_codec_rejection_probe.php"* || "$*" == *"task_codec_rejection_probe.py"* ]]; then
+elif [[ "$*" == *"task_codec_rejection_probe.php"* || "$*" == *"task_codec_rejection_probe.py"* || "$*" == *"task-codec-rejection-probe"* ]]; then
   printf '{}\n'
 fi
 BASH);

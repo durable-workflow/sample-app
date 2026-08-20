@@ -231,6 +231,7 @@ run_step \
 
 php_task_codec_rejection_evidence=""
 python_task_codec_rejection_evidence=""
+rust_task_codec_rejection_evidence=""
 capture_task_codec_probe \
   php_task_codec_rejection_evidence \
   "probing PHP task codec rejection boundaries" \
@@ -243,6 +244,12 @@ capture_task_codec_probe \
   "${POLYGLOT_TASK_CODEC_PROBE_TIMEOUT_SECONDS:-90}" \
   docker compose run --rm --no-deps python-activity-worker \
   python /app/scripts/task_codec_rejection_probe.py
+capture_task_codec_probe \
+  rust_task_codec_rejection_evidence \
+  "probing Rust task codec rejection boundaries" \
+  "${POLYGLOT_TASK_CODEC_PROBE_TIMEOUT_SECONDS:-90}" \
+  docker compose run --rm --no-deps rust-workflow-worker \
+  task-codec-rejection-probe
 
 run_step \
   "starting the complete polyglot topology with one server bootstrap" \
@@ -278,6 +285,7 @@ run_step \
     --no-deps \
     -e "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=$php_task_codec_rejection_evidence" \
     -e "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=$python_task_codec_rejection_evidence" \
+    -e "POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE=$rust_task_codec_rejection_evidence" \
     smoke
 
 assert_server_stable "polyglot smoke"

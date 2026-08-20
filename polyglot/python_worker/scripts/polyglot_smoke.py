@@ -84,6 +84,7 @@ UNSUPPORTED_TASK_CODEC_CASES = frozenset({
     "wrong_case",
     "null",
     "non_string",
+    "malformed",
 })
 TASK_CODEC_PROBE_PATHS = {
     "php": frozenset({
@@ -100,14 +101,21 @@ TASK_CODEC_PROBE_PATHS = {
         ("sdk", "query"),
         ("manual", "activity"),
     }),
+    "rust": frozenset({
+        ("sdk", "workflow"),
+        ("sdk", "activity"),
+        ("sdk", "query"),
+    }),
 }
 TASK_CODEC_PROBE_ENV = {
     "php": "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE",
     "python": "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE",
+    "rust": "POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE",
 }
 TASK_CODEC_ARTIFACTS = {
     "php": ("sdk-php", "durable-workflow/sdk"),
     "python": ("sdk-python", "durable-workflow"),
+    "rust": ("sdk-rust", "durable-workflow"),
 }
 
 PY_QUEUE = os.environ.get("POLYGLOT_PY_TASK_QUEUE", "polyglot-python")
@@ -559,7 +567,7 @@ def task_codec_rejection_surface(
 
     findings = [
         finding
-        for runtime in ("php", "python")
+        for runtime in ("php", "python", "rust")
         for finding in task_codec_probe_findings(probes.get(runtime), runtime)
     ]
     return {

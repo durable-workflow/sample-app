@@ -31,6 +31,7 @@ function unsupportedCodecCases(): array
         ['name' => 'wrong_case', 'present' => true, 'value' => 'Avro'],
         ['name' => 'null', 'present' => true, 'value' => null],
         ['name' => 'non_string', 'present' => true, 'value' => ['avro']],
+        ['name' => 'malformed', 'present' => true, 'value' => "avro\0"],
     ];
 }
 

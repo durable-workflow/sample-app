@@ -253,7 +253,7 @@ class TaskCodecRejectionEvidenceTest(unittest.TestCase):
         }
 
     def probes(self) -> dict[str, object]:
-        return {runtime: self.probe(runtime) for runtime in ("php", "python")}
+        return {runtime: self.probe(runtime) for runtime in ("php", "python", "rust")}
 
     def test_accepts_complete_published_worker_rejection_and_valid_control_matrices(self) -> None:
         surface = polyglot_smoke.task_codec_rejection_surface(self.probes())
@@ -264,6 +264,7 @@ class TaskCodecRejectionEvidenceTest(unittest.TestCase):
             {
                 "empty",
                 "json",
+                "malformed",
                 "missing",
                 "non_string",
                 "null",
@@ -312,6 +313,15 @@ class TaskCodecRejectionEvidenceTest(unittest.TestCase):
 
         self.assertEqual("failed", surface["status"])
         self.assertTrue(any("omitted rejection outcomes" in finding for finding in surface["findings"]))
+
+    def test_rejects_qualification_without_rust_worker_evidence(self) -> None:
+        probes = self.probes()
+        del probes["rust"]
+
+        surface = polyglot_smoke.task_codec_rejection_surface(probes)
+
+        self.assertEqual("failed", surface["status"])
+        self.assertTrue(any("rust task codec probe" in finding for finding in surface["findings"]))
 
     def test_emits_exact_source_head_and_workflow_run_identity(self) -> None:
         identity = {
