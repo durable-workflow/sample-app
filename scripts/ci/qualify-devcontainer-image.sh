@@ -429,7 +429,7 @@ if [[ -n "$checkout_status_after" ]]; then
     exit 1
 fi
 
-fresh_total_ms=$(( image_pull_ms + container_readiness_ms + dependency_bootstrap_ms + application_readiness_ms ))
+fresh_total_ms=$(( image_pull_ms + container_readiness_ms + dependency_bootstrap_ms + application_readiness_ms + playground_journey_ms ))
 max_fresh_ms=$(( max_fresh_seconds * 1000 ))
 max_warm_ms=$(( max_warm_seconds * 1000 ))
 

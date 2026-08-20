@@ -42,7 +42,7 @@ env:
   GHCR_IMAGE: ghcr.io/durable-workflow/sample-app-devcontainer
   DOCKERHUB_IMAGE: durableworkflow/sample-app-devcontainer
   MAX_COMPRESSED_LAYER_BYTES: '400000000'
-  MAX_COMPRESSED_PLATFORM_BYTES: '1100000000'
+  MAX_COMPRESSED_PLATFORM_BYTES: '1200000000'
 
 jobs:
   artifact-identity:

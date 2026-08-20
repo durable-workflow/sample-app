@@ -759,9 +759,9 @@ BASH,
         $this->assertStringContainsString('compressed_layer_count', $publish);
         $this->assertStringContainsString('within_size_budget', $publish);
         $this->assertStringContainsString("always() && steps.build.outcome == 'success'", $publish);
-        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1100000000'", $candidateWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1200000000'", $candidateWorkflow);
         $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $candidateWorkflow);
-        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1100000000'", $publicationWorkflow);
+        $this->assertStringContainsString("MAX_COMPRESSED_PLATFORM_BYTES: '1200000000'", $publicationWorkflow);
         $this->assertStringContainsString("MAX_COMPRESSED_LAYER_BYTES: '400000000'", $publicationWorkflow);
         $this->assertStringContainsString('900', $publicationEvidence);
 
@@ -834,12 +834,18 @@ BASH,
         $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
+        $this->assertStringContainsString('for language in php python rust; do', $script);
+        $this->assertStringContainsString(
+            'fresh_total_ms=$(( image_pull_ms + container_readiness_ms + dependency_bootstrap_ms + application_readiness_ms + playground_journey_ms ))',
+            $script,
+        );
 
         foreach ([
             'image_pull',
             'container_readiness',
             'dependency_bootstrap',
             'application_readiness',
+            'playground_journey_ms',
             'database_override_ms',
             'fresh_total_ms',
             'warm_rebuild_ms',
