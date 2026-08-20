@@ -70,7 +70,7 @@ remap_laravel_uid() {
     fi
 
     usermod --uid "$requested_uid" laravel
-    chown -R laravel:laravel /home/laravel
+    chown -R laravel:laravel /home/laravel /opt/sample-app-playground
 }
 
 prepare_docker_socket_access() {

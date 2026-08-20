@@ -1,0 +1,97 @@
+name: sample-app-playground
+
+x-server-environment: &server-environment
+  APP_NAME: "Durable Workflow Playground Server"
+  APP_ENV: testing
+  APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
+  APP_DEBUG: "false"
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: durable_workflow_playground
+  DB_USERNAME: workflow
+  DB_PASSWORD: workflow
+  REDIS_HOST: redis
+  QUEUE_CONNECTION: redis
+  CACHE_STORE: redis
+  DW_WORKER_POLL_TIMEOUT: "3"
+  WORKFLOW_SERVER_AUTH_DRIVER: token
+  WORKFLOW_SERVER_AUTH_TOKEN: playground-token
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: durable_workflow_playground
+      MYSQL_USER: workflow
+      MYSQL_PASSWORD: workflow
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=TCP", "--silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  bootstrap:
+    image: ${DURABLE_SERVER_IMAGE:?resolve the published artifact tuple first}
+    command: ["server-bootstrap"]
+    environment: *server-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  server:
+    image: ${DURABLE_SERVER_IMAGE:?resolve the published artifact tuple first}
+    environment: *server-environment
+    ports:
+      - "${PLAYGROUND_SERVER_PORT:-18082}:8080"
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  waterline:
+    image: ${DURABLE_WORKFLOW_WATERLINE_IMAGE:?resolve the published artifact tuple first}
+    environment:
+      APP_URL: http://localhost:${PLAYGROUND_WATERLINE_PORT:-18083}
+      WATERLINE_SERVER_ENDPOINT: http://server:8080
+      WATERLINE_SERVER_TOKEN: playground-token
+      WATERLINE_NAMESPACE: default
+      WATERLINE_ACCESS_MODE: read_only
+      WATERLINE_ALLOW_UNAUTHENTICATED: "true"
+    ports:
+      - "${PLAYGROUND_WATERLINE_PORT:-18083}:8080"
+    volumes:
+      - waterline-data:/data
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/up') === false ? 1 : 0);"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  mysql-data:
+  redis-data:
+  waterline-data:

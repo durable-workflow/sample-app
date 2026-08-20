@@ -71,6 +71,11 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
+      - name: Install the isolated framework-neutral PHP playground runtime
+        run: >-
+          composer install --working-dir=playground/php-runtime
+          --prefer-dist --no-dev --no-progress --no-interaction
+
       - name: Record the exact resolved Durable Workflow graph
         run: php scripts/ci/validate-composer-artifact-graph.php
 

@@ -6,6 +6,7 @@ set -euo pipefail
 [[ "$(composer --no-ansi --version | awk '{print $3}' | cut -d. -f1)" == "2" ]]
 [[ "$(node --version | sed -E 's/^v([0-9]+).*/\1/')" == "22" ]]
 python -c 'import sys; assert sys.version_info >= (3, 10)'
+python -c 'import durable_workflow'
 python -m venv --help >/dev/null
 rust_version="$(rustc --version | sed -E 's/^rustc ([0-9]+\.[0-9]+).*/\1/')"
 [[ "$(printf '%s\n' 1.86 "$rust_version" | sort -V | head -n 1)" == "1.86" ]]
@@ -25,6 +26,14 @@ printf 'fn main() { println!("rust-ok"); }\n' > "${rust_probe_dir}/main.rs"
 rustc "${rust_probe_dir}/main.rs" -o "${rust_probe_dir}/rust-probe"
 [[ "$("${rust_probe_dir}/rust-probe")" == "rust-ok" ]]
 rm -rf "$rust_probe_dir"
+
+test -s /opt/sample-app-playground/php/vendor/autoload.php
+test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/bootstrap.php
+test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/worker.php
+test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/client.php
+test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json
+test -d "${CARGO_HOME}/registry/cache"
+test -d "${CARGO_TARGET_DIR}/debug/deps"
 
 mysql_seed_archive=/usr/local/share/sample-app/mysql-datadir.tar
 test -x /usr/local/bin/seed-mysql-volume

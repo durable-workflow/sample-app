@@ -99,10 +99,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     TZ=UTC \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    VIRTUAL_ENV=/opt/sample-app-playground/python \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/home/laravel/.cargo \
+    CARGO_TARGET_DIR=/opt/sample-app-playground/cargo-target \
+    CARGO_INCREMENTAL=0 \
+    CARGO_PROFILE_DEV_DEBUG=0 \
     DURABLE_WORKFLOW_CLI_VERSION=${DURABLE_WORKFLOW_CLI_VERSION} \
-    PATH=/usr/local/cargo/bin:${PATH}
+    PATH=/opt/sample-app-playground/python/bin:/usr/local/cargo/bin:${PATH}
 
 WORKDIR /var/www/html
 
@@ -228,6 +232,50 @@ RUN set -eux; \
         sh /tmp/dw-install.sh; \
     rm /tmp/dw-install.sh; \
     dw --version
+
+COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
+COPY polyglot/qualified-artifact-tuple.json /tmp/sample-app-qualified-artifact-tuple.json
+
+RUN set -eux; \
+    python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/tmp/sample-app-qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
+    python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
+    python3 -m venv "$VIRTUAL_ENV"; \
+    "$VIRTUAL_ENV/bin/pip" install \
+        --no-input \
+        --no-cache-dir \
+        --disable-pip-version-check \
+        --requirement /tmp/sample-app-python-playground-requirements.txt \
+        "durable-workflow==${python_distribution_version}"; \
+    EXPECTED_PYTHON_SDK="$python_distribution_version" \
+        "$VIRTUAL_ENV/bin/python" -c 'import durable_workflow, importlib.metadata as metadata, os; assert metadata.version("durable-workflow") == os.environ["EXPECTED_PYTHON_SDK"]'; \
+    rm /tmp/sample-app-python-playground-requirements.txt /tmp/sample-app-qualified-artifact-tuple.json; \
+    chown -R laravel:laravel /opt/sample-app-playground
+
+COPY --chown=laravel:laravel playground/php-runtime/composer.json playground/php-runtime/composer.lock /opt/sample-app-playground/php/
+
+RUN set -eux; \
+    gosu laravel env COMPOSER_HOME=/home/laravel/.composer composer install \
+        --working-dir=/opt/sample-app-playground/php \
+        --prefer-dist \
+        --no-dev \
+        --no-interaction \
+        --no-progress \
+        --no-plugins \
+        --no-scripts; \
+    gosu laravel test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/bootstrap.php; \
+    gosu laravel test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json
+
+COPY --chown=laravel:laravel playground/templates/rust /tmp/sample-app-rust-playground
+
+RUN set -eux; \
+    install -d -o laravel -g laravel "$CARGO_HOME" "$CARGO_TARGET_DIR"; \
+    gosu laravel cargo build \
+        --locked \
+        --manifest-path=/tmp/sample-app-rust-playground/Cargo.toml \
+        --bins; \
+    rm -rf "$CARGO_TARGET_DIR/debug/incremental" /tmp/sample-app-rust-playground; \
+    gosu laravel test -d "$CARGO_HOME/registry/cache"; \
+    gosu laravel test -d "$CARGO_TARGET_DIR/debug/deps"
 
 COPY package-lock.json /tmp/sample-app-package-lock.json
 

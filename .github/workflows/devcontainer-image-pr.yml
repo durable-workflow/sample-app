@@ -7,6 +7,7 @@ on:
       - .devcontainer/**
       - .github/workflows/devcontainer-image.yml
       - .github/workflows/devcontainer-image-pr.yml
+      - playground/**
       - app/Console/Commands/Init.php
       - composer.json
       - composer.lock
@@ -18,7 +19,9 @@ on:
       - package-lock.json
       - scripts/ci/qualify-devcontainer-database-overrides.sh
       - scripts/ci/qualify-devcontainer-image.sh
+      - scripts/ci/validate-playground-evidence.py
       - scripts/ci/summarize-devcontainer-evidence.py
+      - scripts/playground
 
 permissions:
   contents: read
@@ -101,6 +104,7 @@ jobs:
           DEVCONTAINER_EVIDENCE_TYPE: candidate_qualification
           DEVCONTAINER_EXPECTED_REVISION: ${{ github.sha }}
           DEVCONTAINER_IMAGE_BUILD_MS: ${{ steps.build-timing.outputs.elapsed_ms }}
+          DEVCONTAINER_QUALIFY_PLAYGROUND: 1
           DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS: 0
           DEVCONTAINER_RUNNER_LABEL: ${{ matrix.runner }}
           DEVCONTAINER_RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
@@ -116,6 +120,14 @@ jobs:
         with:
           name: devcontainer-evidence-candidate-${{ matrix.suffix }}
           path: devcontainer-candidate-evidence-${{ matrix.suffix }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain authored playground journey evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: playground-evidence-candidate-${{ matrix.suffix }}
+          path: storage/app/devcontainer-playground-${{ matrix.suffix }}-*.json
           if-no-files-found: error
           retention-days: 30
 

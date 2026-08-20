@@ -7,5 +7,5 @@
 	"workspaceFolder": "/var/www/html",
 	"remoteUser": "laravel",
 	"postCreateCommand": ".devcontainer/post-create.sh",
-	"forwardPorts": [18080]
+	"forwardPorts": [18080, 18083]
 }

@@ -15,9 +15,10 @@ Create a Codespace from the main branch of this repository.
 <img src="https://user-images.githubusercontent.com/1130888/233664377-f300ad50-5436-4bb8-b172-c52e12047264.png" alt="image" width="300">
 
 Wait while Codespaces pulls the prepared Sample App development image and
-installs the repository's Composer and npm dependencies. PHP, Node, Composer,
-Chromium, and operating-system packages are already in the image, so they are
-not rebuilt for each Codespace.
+installs the repository's Composer and npm dependencies. PHP and Composer,
+Python with an isolated SDK environment, Rust and Cargo, Docker Compose, `dw`,
+Node, and Chromium are already in the image. Post-create does not run `apt`,
+`rustup`, compile `dw`, or rebuild a language toolchain.
 
 When setup finishes, choose either deployment path:
 
@@ -63,6 +64,64 @@ tool outside the repository and its Compose stack. Repeat it for another run;
 the isolated `sample-app-polyglot-demo` project remains available between runs.
 The exhaustive directional codec, replay, signal, query, and Waterline checks
 remain in the [polyglot matrix guide](polyglot/README.md#complete-runtime-matrix).
+
+#### Symmetric SDK playground
+
+Ask an agent to create and run a workflow and activity, or use the same
+memorable service-mode authoring interface for every first-party SDK yourself:
+
+```bash
+scripts/playground php
+scripts/playground python
+scripts/playground rust
+```
+
+Each choice creates editable workflow and activity source under
+`.playground/<language>`, outside the repository's conformance workers, and
+preserves files you already own. It resolves the repository's one qualified
+published-artifact tuple and starts isolated Server and Waterline state. Before
+execution it prints the effective workflow type, activity type, task queue,
+worker command, start command, and expected result from
+`playground/contract.json`. The client starts only after the matching worker
+registration produces a positive `Worker ready` checkpoint.
+
+Success is reported after the SDK receives the expected result and `dw`
+confirms completed status and activity history. Waterline must select that
+exact workflow and run before the terminal prints its exact run URL. The same
+journeys run during development-image qualification on AMD64 and ARM64.
+
+Pass `--source` to scaffold or run a different caller-owned directory:
+
+```bash
+scripts/playground python --source "$HOME/my-durable-python-worker"
+```
+
+The default source and evidence paths are ignored by Git. The development image
+contains an isolated Python SDK environment, the PHP SDK package, and the Rust
+SDK dependency and development build caches, so first use does not rebuild an
+SDK graph. Remove the isolated Server, database, Redis, and Waterline state
+with `scripts/playground down <language>`.
+
+The default `php` journey uses the framework-neutral `durable-workflow/sdk`
+through its Laravel bridge. The caller-owned activity receives configuration
+and a PSR logger from Laravel's container, the worker uses the bridge's
+`WorkerFactory`, and the scaffold includes a focused SDK test fake. The journey
+runs that local test before registering the live worker, so moving from the
+embedded engine to service mode retains dependency injection, application
+configuration, logging, and testability.
+
+For a framework-free PHP process, explicitly scaffold the installed SDK
+package's own examples instead of copying another implementation into Sample
+App:
+
+```bash
+scripts/playground scaffold php --standalone --source "$HOME/durable-php-worker"
+```
+
+The installed package owns `bootstrap.php`, `worker.php`, and `client.php`.
+Provide the runtime URI, namespace, task queue, and separate role-scoped worker
+and control credentials described by its quickstart when running those files
+against Cloud.
 
 #### Laravel integration variation
 

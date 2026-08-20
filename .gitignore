@@ -6,6 +6,8 @@
 /storage/*.key
 /storage/pail
 /vendor
+/.playground
+/playground/php-runtime/vendor
 .env
 .env.backup
 .env.production

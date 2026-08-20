@@ -1,0 +1,81 @@
+{
+  "schema": "durable-workflow.sample-app.playground",
+  "schema_version": 2,
+  "interface": "scripts/playground",
+  "choices": [
+    "php",
+    "python",
+    "rust"
+  ],
+  "source_ownership": "caller",
+  "artifact_source": "polyglot/qualified-artifact-tuple.json",
+  "runtime": {
+    "server_distribution": "published-image",
+    "server_artifact": "server",
+    "waterline_distribution": "published-service-image",
+    "waterline_artifact": "waterline",
+    "isolated_state_per_journey": true
+  },
+  "proof": {
+    "required_status": "completed",
+    "required_history_events": [
+      "WorkflowStarted",
+      "ActivityScheduled",
+      "ActivityCompleted",
+      "WorkflowCompleted"
+    ],
+    "requires_worker_registration": true,
+    "requires_selected_waterline_run": true
+  },
+  "scenarios": {
+    "php": {
+      "integration": "laravel-bridge",
+      "workflow_type": "sample-app.playground.php.authored-workflow",
+      "activity_type": "sample-app.playground.php.authored-activity",
+      "task_queue": "sample-app-playground-php-{run_suffix}",
+      "workflow_id_prefix": "sample-app-playground-php",
+      "test_command": ["php", "{source}/test.php"],
+      "worker_command": ["php", "{source}/worker.php"],
+      "start_command": ["php", "{source}/client.php"],
+      "expected_result": {
+        "greeting": "Hello from the Sample App PHP playground",
+        "activity_runtime": "php",
+        "workflow_runtime": "php"
+      }
+    },
+    "python": {
+      "integration": "framework-neutral",
+      "workflow_type": "sample-app.playground.python.authored-workflow",
+      "activity_type": "sample-app.playground.python.authored-activity",
+      "task_queue": "sample-app-playground-python-{run_suffix}",
+      "workflow_id_prefix": "sample-app-playground-python",
+      "worker_command": ["python", "{source}/worker.py"],
+      "start_command": ["python", "{source}/client.py"],
+      "expected_result": {
+        "greeting": "Hello from the Sample App Python playground",
+        "activity_runtime": "python",
+        "workflow_runtime": "python"
+      }
+    },
+    "rust": {
+      "integration": "framework-neutral",
+      "workflow_type": "sample-app.playground.rust.authored-workflow",
+      "activity_type": "sample-app.playground.rust.authored-activity",
+      "task_queue": "sample-app-playground-rust-{run_suffix}",
+      "workflow_id_prefix": "sample-app-playground-rust",
+      "worker_command": [
+        "cargo", "run", "--quiet", "--locked", "{cargo_offline}",
+        "--manifest-path", "{source}/Cargo.toml", "--bin", "worker"
+      ],
+      "start_command": [
+        "cargo", "run", "--quiet", "--locked", "{cargo_offline}",
+        "--manifest-path", "{source}/Cargo.toml", "--bin", "client"
+      ],
+      "expected_result": {
+        "greeting": "Hello from the Sample App Rust playground",
+        "activity_runtime": "rust",
+        "workflow_runtime": "rust"
+      }
+    }
+  }
+}

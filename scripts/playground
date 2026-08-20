@@ -1,0 +1,914 @@
+#!/usr/bin/env python3
+"""Scaffold and prove one caller-owned first-party SDK workflow journey."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+COMPOSE_FILE = REPO_ROOT / "playground" / "docker-compose.yml"
+CONTRACT_FILE = REPO_ROOT / "playground" / "contract.json"
+LANGUAGES = ("php", "python", "rust")
+AUTH_TOKEN = "playground-token"
+NAMESPACE = "default"
+
+
+class PlaygroundError(RuntimeError):
+    pass
+
+
+def run(
+    command: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+    capture: bool = False,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd or REPO_ROOT,
+        env=env,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.PIPE if capture else None,
+        timeout=timeout,
+    )
+
+
+def command_output(command: list[str], *, env: dict[str, str] | None = None) -> str:
+    result = run(command, env=env, capture=True, timeout=30)
+    return result.stdout.strip() or result.stderr.strip()
+
+
+def require_command(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        raise PlaygroundError(
+            f"{name} is unavailable. Rebuild the Codespace with the published Sample App development image."
+        )
+    return path
+
+
+def doctor() -> dict[str, str]:
+    for executable in (
+        "php",
+        "composer",
+        "python",
+        "pip",
+        "rustc",
+        "cargo",
+        "docker",
+        "dw",
+    ):
+        require_command(executable)
+
+    versions = {
+        "php": command_output(["php", "-r", "echo PHP_VERSION;"]),
+        "composer": command_output(["composer", "--version", "--no-ansi"]),
+        "python": command_output(["python", "--version"]),
+        "pip": command_output(["pip", "--version"]),
+        "rustc": command_output(["rustc", "--version"]),
+        "cargo": command_output(["cargo", "--version"]),
+        "docker": command_output(
+            ["docker", "version", "--format", "{{.Client.Version}}"]
+        ),
+        "compose": command_output(["docker", "compose", "version", "--short"]),
+        "dw": command_output(["dw", "--version"]),
+    }
+    run(["python", "-m", "venv", "--help"], capture=True, timeout=30)
+    run(["docker", "info", "--format", "{{.ServerVersion}}"], capture=True, timeout=30)
+
+    python_match = re.search(r"Python (\d+)\.(\d+)", versions["python"])
+    rust_match = re.search(r"rustc (\d+)\.(\d+)", versions["rustc"])
+    if python_match is None or tuple(map(int, python_match.groups())) < (3, 10):
+        raise PlaygroundError(
+            f"Python 3.10 or newer is required; found {versions['python']}"
+        )
+    if rust_match is None or tuple(map(int, rust_match.groups())) < (1, 86):
+        raise PlaygroundError(
+            f"Rust 1.86 or newer is required; found {versions['rustc']}"
+        )
+
+    artifacts = resolve_artifacts()
+    runtime = php_runtime()
+    with (
+        runtime
+        / "vendor"
+        / "durable-workflow"
+        / "sdk"
+        / "docs"
+        / "quickstart-contract.json"
+    ).open(encoding="utf-8") as source:
+        php_contract = json.load(source)
+    rust_lock = (
+        REPO_ROOT / "playground" / "templates" / "rust" / "Cargo.lock"
+    ).read_text(encoding="utf-8")
+    rust_sdk = re.search(
+        r'\[\[package\]\]\s+name = "durable-workflow"\s+version = "([^"]+)"', rust_lock
+    )
+    laravel_php_package = json.loads(
+        command_output(
+            [
+                "composer",
+                "show",
+                "--working-dir",
+                str(REPO_ROOT),
+                "durable-workflow/sdk",
+                "--format=json",
+                "--no-ansi",
+            ]
+        )
+    )
+    versions.update(
+        {
+            "sdk_php": str(
+                php_contract.get("package", {}).get("published_version", "")
+            ),
+            "sdk_php_laravel": str(laravel_php_package.get("versions", [""])[0]),
+            "sdk_python": command_output(
+                [
+                    "python",
+                    "-c",
+                    "import importlib.metadata as m; print(m.version('durable-workflow'))",
+                ]
+            ),
+            "sdk_rust": rust_sdk.group(1) if rust_sdk else "",
+        }
+    )
+    expected_sdks = {
+        "sdk_php": artifacts["DURABLE_WORKFLOW_PHP_SDK_VERSION"],
+        "sdk_php_laravel": artifacts["DURABLE_WORKFLOW_PHP_SDK_VERSION"],
+        "sdk_python": artifacts["DURABLE_WORKFLOW_PYTHON_SDK_VERSION"].replace(
+            "-rc.", "rc"
+        ),
+        "sdk_rust": artifacts["DURABLE_WORKFLOW_RUST_SDK_VERSION"],
+    }
+    mismatches = {
+        name: {"expected": expected, "actual": versions[name]}
+        for name, expected in expected_sdks.items()
+        if versions[name] != expected
+    }
+    if mismatches:
+        raise PlaygroundError(
+            f"Prepared dependency pins do not match the playground contract: {mismatches}"
+        )
+
+    return versions
+
+
+def load_contract() -> dict[str, Any]:
+    with CONTRACT_FILE.open(encoding="utf-8") as source:
+        contract = json.load(source)
+    if contract.get("choices") != list(LANGUAGES):
+        raise PlaygroundError(
+            "The playground contract does not expose the supported SDK choices."
+        )
+    scenarios = contract.get("scenarios")
+    if not isinstance(scenarios, dict) or set(scenarios) != set(LANGUAGES):
+        raise PlaygroundError("The playground scenarios are incomplete.")
+    required = {
+        "workflow_type",
+        "activity_type",
+        "task_queue",
+        "workflow_id_prefix",
+        "worker_command",
+        "start_command",
+        "expected_result",
+    }
+    for language in LANGUAGES:
+        scenario = scenarios[language]
+        if not isinstance(scenario, dict) or not required.issubset(scenario):
+            raise PlaygroundError(f"The {language} playground scenario is invalid.")
+    return contract
+
+
+def effective_scenario(
+    language: str, source_dir: Path, run_suffix: str = "scaffold"
+) -> dict[str, Any]:
+    scenario = copy.deepcopy(load_contract()["scenarios"][language])
+    replacements = {
+        "{run_suffix}": run_suffix,
+        "{source}": str(source_dir),
+        "{cargo_offline}": (
+            "--offline"
+            if os.environ.get(
+                "PLAYGROUND_CARGO_OFFLINE",
+                "1"
+                if Path("/opt/sample-app-playground/cargo-target").is_dir()
+                else "0",
+            )
+            == "1"
+            else ""
+        ),
+    }
+
+    def replace(value: Any) -> Any:
+        if isinstance(value, str):
+            for placeholder, replacement in replacements.items():
+                value = value.replace(placeholder, replacement)
+            return value
+        if isinstance(value, list):
+            return [item for entry in value if (item := replace(entry)) != ""]
+        if isinstance(value, dict):
+            return {name: replace(entry) for name, entry in value.items()}
+        return value
+
+    return replace(scenario)
+
+
+def resolve_artifacts() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("DURABLE_WORKFLOW_ARTIFACT_SOURCE", "pinned")
+    output = command_output(
+        [str(REPO_ROOT / "scripts" / "resolve-current-artifacts.sh")], env=env
+    )
+    assignments: dict[str, str] = {}
+    for line in output.splitlines():
+        name, separator, value = line.partition("=")
+        if separator and name.startswith("DURABLE_"):
+            assignments[name] = value
+    if "DURABLE_SERVER_IMAGE" not in assignments:
+        raise PlaygroundError("The published Server artifact could not be resolved.")
+    assignments.update(
+        {
+            "DURABLE_WORKFLOW_WATERLINE_IMAGE": (
+                "durableworkflow/waterline:"
+                + assignments["DURABLE_WORKFLOW_WATERLINE_VERSION"]
+            ),
+        }
+    )
+    return assignments
+
+
+def copy_missing(source: Path, destination: Path, created: list[str]) -> None:
+    if destination.exists():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    created.append(str(destination))
+
+
+def write_php_scenario(source_dir: Path, scenario: dict[str, Any]) -> str:
+    template = (
+        REPO_ROOT / "playground" / "templates" / "php" / "Scenario.php"
+    ).read_text(encoding="utf-8")
+    rendered = template.replace(
+        "{{WORKFLOW_TYPE}}", str(scenario["workflow_type"])
+    ).replace("{{ACTIVITY_TYPE}}", str(scenario["activity_type"]))
+    destination = source_dir / "Scenario.php"
+    if not destination.exists() or destination.read_text(encoding="utf-8") != rendered:
+        destination.write_text(rendered, encoding="utf-8")
+    return str(destination)
+
+
+def php_runtime() -> Path:
+    candidates = [
+        Path(
+            os.environ.get("PLAYGROUND_PHP_RUNTIME", "/opt/sample-app-playground/php")
+        ),
+        REPO_ROOT / "playground" / "php-runtime",
+    ]
+    for candidate in candidates:
+        if (candidate / "vendor" / "autoload.php").is_file() and (
+            candidate / "vendor" / "durable-workflow" / "sdk" / "examples"
+        ).is_dir():
+            return candidate
+    raise PlaygroundError(
+        "The image-baked PHP SDK runtime is unavailable. Rebuild the Codespace before scaffolding PHP."
+    )
+
+
+def scaffold(
+    language: str,
+    source_dir: Path,
+    *,
+    scenario: dict[str, Any] | None = None,
+    standalone_php: bool = False,
+) -> list[str]:
+    created: list[str] = []
+    source_dir.mkdir(parents=True, exist_ok=True)
+
+    if language == "php" and standalone_php:
+        runtime = php_runtime()
+        examples = runtime / "vendor" / "durable-workflow" / "sdk" / "examples"
+        for name in ("bootstrap.php", "worker.php", "client.php"):
+            copy_missing(examples / name, source_dir / name, created)
+        vendor = source_dir / "vendor"
+        if not vendor.exists():
+            vendor.symlink_to(runtime / "vendor", target_is_directory=True)
+            created.append(str(vendor))
+    else:
+        template = REPO_ROOT / "playground" / "templates" / language
+        for source in sorted(path for path in template.rglob("*") if path.is_file()):
+            if language == "php" and source.name == "Scenario.php":
+                continue
+            copy_missing(source, source_dir / source.relative_to(template), created)
+        if language == "php":
+            rendered = write_php_scenario(
+                source_dir,
+                scenario or effective_scenario(language, source_dir),
+            )
+            if rendered not in created:
+                created.append(rendered)
+
+    return created
+
+
+def default_source_dir(language: str) -> Path:
+    root = Path(
+        os.environ.get("PLAYGROUND_SOURCE_ROOT", str(REPO_ROOT / ".playground"))
+    )
+    return root.expanduser().resolve() / language
+
+
+def compose_command(project: str) -> list[str]:
+    return ["docker", "compose", "--project-name", project, "--file", str(COMPOSE_FILE)]
+
+
+def compose_environment(artifacts: dict[str, str]) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(artifacts)
+    env.setdefault("PLAYGROUND_SERVER_PORT", "18082")
+    env.setdefault("PLAYGROUND_WATERLINE_PORT", "18083")
+    return env
+
+
+def endpoint(host_variable: str, port_variable: str, default_port: str) -> str:
+    explicit = os.environ.get(host_variable)
+    if explicit:
+        return explicit.rstrip("/")
+    port = os.environ.get(port_variable, default_port)
+    if os.environ.get("CODESPACES", "").lower() == "true":
+        return f"http://host.docker.internal:{port}"
+    return f"http://127.0.0.1:{port}"
+
+
+def public_waterline_base() -> str:
+    explicit = os.environ.get("PLAYGROUND_WATERLINE_URL")
+    if explicit:
+        return explicit.rstrip("/")
+    port = os.environ.get("PLAYGROUND_WATERLINE_PORT", "18083")
+    codespace = os.environ.get("CODESPACE_NAME", "").strip()
+    if codespace:
+        domain = os.environ.get(
+            "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev"
+        )
+        return f"https://{codespace}-{port}.{domain}/waterline"
+    return f"http://localhost:{port}/waterline"
+
+
+def start_services(
+    project: str, artifacts: dict[str, str]
+) -> tuple[list[str], dict[str, str]]:
+    env = compose_environment(artifacts)
+    compose = compose_command(project)
+    run(compose + ["down", "--volumes", "--remove-orphans"], env=env)
+    run(compose + ["pull", "--quiet"], env=env)
+    run(compose + ["up", "--detach", "--no-build", "--wait"], env=env, timeout=180)
+    return compose, env
+
+
+def scenario_command(scenario: dict[str, Any], name: str) -> list[str]:
+    command = scenario.get(name)
+    if not isinstance(command, list) or not all(
+        isinstance(argument, str) and argument for argument in command
+    ):
+        raise PlaygroundError(f"The effective scenario has no valid {name}.")
+    return command
+
+
+def runtime_environment(
+    server_url: str,
+    task_queue: str,
+    worker_id: str,
+    scenario: dict[str, Any],
+) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "DURABLE_WORKFLOW_RUNTIME_URL": server_url,
+            "DURABLE_WORKFLOW_SERVER_URL": server_url,
+            "DURABLE_WORKFLOW_NAMESPACE": NAMESPACE,
+            "DURABLE_WORKFLOW_TASK_QUEUE": task_queue,
+            "DURABLE_WORKFLOW_WORKER_ID": worker_id,
+            "SAMPLE_APP_PLAYGROUND_SCENARIO": json.dumps(
+                scenario, separators=(",", ":")
+            ),
+            "SAMPLE_APP_PLAYGROUND_WORKFLOW_ID_PREFIX": str(
+                scenario["workflow_id_prefix"]
+            ),
+            "SAMPLE_APP_ROOT": str(REPO_ROOT),
+        }
+    )
+    return env
+
+
+def dw_environment(server_url: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "DURABLE_WORKFLOW_SERVER_URL": server_url,
+            "DURABLE_WORKFLOW_AUTH_TOKEN": AUTH_TOKEN,
+            "DURABLE_WORKFLOW_CLIENT_TOKEN": AUTH_TOKEN,
+            "DURABLE_WORKFLOW_NAMESPACE": NAMESPACE,
+        }
+    )
+    return env
+
+
+def json_command(
+    command: list[str], *, env: dict[str, str], timeout: float = 30
+) -> dict[str, Any]:
+    result = run(command, env=env, capture=True, timeout=timeout)
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PlaygroundError(
+            f"Expected JSON from {' '.join(command)}: {result.stdout}"
+        ) from error
+    if not isinstance(value, dict):
+        raise PlaygroundError(f"Expected a JSON object from {' '.join(command)}")
+    return value
+
+
+def wait_for_registration(
+    task_queue: str,
+    expected_worker_id: str | None,
+    workflow_type: str,
+    activity_type: str,
+    server_url: str,
+    worker: subprocess.Popen[str],
+) -> dict[str, Any]:
+    deadline = time.monotonic() + 60
+    last_error = "worker registration was not visible"
+    while time.monotonic() < deadline:
+        if worker.poll() is not None:
+            raise PlaygroundError(
+                f"The worker exited before registration with status {worker.returncode}."
+            )
+        try:
+            roster = json_command(
+                ["dw", "worker:list", f"--task-queue={task_queue}", "--json"],
+                env=dw_environment(server_url),
+            )
+            workers = roster.get("workers")
+            if isinstance(workers, list):
+                matches = [
+                    entry
+                    for entry in workers
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("worker_id"), str)
+                    and (
+                        expected_worker_id is None
+                        or entry["worker_id"] == expected_worker_id
+                    )
+                    and workflow_type in (entry.get("supported_workflow_types") or [])
+                    and activity_type in (entry.get("supported_activity_types") or [])
+                ]
+                if matches:
+                    return roster
+                last_error = (
+                    "worker registration did not advertise the effective "
+                    f"workflow/activity types: {workflow_type}, {activity_type}"
+                )
+        except (PlaygroundError, subprocess.SubprocessError) as error:
+            last_error = str(error)
+        time.sleep(1)
+    raise PlaygroundError(last_error)
+
+
+def last_json_line(output: str) -> dict[str, Any]:
+    for line in reversed(output.splitlines()):
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise PlaygroundError(f"The SDK client did not print a JSON result: {output}")
+
+
+def fetch_json(url: str, timeout: float = 60) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                value = json.load(response)
+            if isinstance(value, dict):
+                return value
+            raise PlaygroundError(f"Expected a JSON object from {url}")
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+            last_error = error
+            time.sleep(1)
+    raise PlaygroundError(
+        f"Waterline did not return selected-run JSON from {url}: {last_error}"
+    )
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(65536), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_evidence(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def terminate_worker(worker: subprocess.Popen[str]) -> None:
+    if worker.poll() is not None:
+        return
+    try:
+        os.killpg(worker.pid, signal.SIGTERM)
+        worker.wait(timeout=15)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            os.killpg(worker.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        worker.wait(timeout=5)
+
+
+def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, Any]:
+    started_at = time.time()
+    started_monotonic = time.monotonic()
+    contract = load_contract()
+    versions = doctor()
+    artifacts = resolve_artifacts()
+    suffix = hashlib.sha256(f"{source_dir}-{os.getpid()}".encode()).hexdigest()[:10]
+    scenario = effective_scenario(language, source_dir, suffix)
+    created = scaffold(language, source_dir, scenario=scenario)
+    project = os.environ.get("PLAYGROUND_COMPOSE_PROJECT", "sample-app-playground")
+    task_queue = str(scenario["task_queue"])
+    worker_id = f"sample-app-playground-{language}-worker-{suffix}"
+    server_url = endpoint("PLAYGROUND_SERVER_URL", "PLAYGROUND_SERVER_PORT", "18082")
+    waterline_internal = endpoint(
+        "PLAYGROUND_WATERLINE_INTERNAL_URL", "PLAYGROUND_WATERLINE_PORT", "18083"
+    )
+    compose: list[str] | None = None
+    compose_env: dict[str, str] | None = None
+    worker: subprocess.Popen[str] | None = None
+
+    with tempfile.NamedTemporaryFile(
+        mode="w+", prefix=f"playground-{language}-worker-", delete=False
+    ) as log:
+        worker_log = Path(log.name)
+
+    try:
+        print(
+            "Effective playground contract:\n"
+            + json.dumps(
+                {
+                    "language": language,
+                    "workflow_type": scenario["workflow_type"],
+                    "activity_type": scenario["activity_type"],
+                    "task_queue": scenario["task_queue"],
+                    "worker_command": scenario["worker_command"],
+                    "start_command": scenario["start_command"],
+                    "expected_result": scenario["expected_result"],
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        compose, compose_env = start_services(project, artifacts)
+        worker_env = runtime_environment(server_url, task_queue, worker_id, scenario)
+        worker_env["DURABLE_WORKFLOW_WORKER_TOKEN"] = AUTH_TOKEN
+        worker_env.pop("DURABLE_WORKFLOW_CLIENT_TOKEN", None)
+        worker_env.pop("DURABLE_WORKFLOW_CONTROL_TOKEN", None)
+        test_command = scenario.get("test_command")
+        if isinstance(test_command, list):
+            run(
+                scenario_command(scenario, "test_command"),
+                env=worker_env,
+                cwd=source_dir,
+            )
+        log_handle = worker_log.open("w", encoding="utf-8")
+        worker = subprocess.Popen(
+            scenario_command(scenario, "worker_command"),
+            cwd=source_dir,
+            env=worker_env,
+            text=True,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        expected_worker_id = None if language == "php" else worker_id
+        registration = wait_for_registration(
+            task_queue,
+            expected_worker_id,
+            str(scenario["workflow_type"]),
+            str(scenario["activity_type"]),
+            server_url,
+            worker,
+        )
+        registered_workers = registration["workers"]
+        registered_worker_id = next(
+            entry["worker_id"]
+            for entry in registered_workers
+            if isinstance(entry, dict)
+            and isinstance(entry.get("worker_id"), str)
+            and (expected_worker_id is None or entry["worker_id"] == expected_worker_id)
+            and scenario["workflow_type"]
+            in (entry.get("supported_workflow_types") or [])
+            and scenario["activity_type"]
+            in (entry.get("supported_activity_types") or [])
+        )
+        print(
+            "Worker ready: "
+            f"id={registered_worker_id} queue={task_queue} "
+            f"workflow_type={scenario['workflow_type']} "
+            f"activity_type={scenario['activity_type']}",
+            flush=True,
+        )
+
+        client_env = runtime_environment(server_url, task_queue, worker_id, scenario)
+        client_env["DURABLE_WORKFLOW_CLIENT_TOKEN"] = AUTH_TOKEN
+        client_env["DURABLE_WORKFLOW_CONTROL_TOKEN"] = AUTH_TOKEN
+        client_env.pop("DURABLE_WORKFLOW_WORKER_TOKEN", None)
+        client = run(
+            scenario_command(scenario, "start_command"),
+            env=client_env,
+            cwd=source_dir,
+            capture=True,
+            timeout=120,
+        )
+        client_result = last_json_line(client.stdout)
+        workflow_id = client_result.get("workflow_id")
+        if not isinstance(workflow_id, str) or not workflow_id:
+            raise PlaygroundError("The SDK client result did not contain workflow_id.")
+
+        cli_env = dw_environment(server_url)
+        description = json_command(
+            ["dw", "workflow:describe", workflow_id, "--json"], env=cli_env
+        )
+        run_id = description.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise PlaygroundError(
+                "The completed workflow description did not contain run_id."
+            )
+        history = json_command(
+            ["dw", "workflow:history", workflow_id, run_id, "--json"], env=cli_env
+        )
+        events = history.get("events")
+        event_types = (
+            [
+                event.get("event_type")
+                for event in events
+                if isinstance(event, dict) and isinstance(event.get("event_type"), str)
+            ]
+            if isinstance(events, list)
+            else []
+        )
+
+        quoted_workflow = urllib.parse.quote(workflow_id, safe="")
+        quoted_run = urllib.parse.quote(run_id, safe="")
+        page_path = f"/flows/instances/{quoted_workflow}/runs/{quoted_run}"
+        api_path = f"/api/instances/{quoted_workflow}/runs/{quoted_run}"
+        selection = fetch_json(f"{waterline_internal}/waterline{api_path}")
+        exact_waterline_url = f"{public_waterline_base()}{page_path}"
+
+        required_events = contract["proof"]["required_history_events"]
+        missing_events = [
+            event for event in required_events if event not in event_types
+        ]
+        result = client_result.get("result")
+        failures = []
+        if description.get("status") != contract["proof"]["required_status"]:
+            failures.append(f"status was {description.get('status')!r}")
+        if result != scenario["expected_result"]:
+            failures.append(
+                f"result was {result!r}; expected {scenario['expected_result']!r}"
+            )
+        if missing_events:
+            failures.append(f"history is missing {', '.join(missing_events)}")
+        if (
+            selection.get("instance_id") != workflow_id
+            or selection.get("selected_run_id") != run_id
+        ):
+            failures.append(
+                "Waterline did not select the completed workflow/run identity"
+            )
+        if failures:
+            raise PlaygroundError("; ".join(failures))
+
+        source_files = sorted(path for path in source_dir.rglob("*") if path.is_file())
+        payload = {
+            "schema": "durable-workflow.sample-app.playground-evidence",
+            "schema_version": 1,
+            "language": language,
+            "normal_user": {"uid": os.getuid(), "gid": os.getgid()},
+            "source": {
+                "directory": str(source_dir),
+                "created": [
+                    str(Path(path).relative_to(source_dir)) for path in created
+                ],
+                "files": {
+                    str(path.relative_to(source_dir)): sha256(path)
+                    for path in source_files
+                },
+            },
+            "artifacts": {
+                "server": artifacts["DURABLE_SERVER_IMAGE"],
+                "sdk_php": artifacts["DURABLE_WORKFLOW_PHP_SDK_VERSION"],
+                "sdk_python": artifacts["DURABLE_WORKFLOW_PYTHON_SDK_VERSION"],
+                "sdk_rust": artifacts["DURABLE_WORKFLOW_RUST_SDK_VERSION"],
+                "waterline": artifacts["DURABLE_WORKFLOW_WATERLINE_IMAGE"],
+                "cli": versions["dw"],
+            },
+            "tool_versions": versions,
+            "effective_contract": scenario,
+            "worker_registration": registration,
+            "workflow": {
+                "workflow_id": workflow_id,
+                "run_id": run_id,
+                "task_queue": task_queue,
+                "worker_id": registered_worker_id,
+                "status": description.get("status"),
+                "result": result,
+                "history_event_types": event_types,
+            },
+            "waterline": {
+                "url": exact_waterline_url,
+                "selection": {
+                    "instance_id": selection.get("instance_id"),
+                    "selected_run_id": selection.get("selected_run_id"),
+                },
+            },
+            "started_epoch_ms": round(started_at * 1000),
+            "completed_epoch_ms": round(time.time() * 1000),
+            "elapsed_ms": round((time.monotonic() - started_monotonic) * 1000),
+        }
+        write_evidence(evidence_path, payload)
+        print(
+            f"Completed {language} workflow {workflow_id}: {json.dumps(result, separators=(',', ':'))}"
+        )
+        print(f"Inspect this exact run in Waterline: {exact_waterline_url}")
+        print(f"Journey evidence: {evidence_path}")
+        return payload
+    except Exception:
+        if worker_log.exists():
+            worker_output = worker_log.read_text(
+                encoding="utf-8", errors="replace"
+            ).strip()
+            if worker_output:
+                print(f"\n{language} worker output:\n{worker_output}", file=sys.stderr)
+        if compose is not None and compose_env is not None:
+            subprocess.run(
+                compose + ["ps"], env=compose_env, cwd=REPO_ROOT, check=False
+            )
+            subprocess.run(
+                compose + ["logs", "--no-color", "--tail=100"],
+                env=compose_env,
+                cwd=REPO_ROOT,
+                check=False,
+            )
+        raise
+    finally:
+        if worker is not None:
+            terminate_worker(worker)
+        try:
+            log_handle.close()  # type: ignore[possibly-undefined]
+        except UnboundLocalError:
+            pass
+        worker_log.unlink(missing_ok=True)
+        if (
+            os.environ.get("PLAYGROUND_CLEANUP") == "1"
+            and compose is not None
+            and compose_env is not None
+        ):
+            subprocess.run(
+                compose + ["down", "--volumes", "--remove-orphans"],
+                env=compose_env,
+                cwd=REPO_ROOT,
+                check=False,
+            )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create and run a caller-owned workflow and activity with a first-party SDK."
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for language in LANGUAGES:
+        journey_parser = subparsers.add_parser(
+            language, help=f"Run the {language} playground journey"
+        )
+        journey_parser.add_argument(
+            "--source", type=Path, help="Caller-owned source directory"
+        )
+        journey_parser.add_argument(
+            "--evidence", type=Path, help="Evidence JSON output"
+        )
+
+    scaffold_parser = subparsers.add_parser(
+        "scaffold", help="Create source without starting services"
+    )
+    scaffold_parser.add_argument("language", choices=LANGUAGES)
+    scaffold_parser.add_argument(
+        "--source", type=Path, help="Caller-owned source directory"
+    )
+    scaffold_parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help="For PHP, copy the installed package-owned standalone examples instead of the Laravel bridge scaffold",
+    )
+    subparsers.add_parser(
+        "doctor", help="Verify every Codespaces tool and Docker access"
+    )
+    down_parser = subparsers.add_parser(
+        "down", help="Remove playground services and state"
+    )
+    down_parser.add_argument("language", choices=LANGUAGES)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.command == "doctor":
+        print(json.dumps(doctor(), indent=2, sort_keys=True))
+        return 0
+    if args.command == "scaffold":
+        source_dir = (
+            (args.source or default_source_dir(args.language)).expanduser().resolve()
+        )
+        if args.standalone and args.language != "php":
+            raise PlaygroundError("--standalone is available only for PHP.")
+        created = scaffold(
+            args.language,
+            source_dir,
+            standalone_php=args.standalone,
+        )
+        print(f"Caller-owned {args.language} source: {source_dir}")
+        style = "standalone package examples" if args.standalone else "playground"
+        print(
+            f"Created {len(created)} {style} entries; existing authored files were preserved."
+        )
+        return 0
+    if args.command == "down":
+        artifacts = resolve_artifacts()
+        project = os.environ.get("PLAYGROUND_COMPOSE_PROJECT", "sample-app-playground")
+        run(
+            compose_command(project) + ["down", "--volumes", "--remove-orphans"],
+            env=compose_environment(artifacts),
+        )
+        return 0
+
+    language = args.command
+    source_dir = (args.source or default_source_dir(language)).expanduser().resolve()
+    evidence_path = (
+        (
+            args.evidence
+            or Path(
+                os.environ.get(
+                    "PLAYGROUND_EVIDENCE_PATH",
+                    REPO_ROOT
+                    / "storage"
+                    / "app"
+                    / f"playground-{language}-evidence.json",
+                )
+            )
+        )
+        .expanduser()
+        .resolve()
+    )
+    journey(language, source_dir, evidence_path)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (
+        PlaygroundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ) as error:
+        print(f"playground: {error}", file=sys.stderr)
+        raise SystemExit(1)

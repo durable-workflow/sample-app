@@ -71,6 +71,27 @@ def validate_native(record: dict[str, Any]) -> None:
         fail(f"normalized host architecture does not match {platform}: {runner}")
 
 
+def validate_playground(record: dict[str, Any], *, required: bool) -> None:
+    elapsed = record.get("playground_journey_ms")
+    files = record.get("playground_evidence_files")
+    if not required:
+        if elapsed != 0 or files != []:
+            fail(f"unexpected playground evidence in {record.get('evidence_file')}")
+        return
+    if not isinstance(elapsed, int) or elapsed <= 0:
+        fail(f"playground timing is missing in {record.get('evidence_file')}")
+    if not isinstance(files, list) or len(files) != 3:
+        fail(f"playground evidence set is incomplete in {record.get('evidence_file')}")
+    for language in ("php", "python", "rust"):
+        if not any(
+            isinstance(name, str) and name.endswith(f"-{language}.json")
+            for name in files
+        ):
+            fail(
+                f"playground evidence is missing {language} in {record.get('evidence_file')}"
+            )
+
+
 def validate_timings(evidence: list[dict[str, Any]]) -> tuple[int, int]:
     starts: list[int] = []
     completions: list[int] = []
@@ -97,6 +118,7 @@ def validate_candidate(grouped: dict[str, list[dict[str, Any]]]) -> None:
         fail("candidate evidence must contain one native record for each architecture")
     for record in candidates:
         validate_native(record)
+        validate_playground(record, required=True)
         if record.get("anonymous_pull_verification", {}).get("required"):
             fail("local pull-request candidates must not claim an anonymous public pull")
 
@@ -179,6 +201,16 @@ def validate_publication(grouped: dict[str, list[dict[str, Any]]]) -> None:
             for key in ("required", "credentials_absent", "pull_performed")
         ):
             fail(f"anonymous pull verification failed for {record.get('registry')}/{record.get('platform')}")
+    playground_qualifications = [
+        record
+        for record in qualifications
+        if isinstance(record.get("playground_journey_ms"), int)
+        and record["playground_journey_ms"] > 0
+    ]
+    if len(playground_qualifications) != 1:
+        fail("public qualification must retain one authored playground evidence set")
+    for record in qualifications:
+        validate_playground(record, required=record in playground_qualifications)
 
     promotion = grouped["promotion"][0]
     if set(promotion.get("qualification_gate", [])) != {

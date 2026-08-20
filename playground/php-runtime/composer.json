@@ -1,0 +1,18 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "durable-workflow/sample-app-playground-php-runtime",
+    "description": "Image-baked framework-neutral PHP SDK runtime for the Sample App playground.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "durable-workflow/sdk": ">=2.0.0-rc.1 <2.1"
+    },
+    "config": {
+        "allow-plugins": false,
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

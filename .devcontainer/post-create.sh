@@ -57,6 +57,8 @@ run_step 'checking the Laravel health endpoint' \
     check_http_200 http://127.0.0.1/up 12 30
 run_step 'checking the Laravel welcome page' \
     check_http_200 http://127.0.0.1/ 12 30
+run_step 'checking PHP, Python, Rust, Docker Compose, and dw playground tools' \
+    scripts/playground doctor
 
-printf 'Codespaces setup complete: Laravel, MySQL, Redis, and Playwright are ready (%sms total).\n' \
+printf 'Codespaces setup complete: Laravel and the PHP, Python, and Rust playgrounds are ready (%sms total).\n' \
     "$(( $(timestamp_ms) - setup_started_ms ))"

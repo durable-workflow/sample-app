@@ -6,6 +6,7 @@ on:
     paths:
       - .devcontainer/**
       - .github/workflows/devcontainer-image.yml
+      - playground/**
       - .github/workflows/devcontainer-image-pr.yml
       - app/Console/Commands/Init.php
       - composer.json
@@ -18,7 +19,9 @@ on:
       - package-lock.json
       - scripts/ci/qualify-devcontainer-database-overrides.sh
       - scripts/ci/qualify-devcontainer-image.sh
+      - scripts/ci/validate-playground-evidence.py
       - scripts/ci/summarize-devcontainer-evidence.py
+      - scripts/playground
   schedule:
     - cron: '17 6 * * 1'
   workflow_dispatch:
@@ -405,7 +408,7 @@ jobs:
     if: ${{ github.server_url == 'https://github.com' }}
     needs: [artifact-identity, assemble-indexes]
     runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -417,21 +420,25 @@ jobs:
           - registry: ghcr
             image: ghcr.io/durable-workflow/sample-app-devcontainer
             platform: linux/amd64
+            playground: 1
             runner: ubuntu-24.04
             suffix: ghcr-amd64
           - registry: ghcr
             image: ghcr.io/durable-workflow/sample-app-devcontainer
             platform: linux/arm64
+            playground: 0
             runner: ubuntu-24.04-arm
             suffix: ghcr-arm64
           - registry: dockerhub
             image: durableworkflow/sample-app-devcontainer
             platform: linux/amd64
+            playground: 0
             runner: ubuntu-24.04
             suffix: dockerhub-amd64
           - registry: dockerhub
             image: durableworkflow/sample-app-devcontainer
             platform: linux/arm64
+            playground: 0
             runner: ubuntu-24.04-arm
             suffix: dockerhub-arm64
     steps:
@@ -456,6 +463,7 @@ jobs:
         env:
           DEVCONTAINER_EVIDENCE_TYPE: public_qualification
           DEVCONTAINER_EXPECTED_REVISION: ${{ github.sha }}
+          DEVCONTAINER_QUALIFY_PLAYGROUND: ${{ matrix.playground }}
           DEVCONTAINER_REGISTRY: ${{ matrix.registry }}
           DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1
           DEVCONTAINER_RUNNER_LABEL: ${{ matrix.runner }}
@@ -471,6 +479,15 @@ jobs:
         with:
           name: devcontainer-evidence-public-${{ matrix.suffix }}
           path: devcontainer-public-evidence-${{ matrix.suffix }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain published-image authored playground journeys
+        if: ${{ matrix.playground == 1 }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: playground-evidence-public-${{ matrix.suffix }}
+          path: storage/app/devcontainer-playground-amd64-*.json
           if-no-files-found: error
           retention-days: 90
 

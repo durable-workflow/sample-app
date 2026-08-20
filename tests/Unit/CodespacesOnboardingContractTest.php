@@ -43,7 +43,7 @@ final class CodespacesOnboardingContractTest extends TestCase
         $this->assertCount(2, $topLevelPathHeadings[0]);
     }
 
-    public function test_application_shaped_service_journey_is_nested_under_the_primary_service_path(): void
+    public function test_service_mode_contains_polyglot_demo_and_symmetric_authoring_tools(): void
     {
         $serviceMode = $this->deploymentPathSections($this->codespacesOnboarding())['service-mode'];
         $primaryCommand = strpos($serviceMode, 'scripts/polyglot.sh');
@@ -59,6 +59,7 @@ final class CodespacesOnboardingContractTest extends TestCase
             'polyglot/README.md#complete-runtime-matrix',
             $serviceMode,
         );
+        $this->assertStringContainsString('scripts/playground php', $serviceMode);
     }
 
     private function codespacesOnboarding(): string

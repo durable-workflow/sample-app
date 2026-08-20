@@ -17,6 +17,7 @@ evidence_type="${DEVCONTAINER_EVIDENCE_TYPE:-qualification}"
 image_build_ms="${DEVCONTAINER_IMAGE_BUILD_MS:-0}"
 registry="${DEVCONTAINER_REGISTRY:-local}"
 runner_label="${DEVCONTAINER_RUNNER_LABEL:-unknown}"
+qualify_playground="${DEVCONTAINER_QUALIFY_PLAYGROUND:-0}"
 
 case "$platform" in
     linux/amd64|linux/arm64) ;;
@@ -327,6 +328,30 @@ first_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_K
 second_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"
 [[ "$second_app_key" == "$first_app_key" ]]
 
+playground_journey_ms=0
+playground_evidence_files=()
+if [[ "$qualify_playground" == "1" ]]; then
+    playground_started_ms="$(timestamp_ms)"
+    playground_source_root="/tmp/sample-app-playground-proof-${expected_architecture}-$$"
+    for language in php python rust; do
+        evidence_name="devcontainer-playground-${expected_architecture}-${language}.json"
+        evidence_path="${repo_root}/storage/app/${evidence_name}"
+        playground_evidence_files+=("$evidence_path")
+        "${compose[@]}" exec -T laravel gosu laravel env \
+            CODESPACES=true \
+            PLAYGROUND_CLEANUP=1 \
+            PLAYGROUND_EVIDENCE_PATH="/var/www/html/storage/app/${evidence_name}" \
+            PLAYGROUND_SERVER_URL=http://host.docker.internal:18082 \
+            PLAYGROUND_SOURCE_ROOT="$playground_source_root" \
+            PLAYGROUND_WATERLINE_INTERNAL_URL=http://host.docker.internal:18083 \
+            PLAYGROUND_WATERLINE_URL=http://localhost:18083/waterline \
+            scripts/playground "$language"
+    done
+    python3 "${repo_root}/scripts/ci/validate-playground-evidence.py" \
+        "${playground_evidence_files[@]}"
+    playground_journey_ms="$(duration_ms "$playground_started_ms")"
+fi
+
 tracked_status_after="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
 
 if [[ -n "$tracked_status_after" ]]; then
@@ -444,6 +469,8 @@ REQUIRE_ANONYMOUS_PULL="$require_anonymous_pull" \
 RUNNER_LABEL="$runner_label" \
 RUN_STARTED_MS="$run_started_ms" \
 WARM_REBUILD_MS="$warm_rebuild_ms" \
+PLAYGROUND_JOURNEY_MS="$playground_journey_ms" \
+PLAYGROUND_EVIDENCE_FILES="$(IFS=:; echo "${playground_evidence_files[*]}")" \
 TIMING_OUTPUT="$timing_output" \
 python3 <<'PY'
 import json
@@ -482,9 +509,16 @@ payload = {
         "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
         "database_override": int(os.environ["DATABASE_OVERRIDE_MS"]),
         "warm_rebuild": int(os.environ["WARM_REBUILD_MS"]),
+        "playground_journeys": int(os.environ["PLAYGROUND_JOURNEY_MS"]),
     },
     "fresh_total_ms": int(os.environ["FRESH_TOTAL_MS"]),
     "warm_rebuild_ms": int(os.environ["WARM_REBUILD_MS"]),
+    "playground_journey_ms": int(os.environ["PLAYGROUND_JOURNEY_MS"]),
+    "playground_evidence_files": [
+        path.rsplit("/", 1)[-1]
+        for path in os.environ["PLAYGROUND_EVIDENCE_FILES"].split(":")
+        if path
+    ],
     "run_started_epoch_ms": int(os.environ["RUN_STARTED_MS"]),
     "completed_epoch_ms": int(os.environ["COMPLETED_MS"]),
 }
