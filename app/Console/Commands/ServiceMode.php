@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Workflows\ServiceMode\WelcomeWorkflow;
-use DurableWorkflow\WorkflowClientInterface;
+use DurableWorkflow\Bridge\Laravel\LaravelWorkflowClientInterface;
+use DurableWorkflow\Bridge\Laravel\WorkflowStartOptions;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use JsonException;
@@ -19,7 +20,7 @@ final class ServiceMode extends Command
 
     protected $description = 'Run the Laravel service-mode welcome workflow';
 
-    public function __construct(private readonly WorkflowClientInterface $workflows)
+    public function __construct(private readonly LaravelWorkflowClientInterface $workflows)
     {
         parent::__construct();
     }
@@ -30,12 +31,11 @@ final class ServiceMode extends Command
         $name = (string) $this->argument('name');
         $workflowId = $this->workflowId();
         $startedAt = hrtime(true);
-        $handle = $this->workflows->startWorkflow(
-            WelcomeWorkflow::TYPE,
-            $workflowId,
-            WelcomeWorkflow::PHP_TASK_QUEUE,
+        $handle = $this->workflows->start(
+            WelcomeWorkflow::class,
             [$name],
-            memo: ['sample' => 'service-mode-welcome'],
+            $workflowId,
+            new WorkflowStartOptions(memo: ['sample' => 'service-mode-welcome']),
         );
         $runId = property_exists($handle, 'selectedRunId') ? $handle->selectedRunId : null;
 
@@ -48,7 +48,7 @@ final class ServiceMode extends Command
             'workflow_id' => $workflowId,
             'run_id' => is_string($runId) && $runId !== '' ? $runId : null,
             'workflow_type' => WelcomeWorkflow::TYPE,
-            'task_queue' => WelcomeWorkflow::PHP_TASK_QUEUE,
+            'task_queue' => (string) config('durable-workflow.task_queue'),
             'result' => $result,
             'result_ms' => (int) round((hrtime(true) - $startedAt) / 1_000_000),
         ];

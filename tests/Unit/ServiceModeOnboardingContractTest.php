@@ -53,6 +53,23 @@ final class ServiceModeOnboardingContractTest extends TestCase
             WelcomeWorkflow::PYTHON_TASK_QUEUE,
             $services['python-worker']['environment']['DURABLE_WORKFLOW_TASK_QUEUE'] ?? null,
         );
+        foreach (['php-worker', 'journey'] as $serviceName) {
+            $environment = $services[$serviceName]['environment'] ?? [];
+            $this->assertSame('http://server:8080', $environment['DURABLE_WORKFLOW_RUNTIME_URL'] ?? null);
+            $this->assertArrayNotHasKey('DURABLE_WORKFLOW_ENDPOINT', $environment);
+            $this->assertArrayNotHasKey('DURABLE_WORKFLOW_TOKEN', $environment);
+            $this->assertArrayNotHasKey('DURABLE_WORKFLOW_CLIENT_TOKEN', $environment);
+            $this->assertArrayNotHasKey('DURABLE_WORKFLOW_WORKER_TOKEN', $environment);
+            $this->assertSame('test-token', $environment['DURABLE_WORKFLOW_PROCESS_TOKEN'] ?? null);
+        }
+        $this->assertSame(
+            'worker',
+            $services['php-worker']['environment']['DURABLE_WORKFLOW_PROCESS_ROLE'] ?? null,
+        );
+        $this->assertSame(
+            'client',
+            $services['journey']['environment']['DURABLE_WORKFLOW_PROCESS_ROLE'] ?? null,
+        );
         foreach (['php-worker', 'waterline', 'journey'] as $serviceName) {
             $this->assertSame('file', $services[$serviceName]['environment']['SESSION_DRIVER'] ?? null);
         }

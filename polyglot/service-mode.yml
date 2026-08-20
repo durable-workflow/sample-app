@@ -40,10 +40,9 @@ x-laravel-environment: &laravel-environment
   QUEUE_CONNECTION: redis
   CACHE_STORE: redis
   SESSION_DRIVER: file
-  DURABLE_WORKFLOW_ENDPOINT: http://server:8080
+  DURABLE_WORKFLOW_RUNTIME_URL: http://server:8080
   DURABLE_WORKFLOW_NAMESPACE: default
   DURABLE_WORKFLOW_TASK_QUEUE: sample-service-php
-  DURABLE_WORKFLOW_TOKEN: test-token
 
 x-app-setup: &app-setup
   image: *development-image
@@ -190,7 +189,10 @@ services:
     user: "1000:1000"
     working_dir: /var/www/html
     entrypoint: ["php", "artisan", "durable-workflow:worker"]
-    environment: *laravel-environment
+    environment:
+      <<: *laravel-environment
+      DURABLE_WORKFLOW_PROCESS_ROLE: worker
+      DURABLE_WORKFLOW_PROCESS_TOKEN: test-token
     volumes:
       - service-worker-app:/var/www/html
     depends_on:
@@ -265,6 +267,8 @@ services:
     command: ["Codespace", "--json"]
     environment:
       <<: *laravel-environment
+      DURABLE_WORKFLOW_PROCESS_ROLE: client
+      DURABLE_WORKFLOW_PROCESS_TOKEN: test-token
       SERVICE_MODE_WATERLINE_URL: >-
         ${SERVICE_MODE_WATERLINE_URL:-http://localhost:18081/waterline}
     volumes:

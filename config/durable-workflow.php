@@ -6,7 +6,7 @@ use App\Workflows\ServiceMode\PrepareWelcomeActivity;
 use App\Workflows\ServiceMode\WelcomeWorkflow;
 
 return [
-    'endpoint' => env('DURABLE_WORKFLOW_ENDPOINT', 'http://localhost:8080'),
+    'runtime_url' => env('DURABLE_WORKFLOW_RUNTIME_URL', 'http://localhost:8080'),
     'namespace' => env('DURABLE_WORKFLOW_NAMESPACE', 'default'),
     'task_queue' => env('DURABLE_WORKFLOW_TASK_QUEUE', WelcomeWorkflow::PHP_TASK_QUEUE),
 
