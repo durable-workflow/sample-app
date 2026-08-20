@@ -777,6 +777,8 @@ BASH,
         $script = $this->contents('scripts/ci/qualify-devcontainer-image.sh');
         $databaseOverrides = $this->contents('scripts/ci/qualify-devcontainer-database-overrides.sh');
         $entrypoint = $this->contents('.devcontainer/docker/start-container');
+        $identityWaiter = $this->contents('.devcontainer/docker/wait-for-identity-ready');
+        $postCreate = $this->contents('.devcontainer/post-create.sh');
 
         $this->assertStringNotContainsString('docker compose build', $script);
         $this->assertStringContainsString('up --detach --no-build --wait', $script);
@@ -830,14 +832,28 @@ BASH,
         $this->assertStringContainsString('stat --format=%g "$socket"', $entrypoint);
         $this->assertStringContainsString('usermod --append --groups "$socket_group" laravel', $entrypoint);
         $this->assertStringContainsString('gosu laravel test -w "$socket"', $entrypoint);
+        $this->assertStringContainsString('rm -f "$identity_readiness_marker"', $entrypoint);
+        $this->assertStringContainsString('publish_identity_readiness', $entrypoint);
+        $this->assertStringContainsString('chown root:root "$marker_temporary"', $entrypoint);
+        $this->assertStringContainsString('chmod 0444 "$marker_temporary"', $entrypoint);
+        $this->assertLessThan(
+            strrpos($entrypoint, '    publish_identity_readiness'),
+            strrpos($entrypoint, '    prepare_docker_socket_access'),
+        );
+        $this->assertStringContainsString('SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS', $identityWaiter);
+        $this->assertStringContainsString('until identity_is_ready; do', $identityWaiter);
+        $this->assertStringContainsString('Timed out waiting for development-container identity readiness', $identityWaiter);
         $this->assertStringContainsString(
-            '"${compose[@]}" exec -T laravel gosu laravel bash -euc',
+            'exec -T --user root laravel wait-for-devcontainer-identity',
             $script,
         );
-        $this->assertDoesNotMatchRegularExpression(
-            '/exec -T --user laravel laravel bash -euc \'.*?docker version/s',
-            $script,
+        $this->assertLessThan(
+            strpos($script, 'exec -T --user laravel laravel bash -euc'),
+            strpos($script, 'exec -T --user root laravel wait-for-devcontainer-identity'),
         );
+        $this->assertStringContainsString('[[ " $(id -G) " == *" ${socket_gid} "* ]]', $script);
+        $this->assertStringContainsString('/usr/local/bin/wait-for-devcontainer-identity', $postCreate);
+        $this->assertStringContainsString('exec sg "$socket_group"', $postCreate);
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
         $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
@@ -859,6 +875,64 @@ BASH,
             'warm_rebuild_ms',
         ] as $timingKey) {
             $this->assertStringContainsString($timingKey, $script);
+        }
+    }
+
+    public function test_identity_readiness_waits_for_a_non_default_uid_marker(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-identity-ready-'.bin2hex(random_bytes(8));
+        $marker = $temporaryDirectory.'/identity-ready';
+        $socketPath = $temporaryDirectory.'/docker.sock';
+        $filesystem->mkdir($temporaryDirectory, 0700);
+        $socket = stream_socket_server('unix://'.$socketPath, $errorCode, $errorMessage);
+        $this->assertIsResource($socket, $errorMessage);
+
+        $fakeStat = $temporaryDirectory.'/stat';
+        file_put_contents($fakeStat, <<<'BASH'
+#!/usr/bin/env bash
+if [[ "${@: -1}" == "$FAKE_IDENTITY_MARKER" ]]; then
+    case "$1" in
+        --format=%u|--format=%g)
+            printf '0\n'
+            exit 0
+            ;;
+    esac
+fi
+exec /usr/bin/stat "$@"
+BASH);
+        chmod($fakeStat, 0700);
+
+        $waiter = new Process(
+            ['bash', $this->repoPath('.devcontainer/docker/wait-for-identity-ready')],
+            env: [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'FAKE_IDENTITY_MARKER' => $marker,
+                'SAMPLE_APP_DOCKER_SOCKET' => $socketPath,
+                'SAMPLE_APP_IDENTITY_READY_MARKER' => $marker,
+                'SAMPLE_APP_IDENTITY_READY_POLL_INTERVAL_SECONDS' => '0.02',
+                'SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS' => '2',
+                'SAMPLE_APP_UID' => '12345',
+            ],
+        );
+
+        try {
+            $waiter->start();
+            usleep(100_000);
+
+            $this->assertTrue($waiter->isRunning(), $waiter->getErrorOutput());
+            $this->assertFileDoesNotExist($marker);
+
+            $socketGid = filegroup($socketPath);
+            $this->assertIsInt($socketGid);
+            file_put_contents($marker, "uid=12345\nsocket_gid={$socketGid}\n");
+            chmod($marker, 0444);
+
+            $waiter->wait();
+            $this->assertSame(0, $waiter->getExitCode(), $waiter->getErrorOutput());
+        } finally {
+            fclose($socket);
+            $filesystem->remove($temporaryDirectory);
         }
     }
 

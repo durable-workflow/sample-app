@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+identity_readiness_marker="${SAMPLE_APP_IDENTITY_READY_MARKER:-/run/sample-app/identity-ready}"
+docker_socket="${SAMPLE_APP_DOCKER_SOCKET:-/var/run/docker.sock}"
+timeout_seconds="${SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS:-60}"
+poll_interval_seconds="${SAMPLE_APP_IDENTITY_READY_POLL_INTERVAL_SECONDS:-0.2}"
+expected_uid="${SAMPLE_APP_UID:-$(id -u laravel)}"
+
+if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS must be a positive integer.' >&2
+    exit 2
+fi
+
+if [[ ! "$expected_uid" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'SAMPLE_APP_UID must resolve to a positive, non-root decimal user ID.' >&2
+    exit 2
+fi
+
+identity_is_ready() {
+    local -a marker_lines
+    local socket_gid
+
+    [[ -r "$identity_readiness_marker" && -S "$docker_socket" ]] || return 1
+    [[ "$(stat --format=%u "$identity_readiness_marker")" == 0 ]] || return 1
+    [[ "$(stat --format=%g "$identity_readiness_marker")" == 0 ]] || return 1
+    [[ "$(stat --format=%a "$identity_readiness_marker")" == 444 ]] || return 1
+
+    mapfile -t marker_lines < "$identity_readiness_marker"
+    socket_gid="$(stat --format=%g "$docker_socket")"
+    [[ "${marker_lines[0]:-}" == "uid=${expected_uid}" ]] || return 1
+    [[ "${marker_lines[1]:-}" == "socket_gid=${socket_gid}" ]] || return 1
+}
+
+print_diagnostics() {
+    echo "Timed out waiting for development-container identity readiness after ${timeout_seconds}s." >&2
+    echo 'Laravel identity:' >&2
+    id laravel >&2 || true
+    echo 'Current identity:' >&2
+    id >&2 || true
+    echo 'Docker socket:' >&2
+    stat "$docker_socket" >&2 || true
+    echo 'Identity readiness marker:' >&2
+    stat "$identity_readiness_marker" >&2 || true
+    sed -n '1,10p' "$identity_readiness_marker" >&2 || true
+}
+
+deadline=$(( SECONDS + timeout_seconds ))
+until identity_is_ready; do
+    if (( SECONDS >= deadline )); then
+        print_diagnostics
+        exit 1
+    fi
+
+    sleep "$poll_interval_seconds"
+done

@@ -321,12 +321,14 @@ ENV COMPOSER_HOME=/home/laravel/.composer
 
 COPY --from=mysql-seed /tmp/sample-app-mysql-seed.tar /usr/local/share/sample-app/mysql-datadir.tar
 COPY .devcontainer/docker/start-container /usr/local/bin/start-container
+COPY .devcontainer/docker/wait-for-identity-ready /usr/local/bin/wait-for-devcontainer-identity
 COPY .devcontainer/docker/seed-mysql-volume /usr/local/bin/seed-mysql-volume
 COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image
 COPY .devcontainer/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .devcontainer/docker/php.ini /usr/local/etc/php/conf.d/99-laravel.ini
 
-RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container /usr/local/bin/verify-devcontainer-image \
+RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container \
+        /usr/local/bin/verify-devcontainer-image /usr/local/bin/wait-for-devcontainer-identity \
     && DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image
 
 EXPOSE 22 80 5173

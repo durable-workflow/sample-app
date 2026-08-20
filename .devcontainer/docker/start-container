@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+identity_readiness_marker=/run/sample-app/identity-ready
+runtime_uid="$(id -u)"
+if [[ "$runtime_uid" == 0 ]]; then
+    rm -f "$identity_readiness_marker"
+fi
+
 install_locked_composer_dependencies() {
     local -a command_prefix=("$@")
 
@@ -94,9 +100,29 @@ prepare_docker_socket_access() {
     fi
 }
 
-if [[ "$(id -u)" == "0" ]]; then
+publish_identity_readiness() {
+    local marker_directory
+    local marker_temporary
+    local socket_gid=absent
+
+    marker_directory="$(dirname "$identity_readiness_marker")"
+    install -d -m 0755 -o root -g root "$marker_directory"
+    marker_temporary="$(mktemp "${identity_readiness_marker}.XXXXXX")"
+
+    if [[ -S /var/run/docker.sock ]]; then
+        socket_gid="$(stat --format=%g /var/run/docker.sock)"
+    fi
+
+    printf 'uid=%s\nsocket_gid=%s\n' "$(id -u laravel)" "$socket_gid" > "$marker_temporary"
+    chown root:root "$marker_temporary"
+    chmod 0444 "$marker_temporary"
+    mv -f "$marker_temporary" "$identity_readiness_marker"
+}
+
+if [[ "$runtime_uid" == "0" ]]; then
     remap_laravel_uid
     prepare_docker_socket_access
+    publish_identity_readiness
 
     ssh-keygen -A
     sshd -t

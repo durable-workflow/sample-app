@@ -2,6 +2,29 @@
 
 set -euo pipefail
 
+/usr/local/bin/wait-for-devcontainer-identity
+
+identity_readiness_marker=/run/sample-app/identity-ready
+expected_uid="$(sed -n 's/^uid=//p' "$identity_readiness_marker")"
+socket_gid="$(stat --format=%g /var/run/docker.sock)"
+
+if [[ "$(id -u)" != "$expected_uid" ]]; then
+    echo "Post-create started with UID $(id -u) before the prepared UID ${expected_uid} was available." >&2
+    exit 1
+fi
+
+if [[ " $(id -G) " != *" ${socket_gid} "* ]]; then
+    socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
+    if [[ -z "$socket_group" ]]; then
+        echo "Docker socket group ${socket_gid} is unavailable after identity preparation." >&2
+        exit 1
+    fi
+
+    post_create_path="$(realpath "${BASH_SOURCE[0]}")"
+    printf -v quoted_post_create_path '%q' "$post_create_path"
+    exec sg "$socket_group" -c "exec ${quoted_post_create_path}"
+fi
+
 timestamp_ms() {
     date +%s%3N
 }

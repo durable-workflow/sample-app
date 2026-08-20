@@ -287,9 +287,15 @@ verify_database_schema
 
 dependency_bootstrap_started_ms="$(timestamp_ms)"
 "${compose[@]}" up --detach --no-build laravel microservice
-"${compose[@]}" exec -T laravel gosu laravel bash -euc '
+if ! "${compose[@]}" exec -T --user root laravel wait-for-devcontainer-identity; then
+    "${compose[@]}" logs --no-color --timestamps --tail=200 laravel >&2 || true
+    exit 1
+fi
+"${compose[@]}" exec -T --user laravel laravel bash -euc '
     [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
     [[ -w . ]]
+    socket_gid="$(stat --format=%g /var/run/docker.sock)"
+    [[ " $(id -G) " == *" ${socket_gid} "* ]]
     docker version >/dev/null
     docker compose version >/dev/null
     if [[ -e .env ]]; then

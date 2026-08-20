@@ -17,7 +17,7 @@ for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis z
     php --ri "$extension" >/dev/null
 done
 
-for executable in cargo cc composer curl docker dw ffmpeg git make mysql node npm npx pip pip3 pkg-config playwright python python3 redis-cli rg rustc ssh sshd; do
+for executable in cargo cc composer curl docker dw ffmpeg git make mysql node npm npx pip pip3 pkg-config playwright python python3 redis-cli rg rustc sg ssh sshd wait-for-devcontainer-identity; do
     command -v "$executable" >/dev/null
 done
 
