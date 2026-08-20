@@ -3,10 +3,16 @@
 set -euo pipefail
 
 identity_readiness_marker="${SAMPLE_APP_IDENTITY_READY_MARKER:-/run/sample-app/identity-ready}"
+identity_stage_marker="${SAMPLE_APP_IDENTITY_STAGE_MARKER:-/run/sample-app/identity-stage}"
 docker_socket="${SAMPLE_APP_DOCKER_SOCKET:-/var/run/docker.sock}"
 timeout_seconds="${SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS:-60}"
 poll_interval_seconds="${SAMPLE_APP_IDENTITY_READY_POLL_INTERVAL_SECONDS:-0.2}"
-expected_uid="${SAMPLE_APP_UID:-$(id -u laravel)}"
+local_passwd_file="${SAMPLE_APP_LOCAL_PASSWD_FILE:-/etc/passwd}"
+expected_uid="${SAMPLE_APP_UID:-}"
+
+if [[ -z "$expected_uid" ]]; then
+    expected_uid="$(awk -F: '$1 == "laravel" { print $3; exit }' "$local_passwd_file")"
+fi
 
 if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
     echo 'SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS must be a positive integer.' >&2
@@ -20,25 +26,30 @@ fi
 
 identity_is_ready() {
     local -a marker_lines
-    local socket_gid
+    local socket_gid=absent
 
-    [[ -r "$identity_readiness_marker" && -S "$docker_socket" ]] || return 1
+    [[ -r "$identity_readiness_marker" ]] || return 1
     [[ "$(stat --format=%u "$identity_readiness_marker")" == 0 ]] || return 1
     [[ "$(stat --format=%g "$identity_readiness_marker")" == 0 ]] || return 1
     [[ "$(stat --format=%a "$identity_readiness_marker")" == 444 ]] || return 1
 
     mapfile -t marker_lines < "$identity_readiness_marker"
-    socket_gid="$(stat --format=%g "$docker_socket")"
+    if [[ -S "$docker_socket" ]]; then
+        socket_gid="$(stat --format=%g "$docker_socket")"
+    fi
     [[ "${marker_lines[0]:-}" == "uid=${expected_uid}" ]] || return 1
     [[ "${marker_lines[1]:-}" == "socket_gid=${socket_gid}" ]] || return 1
 }
 
 print_diagnostics() {
     echo "Timed out waiting for development-container identity readiness after ${timeout_seconds}s." >&2
+    echo 'Active startup stage:' >&2
+    stat "$identity_stage_marker" >&2 || true
+    sed -n '1,10p' "$identity_stage_marker" >&2 || true
     echo 'Laravel identity:' >&2
-    id laravel >&2 || true
+    timeout --kill-after=1s 2s id laravel >&2 || true
     echo 'Current identity:' >&2
-    id >&2 || true
+    timeout --kill-after=1s 2s id >&2 || true
     echo 'Docker socket:' >&2
     stat "$docker_socket" >&2 || true
     echo 'Identity readiness marker:' >&2

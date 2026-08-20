@@ -61,7 +61,7 @@ verify_application_contract() {
         curl --fail --silent http://localhost/ >/dev/null
     '
 
-    "${compose[@]}" exec -T --user laravel microservice php artisan tinker --execute='
+    run_in_ready_devcontainer microservice php artisan tinker --execute='
         $database = DB::connection("shared")->selectOne("SELECT DATABASE() AS name")->name;
         throw_unless($database === getenv("SHARED_DB_DATABASE"), "Shared database override was not applied.");
     '

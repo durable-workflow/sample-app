@@ -827,15 +827,20 @@ BASH,
         $this->assertStringContainsString('laravel@127.0.0.1 id -u', $script);
         $this->assertStringContainsString('-o BatchMode=yes', $script);
         $this->assertStringContainsString('prepare_project_permissions', $entrypoint);
-        $this->assertStringContainsString("ssh-keygen -A\n    sshd -t", $entrypoint);
+        $this->assertStringContainsString("ssh-keygen -A\n        sshd -t", $entrypoint);
         $this->assertStringContainsString('remap_laravel_uid', $entrypoint);
         $this->assertStringContainsString('prepare_docker_socket_access', $entrypoint);
-        $this->assertStringContainsString('stat --format=%g "$socket"', $entrypoint);
+        $this->assertStringContainsString('stat --format=%g "$docker_socket"', $entrypoint);
         $this->assertStringContainsString('usermod --append --groups "$socket_group" laravel', $entrypoint);
-        $this->assertStringContainsString('gosu laravel test -w "$socket"', $entrypoint);
+        $this->assertStringContainsString('gosu laravel test -w "$docker_socket"', $entrypoint);
+        $this->assertStringContainsString('SAMPLE_APP_LOCAL_GROUP_FILE', $entrypoint);
+        $this->assertStringContainsString('SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS', $entrypoint);
+        $this->assertStringContainsString('run_bounded_identity_operation', $entrypoint);
+        $this->assertStringContainsString('adding-docker-socket-group', $entrypoint);
+        $this->assertStringNotContainsString('getent group', $entrypoint);
         $this->assertStringContainsString('rm -f "$identity_readiness_marker"', $entrypoint);
         $this->assertStringContainsString('publish_identity_readiness', $entrypoint);
-        $this->assertStringContainsString('chown root:root "$marker_temporary"', $entrypoint);
+        $this->assertStringContainsString('chown 0:0 "$marker_temporary"', $entrypoint);
         $this->assertStringContainsString('chmod 0444 "$marker_temporary"', $entrypoint);
         $this->assertLessThan(
             strrpos($entrypoint, '    publish_identity_readiness'),
@@ -844,6 +849,7 @@ BASH,
         $this->assertStringContainsString('SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS', $identityWaiter);
         $this->assertStringContainsString('until identity_is_ready; do', $identityWaiter);
         $this->assertStringContainsString('Timed out waiting for development-container identity readiness', $identityWaiter);
+        $this->assertStringContainsString('Active startup stage:', $identityWaiter);
         $this->assertStringContainsString(
             'exec -T --user root "$service" wait-for-devcontainer-identity',
             $identityCompose,
@@ -853,8 +859,10 @@ BASH,
         $this->assertStringContainsString('[[ " $(id -G) " == *" ${socket_gid} "* ]]', $script);
         $this->assertStringContainsString('/usr/local/bin/wait-for-devcontainer-identity', $postCreate);
         $this->assertStringContainsString('exec sg "$socket_group"', $postCreate);
+        $this->assertStringNotContainsString('getent group', $postCreate);
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
-        $this->assertStringContainsString('getent passwd "$requested_uid"', $entrypoint);
+        $this->assertStringContainsString('SAMPLE_APP_LOCAL_PASSWD_FILE', $entrypoint);
+        $this->assertStringNotContainsString('getent passwd', $entrypoint);
         $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
         $this->assertStringContainsString('for language in php python rust; do', $script);
@@ -929,6 +937,176 @@ BASH);
 
             $waiter->wait();
             $this->assertSame(0, $waiter->getExitCode(), $waiter->getErrorOutput());
+        } finally {
+            fclose($socket);
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_identity_readiness_accepts_a_service_without_a_docker_socket(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-identity-ready-no-socket-'.bin2hex(random_bytes(8));
+        $marker = $temporaryDirectory.'/identity-ready';
+        $missingSocket = $temporaryDirectory.'/docker.sock';
+        $filesystem->mkdir($temporaryDirectory, 0700);
+
+        $fakeStat = $temporaryDirectory.'/stat';
+        file_put_contents($fakeStat, <<<'BASH'
+#!/usr/bin/env bash
+if [[ "${@: -1}" == "$FAKE_IDENTITY_MARKER" ]]; then
+    case "$1" in
+        --format=%u|--format=%g)
+            printf '0\n'
+            exit 0
+            ;;
+    esac
+fi
+exec /usr/bin/stat "$@"
+BASH);
+        chmod($fakeStat, 0700);
+
+        file_put_contents($marker, "uid=12345\nsocket_gid=absent\n");
+        chmod($marker, 0444);
+
+        $waiter = new Process(
+            ['bash', $this->repoPath('.devcontainer/docker/wait-for-identity-ready')],
+            env: [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'FAKE_IDENTITY_MARKER' => $marker,
+                'SAMPLE_APP_DOCKER_SOCKET' => $missingSocket,
+                'SAMPLE_APP_IDENTITY_READY_MARKER' => $marker,
+                'SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS' => '2',
+                'SAMPLE_APP_UID' => '12345',
+            ],
+        );
+
+        try {
+            $waiter->run();
+            $this->assertSame(0, $waiter->getExitCode(), $waiter->getErrorOutput());
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_identity_timeout_reports_the_active_startup_stage(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-identity-stage-'.bin2hex(random_bytes(8));
+        $stage = $temporaryDirectory.'/identity-stage';
+        $filesystem->mkdir($temporaryDirectory, 0700);
+        file_put_contents($stage, "adding-docker-socket-group\n");
+
+        $waiter = new Process(
+            ['bash', $this->repoPath('.devcontainer/docker/wait-for-identity-ready')],
+            env: [
+                'SAMPLE_APP_DOCKER_SOCKET' => $temporaryDirectory.'/docker.sock',
+                'SAMPLE_APP_IDENTITY_READY_MARKER' => $temporaryDirectory.'/identity-ready',
+                'SAMPLE_APP_IDENTITY_STAGE_MARKER' => $stage,
+                'SAMPLE_APP_IDENTITY_READY_POLL_INTERVAL_SECONDS' => '0.02',
+                'SAMPLE_APP_IDENTITY_READY_TIMEOUT_SECONDS' => '1',
+                'SAMPLE_APP_UID' => '12345',
+            ],
+        );
+
+        try {
+            $waiter->run();
+            $this->assertNotSame(0, $waiter->getExitCode());
+            $this->assertStringContainsString('Active startup stage:', $waiter->getErrorOutput());
+            $this->assertStringContainsString('adding-docker-socket-group', $waiter->getErrorOutput());
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_non_default_uid_socket_group_mutation_times_out_with_actionable_stage(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-socket-group-ready-'.bin2hex(random_bytes(8));
+        $stage = $temporaryDirectory.'/identity-stage';
+        $events = $temporaryDirectory.'/events';
+        $socketPath = $temporaryDirectory.'/docker.sock';
+        $filesystem->mkdir($temporaryDirectory, 0700);
+        $socket = stream_socket_server('unix://'.$socketPath, $errorCode, $errorMessage);
+        $this->assertIsResource($socket, $errorMessage);
+        $socketGid = filegroup($socketPath);
+        $this->assertIsInt($socketGid);
+
+        file_put_contents($temporaryDirectory.'/passwd', "laravel:x:1000:1000::/home/laravel:/bin/bash\n");
+        file_put_contents($temporaryDirectory.'/group', "dockerlocal:x:{$socketGid}:\n");
+
+        file_put_contents($temporaryDirectory.'/usermod', <<<'BASH'
+#!/usr/bin/env bash
+printf 'usermod %s\n' "$*" >> "$FAKE_EVENTS"
+if [[ "$1" == "--uid" ]]; then
+    awk -F: -v OFS=: -v uid="$2" '$1 == "laravel" { $3 = uid } { print }' \
+        "$FAKE_PASSWD" > "${FAKE_PASSWD}.new"
+    mv "${FAKE_PASSWD}.new" "$FAKE_PASSWD"
+    exit 0
+fi
+if [[ "$1" == "--append" ]]; then
+    while :; do :; done
+fi
+exit 64
+BASH);
+        file_put_contents($temporaryDirectory.'/chown', <<<'BASH'
+#!/usr/bin/env bash
+printf 'chown %s\n' "$*" >> "$FAKE_EVENTS"
+BASH);
+        file_put_contents($temporaryDirectory.'/install', <<<'BASH'
+#!/usr/bin/env bash
+target="${@: -1}"
+mkdir -p "$target"
+chmod 0755 "$target"
+BASH);
+        file_put_contents($temporaryDirectory.'/getent', <<<'BASH'
+#!/usr/bin/env bash
+printf 'getent %s\n' "$*" >> "$FAKE_EVENTS"
+exit 90
+BASH);
+        foreach (['usermod', 'chown', 'install', 'getent'] as $executable) {
+            chmod($temporaryDirectory.'/'.$executable, 0700);
+        }
+
+        $process = new Process(
+            [
+                'bash',
+                '-euc',
+                'source "$1"; remap_laravel_uid; prepare_docker_socket_access',
+                'bash',
+                $this->repoPath('.devcontainer/docker/start-container'),
+            ],
+            env: [
+                'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                'FAKE_EVENTS' => $events,
+                'FAKE_PASSWD' => $temporaryDirectory.'/passwd',
+                'SAMPLE_APP_DOCKER_SOCKET' => $socketPath,
+                'SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS' => '1',
+                'SAMPLE_APP_IDENTITY_READY_MARKER' => $temporaryDirectory.'/identity-ready',
+                'SAMPLE_APP_IDENTITY_STAGE_MARKER' => $stage,
+                'SAMPLE_APP_LOCAL_GROUP_FILE' => $temporaryDirectory.'/group',
+                'SAMPLE_APP_LOCAL_PASSWD_FILE' => $temporaryDirectory.'/passwd',
+                'SAMPLE_APP_UID' => '12345',
+            ],
+        );
+        $process->setTimeout(5);
+        $startedAt = microtime(true);
+
+        try {
+            $process->run();
+            $this->assertNotSame(0, $process->getExitCode());
+            $this->assertLessThan(4.0, microtime(true) - $startedAt);
+            $this->assertStringContainsString(
+                "Adding laravel to Docker socket group dockerlocal (gid {$socketGid}) timed out after 1s.",
+                $process->getErrorOutput(),
+            );
+            $this->assertSame("adding-docker-socket-group\n", file_get_contents($stage));
+
+            $recordedEvents = file_get_contents($events);
+            $this->assertIsString($recordedEvents);
+            $this->assertStringContainsString('usermod --uid 12345 laravel', $recordedEvents);
+            $this->assertStringContainsString('usermod --append --groups dockerlocal laravel', $recordedEvents);
+            $this->assertStringNotContainsString('getent ', $recordedEvents);
         } finally {
             fclose($socket);
             $filesystem->remove($temporaryDirectory);

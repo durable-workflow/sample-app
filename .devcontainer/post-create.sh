@@ -14,7 +14,7 @@ if [[ "$(id -u)" != "$expected_uid" ]]; then
 fi
 
 if [[ " $(id -G) " != *" ${socket_gid} "* ]]; then
-    socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
+    socket_group="$(awk -F: -v gid="$socket_gid" '$3 == gid { print $1; exit }' /etc/group)"
     if [[ -z "$socket_group" ]]; then
         echo "Docker socket group ${socket_gid} is unavailable after identity preparation." >&2
         exit 1

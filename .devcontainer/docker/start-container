@@ -2,11 +2,53 @@
 
 set -euo pipefail
 
-identity_readiness_marker=/run/sample-app/identity-ready
-runtime_uid="$(id -u)"
-if [[ "$runtime_uid" == 0 ]]; then
-    rm -f "$identity_readiness_marker"
-fi
+identity_readiness_marker="${SAMPLE_APP_IDENTITY_READY_MARKER:-/run/sample-app/identity-ready}"
+identity_stage_marker="${SAMPLE_APP_IDENTITY_STAGE_MARKER:-/run/sample-app/identity-stage}"
+docker_socket="${SAMPLE_APP_DOCKER_SOCKET:-/var/run/docker.sock}"
+local_group_file="${SAMPLE_APP_LOCAL_GROUP_FILE:-/etc/group}"
+local_passwd_file="${SAMPLE_APP_LOCAL_PASSWD_FILE:-/etc/passwd}"
+identity_operation_timeout_seconds="${SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS:-15}"
+
+publish_identity_stage() {
+    local stage="$1"
+    local stage_directory
+    local stage_temporary
+
+    stage_directory="$(dirname "$identity_stage_marker")"
+    install -d -m 0755 -o 0 -g 0 "$stage_directory"
+    stage_temporary="$(mktemp "${identity_stage_marker}.XXXXXX")"
+    printf '%s\n' "$stage" > "$stage_temporary"
+    chown 0:0 "$stage_temporary"
+    chmod 0444 "$stage_temporary"
+    mv -f "$stage_temporary" "$identity_stage_marker"
+}
+
+run_bounded_identity_operation() {
+    local description="$1"
+    local status
+    shift
+
+    if [[ ! "$identity_operation_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        echo 'SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS must be a positive integer.' >&2
+        return 2
+    fi
+
+    if timeout --kill-after=2s "${identity_operation_timeout_seconds}s" "$@"; then
+        return 0
+    else
+        status=$?
+    fi
+
+    if (( status == 124 || status == 137 )); then
+        printf '%s timed out after %ss. Check the local account files and Docker socket ownership, then rebuild the container.\n' \
+            "$description" "$identity_operation_timeout_seconds" >&2
+    else
+        printf '%s failed with exit code %s. Check the local account files and Docker socket ownership, then rebuild the container.\n' \
+            "$description" "$status" >&2
+    fi
+
+    return "$status"
+}
 
 install_locked_composer_dependencies() {
     local -a command_prefix=("$@")
@@ -57,6 +99,7 @@ prepare_project_permissions() {
 remap_laravel_uid() {
     local requested_uid="${SAMPLE_APP_UID:-}"
     local current_uid
+    local current_gid
     local existing_account
 
     [[ -n "$requested_uid" ]] || return 0
@@ -66,86 +109,155 @@ remap_laravel_uid() {
         return 1
     fi
 
-    current_uid="$(id -u laravel)"
+    if [[ ! -r "$local_passwd_file" ]]; then
+        echo "Local account file is unreadable: ${local_passwd_file}." >&2
+        return 1
+    fi
+
+    current_uid="$(awk -F: '$1 == "laravel" { print $3; exit }' "$local_passwd_file")"
+    current_gid="$(awk -F: '$1 == "laravel" { print $4; exit }' "$local_passwd_file")"
+    if [[ ! "$current_uid" =~ ^[1-9][0-9]*$ || ! "$current_gid" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Local account file does not define laravel: ${local_passwd_file}." >&2
+        return 1
+    fi
     [[ "$requested_uid" != "$current_uid" ]] || return 0
 
-    existing_account="$(getent passwd "$requested_uid" | cut -d: -f1 || true)"
+    publish_identity_stage remapping-laravel-uid
+
+    existing_account="$(awk -F: -v uid="$requested_uid" '$3 == uid { print $1; exit }' "$local_passwd_file")"
     if [[ -n "$existing_account" && "$existing_account" != "laravel" ]]; then
         echo "SAMPLE_APP_UID ${requested_uid} belongs to account ${existing_account}." >&2
         return 1
     fi
 
-    usermod --uid "$requested_uid" laravel
-    chown -R laravel:laravel /home/laravel /opt/sample-app-playground
+    run_bounded_identity_operation \
+        "Remapping laravel to uid ${requested_uid}" \
+        usermod --uid "$requested_uid" laravel
+    publish_identity_stage remapping-laravel-owned-files
+    chown -R "${requested_uid}:${current_gid}" \
+        /home/laravel /opt/sample-app-playground
 }
 
 prepare_docker_socket_access() {
-    local socket=/var/run/docker.sock
     local socket_gid
     local socket_group
 
-    [[ -S "$socket" ]] || return 0
-    socket_gid="$(stat --format=%g "$socket")"
-    socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
+    publish_identity_stage locating-docker-socket-group
+
+    [[ -S "$docker_socket" ]] || return 0
+    if [[ ! -r "$local_group_file" ]]; then
+        echo "Local group file is unreadable: ${local_group_file}." >&2
+        return 1
+    fi
+
+    socket_gid="$(stat --format=%g "$docker_socket")"
+    socket_group="$(awk -F: -v gid="$socket_gid" '$3 == gid { print $1; exit }' "$local_group_file")"
 
     if [[ -z "$socket_group" ]]; then
         socket_group=sample-app-docker
-        groupadd --gid "$socket_gid" "$socket_group"
+        publish_identity_stage creating-docker-socket-group
+        run_bounded_identity_operation \
+            "Creating Docker socket group ${socket_group} (gid ${socket_gid})" \
+            groupadd --gid "$socket_gid" "$socket_group"
     fi
 
-    usermod --append --groups "$socket_group" laravel
-    if ! gosu laravel test -r "$socket" || ! gosu laravel test -w "$socket"; then
+    publish_identity_stage adding-docker-socket-group
+    run_bounded_identity_operation \
+        "Adding laravel to Docker socket group ${socket_group} (gid ${socket_gid})" \
+        usermod --append --groups "$socket_group" laravel
+
+    publish_identity_stage verifying-docker-socket-access
+    if ! run_bounded_identity_operation \
+        "Verifying laravel can read the Docker socket (gid ${socket_gid})" \
+        gosu laravel test -r "$docker_socket" \
+        || ! run_bounded_identity_operation \
+            "Verifying laravel can write the Docker socket (gid ${socket_gid})" \
+            gosu laravel test -w "$docker_socket"; then
         echo "Docker socket access is not permission-safe for laravel (gid ${socket_gid})." >&2
         return 1
     fi
+
+    publish_identity_stage docker-socket-access-ready
 }
 
 publish_identity_readiness() {
     local marker_directory
     local marker_temporary
+    local prepared_uid
     local socket_gid=absent
 
+    publish_identity_stage publishing-identity-readiness
+
     marker_directory="$(dirname "$identity_readiness_marker")"
-    install -d -m 0755 -o root -g root "$marker_directory"
+    install -d -m 0755 -o 0 -g 0 "$marker_directory"
+    prepared_uid="$(awk -F: '$1 == "laravel" { print $3; exit }' "$local_passwd_file")"
+    if [[ ! "$prepared_uid" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Local account file does not define laravel: ${local_passwd_file}." >&2
+        return 1
+    fi
     marker_temporary="$(mktemp "${identity_readiness_marker}.XXXXXX")"
 
-    if [[ -S /var/run/docker.sock ]]; then
-        socket_gid="$(stat --format=%g /var/run/docker.sock)"
+    if [[ -S "$docker_socket" ]]; then
+        socket_gid="$(stat --format=%g "$docker_socket")"
     fi
 
-    printf 'uid=%s\nsocket_gid=%s\n' "$(id -u laravel)" "$socket_gid" > "$marker_temporary"
-    chown root:root "$marker_temporary"
+    printf 'uid=%s\nsocket_gid=%s\n' "$prepared_uid" "$socket_gid" > "$marker_temporary"
+    chown 0:0 "$marker_temporary"
     chmod 0444 "$marker_temporary"
     mv -f "$marker_temporary" "$identity_readiness_marker"
+    publish_identity_stage identity-ready
 }
 
-if [[ "$runtime_uid" == "0" ]]; then
-    remap_laravel_uid
-    prepare_docker_socket_access
-    publish_identity_readiness
+initialize_identity_runtime() {
+    local marker_directory
+    local stage_directory
 
-    ssh-keygen -A
-    sshd -t
+    marker_directory="$(dirname "$identity_readiness_marker")"
+    stage_directory="$(dirname "$identity_stage_marker")"
+    install -d -m 0755 -o 0 -g 0 "$marker_directory" "$stage_directory"
+    rm -f "$identity_readiness_marker" "$identity_stage_marker"
+    publish_identity_stage starting
+}
 
-    prepare_project_permissions
+start_container() {
+    local runtime_uid
+
+    runtime_uid="$(id -u)"
+    if [[ "$runtime_uid" == "0" ]]; then
+        initialize_identity_runtime
+        remap_laravel_uid
+        prepare_docker_socket_access
+        publish_identity_readiness
+
+        ssh-keygen -A
+        sshd -t
+
+        prepare_project_permissions
+
+        if [[ -f composer.json ]]; then
+            install_locked_composer_dependencies gosu laravel
+        fi
+
+        if (( $# > 0 )); then
+            exec gosu laravel "$@"
+        fi
+
+        exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+    fi
 
     if [[ -f composer.json ]]; then
-        install_locked_composer_dependencies gosu laravel
+        install_locked_composer_dependencies
     fi
 
     if (( $# > 0 )); then
-        exec gosu laravel "$@"
+        exec "$@"
     fi
 
     exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+}
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
 fi
 
-if [[ -f composer.json ]]; then
-    install_locked_composer_dependencies
-fi
-
-if (( $# > 0 )); then
-    exec "$@"
-fi
-
-exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+start_container "$@"
