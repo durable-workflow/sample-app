@@ -170,6 +170,11 @@ final class DevcontainerImageContractTest extends TestCase
     public function test_image_bakes_and_verifies_the_supported_toolchain(): void
     {
         $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
+        $qualifiedArtifacts = json_decode(
+            $this->contents('polyglot/qualified-artifact-tuple.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        )['artifacts'];
         $supervisor = $this->contents('.devcontainer/docker/supervisord.conf');
         $verification = $this->contents('.devcontainer/docker/verify-image.sh');
         $databaseInitialization = $this->contents('.devcontainer/docker/create-testing-database.sh');
@@ -184,7 +189,10 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('FROM docker:27.5.1-cli AS docker-cli', $dockerfile);
         $this->assertStringContainsString('FROM rust:1.86.0-slim-bookworm AS rust', $dockerfile);
         $this->assertStringContainsString('FROM mariadb:11.4 AS mysql-seed', $dockerfile);
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.13', $dockerfile);
+        $this->assertStringContainsString(
+            'ARG DURABLE_WORKFLOW_CLI_VERSION='.$qualifiedArtifacts['cli'],
+            $dockerfile,
+        );
         $this->assertStringContainsString('COPY --from=docker-cli /usr/local/bin/docker', $dockerfile);
         $this->assertStringContainsString('COPY --from=rust /usr/local/cargo /usr/local/cargo', $dockerfile);
         $this->assertStringContainsString('COPY --from=rust /usr/local/rustup /usr/local/rustup', $dockerfile);

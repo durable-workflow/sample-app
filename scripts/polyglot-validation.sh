@@ -248,8 +248,9 @@ capture_task_codec_probe \
   rust_task_codec_rejection_evidence \
   "probing Rust task codec rejection boundaries" \
   "${POLYGLOT_TASK_CODEC_PROBE_TIMEOUT_SECONDS:-90}" \
-  docker compose run --rm --no-deps rust-workflow-worker \
-  task-codec-rejection-probe
+  docker compose run --rm --no-deps \
+  --entrypoint task-codec-rejection-probe \
+  rust-workflow-worker
 
 run_step \
   "starting the complete polyglot topology with one server bootstrap" \

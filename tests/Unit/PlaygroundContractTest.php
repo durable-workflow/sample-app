@@ -136,6 +136,37 @@ final class PlaygroundContractTest extends TestCase
         $this->assertStringNotContainsString('cargo build', $postCreate);
     }
 
+    public function test_prepared_playground_sdks_match_the_qualified_artifact_tuple(): void
+    {
+        $tuple = json_decode(
+            file_get_contents($this->path('polyglot/qualified-artifact-tuple.json')) ?: '',
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $phpLock = json_decode(
+            file_get_contents($this->path('playground/php-runtime/composer.lock')) ?: '',
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $phpPackages = array_column($phpLock['packages'] ?? [], null, 'name');
+        $rustLock = file_get_contents($this->path('playground/templates/rust/Cargo.lock')) ?: '';
+
+        preg_match(
+            '/\[\[package\]\]\nname = "durable-workflow"\nversion = "(?<version>[^"]+)"/',
+            $rustLock,
+            $rustPackage,
+        );
+
+        $this->assertSame(
+            $tuple['artifacts']['sdk-php'] ?? null,
+            $phpPackages['durable-workflow/sdk']['version'] ?? null,
+        );
+        $this->assertSame(
+            $tuple['artifacts']['sdk-rust'] ?? null,
+            $rustPackage['version'] ?? null,
+        );
+    }
+
     /** @return iterable<string, array{string}> */
     public static function languageProvider(): iterable
     {

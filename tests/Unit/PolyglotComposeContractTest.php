@@ -510,7 +510,7 @@ SH,
         $this->assertStringContainsString('POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE=', $script);
         $this->assertStringContainsString('task_codec_rejection_probe.php', $script);
         $this->assertStringContainsString('task_codec_rejection_probe.py', $script);
-        $this->assertStringContainsString('task-codec-rejection-probe', $script);
+        $this->assertStringContainsString('--entrypoint task-codec-rejection-probe', $script);
         $this->assertStringContainsString('assert_server_stable "worker registration"', $script);
         $this->assertStringContainsString('assert_server_stable "polyglot smoke"', $script);
         $this->assertStringContainsString('trap cleanup EXIT', $script);
@@ -549,6 +549,10 @@ SH,
                 static fn (string $command): bool => str_starts_with($command, 'compose up '),
             ));
             $readinessIndex = $this->firstCommandIndex($commands, '--readiness-only');
+            $rustCodecProbeIndex = $this->firstCommandIndex(
+                $commands,
+                '--entrypoint task-codec-rejection-probe rust-workflow-worker',
+            );
             $smokeIndex = $this->firstCommandIndex(
                 $commands,
                 'POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=',
@@ -565,6 +569,7 @@ SH,
             $this->assertStringContainsString('rust-activity-worker', $startups[0]);
             $this->assertStringContainsString('waterline', $startups[0]);
             $this->assertStringContainsString('--no-deps', $commands[$readinessIndex]);
+            $this->assertStringContainsString('--no-deps', $commands[$rustCodecProbeIndex]);
             $this->assertStringNotContainsString('--build', $commands[$readinessIndex]);
             $this->assertStringNotContainsString('--build', $commands[$smokeIndex]);
             $this->assertLessThan($startupIndex, $this->firstCommandIndex($commands, 'compose build '));

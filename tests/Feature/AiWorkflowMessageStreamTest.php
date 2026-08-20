@@ -26,6 +26,7 @@ use Workflow\V2\Models\WorkflowInstance;
 use Workflow\V2\Models\WorkflowMessage;
 use Workflow\V2\Models\WorkflowRun;
 use Workflow\V2\Models\WorkflowTask;
+use Workflow\V2\Support\RuntimeObjectFactory;
 use Workflow\V2\WorkflowStub;
 
 class AiWorkflowMessageStreamTest extends TestCase
@@ -34,7 +35,8 @@ class AiWorkflowMessageStreamTest extends TestCase
 
     public function test_first_assistant_response_is_delivered_through_the_message_stream(): void
     {
-        $workflow = new AiWorkflow($run = $this->createRun());
+        $run = $this->createRun();
+        $workflow = $this->createWorkflow($run);
 
         $this->publishAssistantMessage($workflow, 'I can help with that itinerary.');
 
@@ -72,7 +74,8 @@ class AiWorkflowMessageStreamTest extends TestCase
 
     public function test_repeated_receives_advance_the_stream_without_replaying_old_replies(): void
     {
-        $workflow = new AiWorkflow($run = $this->createRun());
+        $run = $this->createRun();
+        $workflow = $this->createWorkflow($run);
 
         $this->publishAssistantMessage($workflow, 'First response.');
         $this->publishAssistantMessage($workflow, 'Second response.');
@@ -295,6 +298,14 @@ class AiWorkflowMessageStreamTest extends TestCase
     {
         $method = new ReflectionMethod(AiWorkflow::class, 'publishAssistantMessage');
         $method->invoke($workflow, $content);
+    }
+
+    private function createWorkflow(WorkflowRun $run): AiWorkflow
+    {
+        $workflow = RuntimeObjectFactory::workflow(AiWorkflow::class, $run);
+        $this->assertInstanceOf(AiWorkflow::class, $workflow);
+
+        return $workflow;
     }
 
     private function createRun(string $status = 'running'): WorkflowRun
