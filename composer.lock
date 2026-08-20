@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2ec838f8082ebdf58a858d43a574f8d0",
+    "content-hash": "93126776665ff92ec412e14d7d273244",
     "packages": [
         {
             "name": "apache/avro",
@@ -720,16 +720,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.0-rc.37",
+            "version": "2.0.0-rc.39",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "28b89d7f31186f5b41a23c249c3a0f939d89e5db"
+                "reference": "b6c427ed3e40b921921461cde3ac14e85f644831"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/28b89d7f31186f5b41a23c249c3a0f939d89e5db",
-                "reference": "28b89d7f31186f5b41a23c249c3a0f939d89e5db",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/b6c427ed3e40b921921461cde3ac14e85f644831",
+                "reference": "b6c427ed3e40b921921461cde3ac14e85f644831",
                 "shasum": ""
             },
             "require": {
@@ -770,13 +770,13 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.0-rc.37",
+                    "product-train": "2.0.0-rc.39",
                     "payload-codecs": [
                         "avro"
                     ],
                     "control-plane-version": "2",
                     "worker-protocol-version": "1.13",
-                    "supported-server-versions": "2.0.0-rc.33"
+                    "supported-server-versions": "2.0.0-rc.38"
                 }
             },
             "autoload": {
@@ -807,7 +807,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-08-20T13:23:41+00:00"
+            "time": "2026-08-20T16:34:22+00:00"
         },
         {
             "name": "durable-workflow/waterline",

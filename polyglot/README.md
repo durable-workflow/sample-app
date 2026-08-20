@@ -45,8 +45,10 @@ The command uses `polyglot/service-mode.yml` and the prepared development image;
 there is no local image build. Laravel runs the framework-neutral
 `durable-workflow/sdk` bridge, resolves attributed handlers through its service
 container, writes worker lifecycle events to its normal logger, and starts a
-workflow through an injected `WorkflowClientInterface`. That workflow executes
-`sample.service-mode.php.prepare` in the Laravel worker and
+workflow through an injected `LaravelWorkflowClientInterface`. The generic
+`WorkflowClientInterface` remains available for integrations that deliberately
+provide an explicit string workflow type and task queue. The featured workflow
+executes `sample.service-mode.php.prepare` in the Laravel worker and
 `sample.service-mode.python.decorate` in a Python worker before returning one
 combined result.
 
