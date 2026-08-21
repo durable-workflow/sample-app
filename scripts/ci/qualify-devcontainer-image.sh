@@ -306,7 +306,7 @@ run_in_ready_devcontainer laravel bash -euc '
         --check-lock \
         --no-check-all \
         --no-interaction
-    cargo check \
+    with-group-shared-umask cargo check \
         --bins \
         --locked \
         --offline \

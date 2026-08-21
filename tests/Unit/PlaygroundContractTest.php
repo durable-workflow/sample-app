@@ -167,6 +167,36 @@ final class PlaygroundContractTest extends TestCase
         );
     }
 
+    public function test_rust_runtime_commands_use_the_group_shared_write_policy(): void
+    {
+        $harness = <<<'PYTHON'
+import runpy
+import sys
+
+playground = runpy.run_path(sys.argv[1])
+scenario_command = playground["scenario_command"]
+
+assert scenario_command({"worker": ["php", "worker.php"]}, "worker") == ["php", "worker.php"]
+assert scenario_command({"worker": ["cargo", "run", "--bin", "worker"]}, "worker") == [
+    "with-group-shared-umask",
+    "cargo",
+    "run",
+    "--bin",
+    "worker",
+]
+PYTHON;
+
+        $process = new Process([
+            'python3',
+            '-c',
+            $harness,
+            $this->path('scripts/playground'),
+        ]);
+        $process->run();
+
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+    }
+
     public function test_service_health_stall_has_a_bounded_deadline_and_actionable_diagnostics(): void
     {
         $filesystem = new Filesystem;

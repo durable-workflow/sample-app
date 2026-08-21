@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo 'Usage: with-group-shared-umask COMMAND [ARG ...]' >&2
+    exit 2
+fi
+
+umask 0002
+exec "$@"

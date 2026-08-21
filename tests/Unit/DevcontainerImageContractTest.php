@@ -249,6 +249,10 @@ final class DevcontainerImageContractTest extends TestCase
             $dockerfile,
         );
         $this->assertStringContainsString(
+            'COPY .devcontainer/docker/with-group-shared-umask /usr/local/bin/with-group-shared-umask',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
             'with-disposable-composer-state composer --no-ansi --version',
             $verification,
         );
@@ -726,6 +730,31 @@ BASH);
         }
     }
 
+    public function test_group_shared_runner_makes_new_cache_entries_group_writable(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-group-shared-'.bin2hex(random_bytes(8));
+        $createdFile = $temporaryDirectory.'/cargo-output.d';
+        $filesystem->mkdir($temporaryDirectory, 0775);
+
+        $process = new Process([
+            'bash',
+            $this->repoPath('.devcontainer/docker/with-group-shared-umask'),
+            'bash',
+            '-euc',
+            'printf "dependency-info\n" > "$1"',
+            'write-cache-entry',
+            $createdFile,
+        ]);
+
+        try {
+            $process->mustRun();
+            $this->assertSame(0664, fileperms($createdFile) & 0777);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_codespaces_schema_dump_records_every_current_migration(): void
     {
         $schema = $this->contents('.devcontainer/schema/mysql-schema.sql');
@@ -1005,7 +1034,7 @@ BASH);
         $this->assertStringNotContainsString('cargo metadata', $script);
         $this->assertStringContainsString(
             <<<'SHELL'
-cargo check \
+with-group-shared-umask cargo check \
         --bins \
         --locked \
         --offline \

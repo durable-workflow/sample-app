@@ -84,6 +84,7 @@ def doctor() -> dict[str, str]:
         "cargo",
         "docker",
         "dw",
+        "with-group-shared-umask",
     ):
         require_command(executable)
 
@@ -607,6 +608,8 @@ def scenario_command(scenario: dict[str, Any], name: str) -> list[str]:
         isinstance(argument, str) and argument for argument in command
     ):
         raise PlaygroundError(f"The effective scenario has no valid {name}.")
+    if command[0] == "cargo":
+        return ["with-group-shared-umask", *command]
     return command
 
 
