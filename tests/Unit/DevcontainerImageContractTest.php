@@ -1002,8 +1002,17 @@ BASH);
             'with-disposable-composer-state composer validate',
             $script,
         );
-        $this->assertStringContainsString('cargo metadata', $script);
-        $this->assertStringContainsString('--offline', $script);
+        $this->assertStringNotContainsString('cargo metadata', $script);
+        $this->assertStringContainsString(
+            <<<'SHELL'
+cargo check \
+        --bins \
+        --locked \
+        --offline \
+        --manifest-path=playground/templates/rust/Cargo.toml
+SHELL,
+            $script,
+        );
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
         $this->assertStringContainsString('for language in php python rust; do', $script);
         $this->assertStringContainsString(

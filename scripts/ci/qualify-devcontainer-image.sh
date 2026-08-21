@@ -306,10 +306,10 @@ run_in_ready_devcontainer laravel bash -euc '
         --check-lock \
         --no-check-all \
         --no-interaction
-    cargo metadata \
+    cargo check \
+        --bins \
         --locked \
         --offline \
-        --format-version=1 \
         --manifest-path=playground/templates/rust/Cargo.toml \
         >/dev/null
     if [[ -e .env ]]; then
