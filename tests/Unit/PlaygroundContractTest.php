@@ -167,6 +167,90 @@ final class PlaygroundContractTest extends TestCase
         );
     }
 
+    public function test_service_health_stall_has_a_bounded_deadline_and_actionable_diagnostics(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-health-stall-'.bin2hex(random_bytes(8));
+        $filesystem->mkdir($temporaryDirectory);
+        $fakeDocker = $temporaryDirectory.'/docker';
+        $commandLog = $temporaryDirectory.'/docker-commands.log';
+        file_put_contents($fakeDocker, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$PLAYGROUND_FAKE_DOCKER_COMMAND_LOG"
+case " $* " in
+    *" down "*|*" pull "*)
+        exit 0
+        ;;
+    *" up "*)
+        [[ " $* " == *" --wait --wait-timeout 1 "* ]] || exit 91
+        printf 'mysql Waiting\n' >&2
+        exit 1
+        ;;
+    *" ps --all --format json "*)
+        printf '%s\n' '[{"Service":"mysql","State":"running","Health":"starting","Status":"Up 1 second (health: starting)"},{"Service":"redis","State":"running","Health":"healthy","Status":"Up 1 second (healthy)"}]'
+        ;;
+    *" logs --no-color --tail=100 "*)
+        printf 'mysql | initializing database files\n'
+        ;;
+    *)
+        exit 92
+        ;;
+esac
+BASH);
+        chmod($fakeDocker, 0700);
+
+        $harness = <<<'PYTHON'
+import os
+import runpy
+import subprocess
+import sys
+
+playground = runpy.run_path(sys.argv[1])
+environment = os.environ.copy()
+environment["PLAYGROUND_COMPOSE_WAIT_SECONDS"] = "1"
+compose = playground["compose_command"]("health-stall-test")
+try:
+    playground["start_services"](
+        compose,
+        environment,
+        cleanup_command=["scripts/playground", "down", "rust"],
+        retry_command=["scripts/playground", "rust", "--source", "/tmp/caller rust"],
+    )
+except subprocess.CalledProcessError:
+    pass
+else:
+    raise AssertionError("the simulated health stall unexpectedly succeeded")
+PYTHON;
+
+        try {
+            $process = new Process(
+                ['python3', '-c', $harness, $this->path('scripts/playground')],
+                env: [
+                    ...getenv(),
+                    'PATH' => $temporaryDirectory.PATH_SEPARATOR.getenv('PATH'),
+                    'PLAYGROUND_FAKE_DOCKER_COMMAND_LOG' => $commandLog,
+                ],
+            );
+            $process->mustRun();
+            $output = $process->getOutput().$process->getErrorOutput();
+            $commands = file_get_contents($commandLog) ?: '';
+
+            $this->assertStringContainsString('Waiting up to 1 second for playground services', $output);
+            $this->assertStringContainsString('mysql: state=running health=starting', $output);
+            $this->assertStringContainsString('server: state=not-created', $output);
+            $this->assertStringContainsString('mysql | initializing database files', $output);
+            $this->assertStringContainsString(
+                "scripts/playground down rust && scripts/playground rust --source '/tmp/caller rust'",
+                $output,
+            );
+            $this->assertStringContainsString('up --detach --no-build --wait --wait-timeout 1', $commands);
+            $this->assertStringContainsString('logs --no-color --tail=100 mysql bootstrap server waterline', $commands);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     /** @return iterable<string, array{string}> */
     public static function languageProvider(): iterable
     {

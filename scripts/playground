@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -28,6 +29,11 @@ CONTRACT_FILE = REPO_ROOT / "playground" / "contract.json"
 LANGUAGES = ("php", "python", "rust")
 AUTH_TOKEN = "playground-token"
 NAMESPACE = "default"
+DEFAULT_SERVICE_WAIT_SECONDS = 180
+MAX_SERVICE_WAIT_SECONDS = 600
+SERVICE_PROCESS_GUARD_SECONDS = 15
+EXPECTED_SERVICES = ("mysql", "redis", "bootstrap", "server", "waterline")
+PRIMARY_DIAGNOSTIC_SERVICES = ("mysql", "server", "waterline")
 
 
 class PlaygroundError(RuntimeError):
@@ -376,15 +382,223 @@ def public_waterline_base() -> str:
     return f"http://localhost:{port}/waterline"
 
 
+def service_wait_seconds(env: dict[str, str]) -> int:
+    raw_wait = env.get(
+        "PLAYGROUND_COMPOSE_WAIT_SECONDS", str(DEFAULT_SERVICE_WAIT_SECONDS)
+    )
+    try:
+        wait_seconds = int(raw_wait)
+    except ValueError as error:
+        raise PlaygroundError(
+            "PLAYGROUND_COMPOSE_WAIT_SECONDS must be a whole number."
+        ) from error
+    if not 1 <= wait_seconds <= MAX_SERVICE_WAIT_SECONDS:
+        raise PlaygroundError(
+            "PLAYGROUND_COMPOSE_WAIT_SECONDS must be between "
+            f"1 and {MAX_SERVICE_WAIT_SECONDS}."
+        )
+    return wait_seconds
+
+
+def bounded_diagnostic_output(output: str, limit: int = 32_000) -> str:
+    if len(output) <= limit:
+        return output
+    return (
+        f"[... {len(output) - limit} earlier characters omitted ...]\n{output[-limit:]}"
+    )
+
+
+def compose_ps_entries(output: str) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(output)
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, list):
+            return [entry for entry in value if isinstance(entry, dict)]
+    except json.JSONDecodeError:
+        pass
+
+    entries: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def service_is_ready(service: str, entry: dict[str, Any]) -> bool:
+    state = str(entry.get("State", "")).lower()
+    health = str(entry.get("Health", "")).lower()
+    status = str(entry.get("Status", ""))
+    if not health:
+        health_match = re.search(r"\(health:\s*([^)]+)\)", status, re.IGNORECASE)
+        if health_match:
+            health = health_match.group(1).strip().lower()
+    if service == "bootstrap":
+        try:
+            exit_code = int(entry.get("ExitCode", -1))
+        except (TypeError, ValueError):
+            exit_code = -1
+        return state == "exited" and exit_code == 0
+    if health:
+        return state == "running" and health == "healthy"
+    return state == "running"
+
+
+def print_service_startup_diagnostics(
+    compose: list[str],
+    env: dict[str, str],
+    *,
+    wait_seconds: int,
+    cleanup_command: list[str],
+    retry_command: list[str],
+) -> None:
+    unit = "second" if wait_seconds == 1 else "seconds"
+    print(
+        f"\nPlayground services did not become ready within {wait_seconds} {unit}.",
+        file=sys.stderr,
+    )
+    ps_error = ""
+    try:
+        ps = subprocess.run(
+            compose + ["ps", "--all", "--format", "json"],
+            env=env,
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=15,
+        )
+        ps_output = ps.stdout
+        ps_error = ps.stderr
+        ps_returncode = ps.returncode
+    except (OSError, subprocess.SubprocessError) as error:
+        ps_output = ""
+        ps_error = f"Compose state command failed: {error}"
+        ps_returncode = 1
+    entries = compose_ps_entries(ps_output)
+    by_service = {
+        str(entry.get("Service")): entry
+        for entry in entries
+        if isinstance(entry.get("Service"), str)
+    }
+    non_ready: list[str] = []
+    print("Non-ready service state:", file=sys.stderr)
+    for service in EXPECTED_SERVICES:
+        entry = by_service.get(service)
+        if entry is not None and service_is_ready(service, entry):
+            continue
+        non_ready.append(service)
+        if entry is None:
+            print(f"  {service}: state=not-created", file=sys.stderr)
+            continue
+        state = entry.get("State") or "unknown"
+        health = entry.get("Health") or "none"
+        status = entry.get("Status") or "unknown"
+        exit_code = entry.get("ExitCode")
+        exit_detail = f" exit_code={exit_code}" if exit_code is not None else ""
+        print(
+            f"  {service}: state={state} health={health}{exit_detail} status={status}",
+            file=sys.stderr,
+        )
+    if not non_ready:
+        print(
+            "  Compose reported no individually non-ready service; inspect the bounded logs below.",
+            file=sys.stderr,
+        )
+    if ps_returncode != 0 or not entries:
+        ps_detail = (ps_output + ps_error).strip()
+        if ps_detail:
+            print(
+                "Compose state output:\n"
+                + bounded_diagnostic_output(ps_detail, limit=8_000),
+                file=sys.stderr,
+            )
+
+    log_services = [
+        service
+        for service in EXPECTED_SERVICES
+        if service in PRIMARY_DIAGNOSTIC_SERVICES or service in non_ready
+    ]
+    try:
+        logs = subprocess.run(
+            compose + ["logs", "--no-color", "--tail=100"] + log_services,
+            env=env,
+            cwd=REPO_ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
+        log_output = logs.stdout.strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        log_output = f"Service log command failed: {error}"
+    print(
+        "Bounded service logs (last 100 lines per service):",
+        file=sys.stderr,
+    )
+    print(
+        bounded_diagnostic_output(log_output)
+        if log_output
+        else "  No service logs were available.",
+        file=sys.stderr,
+    )
+    print(
+        "Cleanup and retry:\n  "
+        + shlex.join(cleanup_command)
+        + " && "
+        + shlex.join(retry_command),
+        file=sys.stderr,
+    )
+
+
 def start_services(
-    project: str, artifacts: dict[str, str]
-) -> tuple[list[str], dict[str, str]]:
-    env = compose_environment(artifacts)
-    compose = compose_command(project)
+    compose: list[str],
+    env: dict[str, str],
+    *,
+    cleanup_command: list[str],
+    retry_command: list[str],
+) -> None:
+    wait_seconds = service_wait_seconds(env)
     run(compose + ["down", "--volumes", "--remove-orphans"], env=env)
     run(compose + ["pull", "--quiet"], env=env)
-    run(compose + ["up", "--detach", "--no-build", "--wait"], env=env, timeout=180)
-    return compose, env
+    unit = "second" if wait_seconds == 1 else "seconds"
+    print(
+        f"Waiting up to {wait_seconds} {unit} for playground services to become ready.",
+        flush=True,
+    )
+    try:
+        run(
+            compose
+            + [
+                "up",
+                "--detach",
+                "--no-build",
+                "--wait",
+                "--wait-timeout",
+                str(wait_seconds),
+            ],
+            env=env,
+            timeout=wait_seconds + SERVICE_PROCESS_GUARD_SECONDS,
+        )
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        KeyboardInterrupt,
+    ):
+        print_service_startup_diagnostics(
+            compose,
+            env,
+            wait_seconds=wait_seconds,
+            cleanup_command=cleanup_command,
+            retry_command=retry_command,
+        )
+        raise
 
 
 def scenario_command(scenario: dict[str, Any], name: str) -> list[str]:
@@ -570,9 +784,19 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
     waterline_internal = endpoint(
         "PLAYGROUND_WATERLINE_INTERNAL_URL", "PLAYGROUND_WATERLINE_PORT", "18083"
     )
-    compose: list[str] | None = None
-    compose_env: dict[str, str] | None = None
+    compose = compose_command(project)
+    compose_env = compose_environment(artifacts)
+    cleanup_command = ["scripts/playground", "down", language]
+    retry_command = [
+        "scripts/playground",
+        language,
+        "--source",
+        str(source_dir),
+        "--evidence",
+        str(evidence_path),
+    ]
     worker: subprocess.Popen[str] | None = None
+    services_started = False
 
     with tempfile.NamedTemporaryFile(
         mode="w+", prefix=f"playground-{language}-worker-", delete=False
@@ -597,7 +821,13 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             ),
             flush=True,
         )
-        compose, compose_env = start_services(project, artifacts)
+        start_services(
+            compose,
+            compose_env,
+            cleanup_command=cleanup_command,
+            retry_command=retry_command,
+        )
+        services_started = True
         worker_env = runtime_environment(server_url, task_queue, worker_id, scenario)
         worker_env["DURABLE_WORKFLOW_WORKER_TOKEN"] = AUTH_TOKEN
         worker_env.pop("DURABLE_WORKFLOW_CLIENT_TOKEN", None)
@@ -779,7 +1009,7 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             ).strip()
             if worker_output:
                 print(f"\n{language} worker output:\n{worker_output}", file=sys.stderr)
-        if compose is not None and compose_env is not None:
+        if services_started:
             subprocess.run(
                 compose + ["ps"], env=compose_env, cwd=REPO_ROOT, check=False
             )
@@ -798,11 +1028,7 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         except UnboundLocalError:
             pass
         worker_log.unlink(missing_ok=True)
-        if (
-            os.environ.get("PLAYGROUND_CLEANUP") == "1"
-            and compose is not None
-            and compose_env is not None
-        ):
+        if os.environ.get("PLAYGROUND_CLEANUP") == "1":
             subprocess.run(
                 compose + ["down", "--volumes", "--remove-orphans"],
                 env=compose_env,
