@@ -35,6 +35,18 @@ test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quicksta
 test -d "${CARGO_HOME}/registry/cache"
 test -d "${CARGO_TARGET_DIR}/debug/deps"
 
+for prepared_path in \
+    /home/laravel/.cargo \
+    /home/laravel/.composer \
+    /opt/sample-app-playground \
+    /var/www/html/vendor \
+    /var/www/html/microservice/vendor; do
+    if find "$prepared_path" -perm -u+w ! -perm -g+w -print -quit | grep -q .; then
+        echo "Prepared development dependency is not writable through the laravel group: ${prepared_path}." >&2
+        exit 1
+    fi
+done
+
 mysql_seed_archive=/usr/local/share/sample-app/mysql-datadir.tar
 test -x /usr/local/bin/seed-mysql-volume
 test -s "$mysql_seed_archive"

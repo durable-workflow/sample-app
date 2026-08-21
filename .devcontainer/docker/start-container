@@ -8,6 +8,8 @@ docker_socket="${SAMPLE_APP_DOCKER_SOCKET:-/var/run/docker.sock}"
 local_group_file="${SAMPLE_APP_LOCAL_GROUP_FILE:-/etc/group}"
 local_passwd_file="${SAMPLE_APP_LOCAL_PASSWD_FILE:-/etc/passwd}"
 identity_operation_timeout_seconds="${SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS:-15}"
+laravel_home="${SAMPLE_APP_LARAVEL_HOME:-/home/laravel}"
+prepared_playground_root="${SAMPLE_APP_PREPARED_PLAYGROUND_ROOT:-/opt/sample-app-playground}"
 
 publish_identity_stage() {
     local stage="$1"
@@ -96,6 +98,55 @@ prepare_project_permissions() {
     done
 }
 
+update_local_passwd_uid() {
+    local account="$1"
+    local requested_uid="$2"
+    local passwd_temporary
+    local status
+    local updated_uid
+
+    passwd_temporary="$(mktemp "${local_passwd_file}.XXXXXX")"
+    if ! awk -F: -v OFS=: -v account="$account" -v uid="$requested_uid" '
+        $1 == account {
+            updated++
+            $3 = uid
+        }
+        { print }
+        END {
+            if (updated != 1) {
+                exit 65
+            }
+        }
+    ' "$local_passwd_file" > "$passwd_temporary"; then
+        rm -f "$passwd_temporary"
+        echo "Local account file must define exactly one ${account} account: ${local_passwd_file}." >&2
+        return 1
+    fi
+
+    chmod --reference="$local_passwd_file" "$passwd_temporary" || {
+        status=$?
+        rm -f "$passwd_temporary"
+        return "$status"
+    }
+    chown --reference="$local_passwd_file" "$passwd_temporary" || {
+        status=$?
+        rm -f "$passwd_temporary"
+        return "$status"
+    }
+    mv -f "$passwd_temporary" "$local_passwd_file" || {
+        status=$?
+        rm -f "$passwd_temporary"
+        echo "Could not atomically replace the local account file: ${local_passwd_file}." >&2
+        return "$status"
+    }
+
+    updated_uid="$(awk -F: -v account="$account" '$1 == account { print $3; exit }' "$local_passwd_file")"
+    if [[ "$updated_uid" != "$requested_uid" ]]; then
+        echo "Local account update did not persist uid ${requested_uid} for ${account}." >&2
+        return 1
+    fi
+}
+
 remap_laravel_uid() {
     local requested_uid="${SAMPLE_APP_UID:-}"
     local current_uid
@@ -130,12 +181,28 @@ remap_laravel_uid() {
         return 1
     fi
 
-    run_bounded_identity_operation \
-        "Remapping laravel to uid ${requested_uid}" \
-        usermod --uid "$requested_uid" laravel
-    publish_identity_stage remapping-laravel-owned-files
-    chown -R "${requested_uid}:${current_gid}" \
-        /home/laravel /opt/sample-app-playground
+    # usermod --uid recursively re-owns the user's home. Updating this
+    # container-local file directly keeps prefetched SDK caches off startup's
+    # critical path; their stable group ownership provides continued access.
+    update_local_passwd_uid laravel "$requested_uid"
+    publish_identity_stage preparing-laravel-home
+    chown "${requested_uid}:${current_gid}" "$laravel_home"
+    if [[ -d "$laravel_home/.ssh" ]]; then
+        chown -R "${requested_uid}:${current_gid}" "$laravel_home/.ssh"
+    fi
+
+    publish_identity_stage verifying-prepared-toolchain-access
+    for prepared_path in \
+        "$laravel_home/.cargo" \
+        "$laravel_home/.composer" \
+        "$prepared_playground_root"; do
+        [[ -e "$prepared_path" ]] || continue
+        if ! gosu laravel test -r "$prepared_path" \
+            || ! gosu laravel test -w "$prepared_path"; then
+            echo "Prepared toolchain path is not accessible after the uid transition: ${prepared_path}. Rebuild the container image." >&2
+            return 1
+        fi
+    done
 }
 
 prepare_docker_socket_access() {
@@ -222,6 +289,7 @@ initialize_identity_runtime() {
 start_container() {
     local runtime_uid
 
+    umask 0002
     runtime_uid="$(id -u)"
     if [[ "$runtime_uid" == "0" ]]; then
         initialize_identity_runtime

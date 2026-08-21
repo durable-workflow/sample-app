@@ -205,7 +205,7 @@ RUN set -eux; \
     groupadd --gid 1000 laravel; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
-    install -d -o laravel -g laravel /home/laravel/.cargo /home/laravel/.composer /ms-playwright /var/www/html; \
+    install -d -m 0775 -o laravel -g laravel /home/laravel/.cargo /home/laravel/.composer /ms-playwright /var/www/html; \
     ln -s /usr/bin/python3 /usr/local/bin/python; \
     ln -s /usr/bin/pip3 /usr/local/bin/pip; \
     apt-get clean; \
@@ -249,7 +249,8 @@ RUN set -eux; \
     EXPECTED_PYTHON_SDK="$python_distribution_version" \
         "$VIRTUAL_ENV/bin/python" -c 'import durable_workflow, importlib.metadata as metadata, os; assert metadata.version("durable-workflow") == os.environ["EXPECTED_PYTHON_SDK"]'; \
     rm /tmp/sample-app-python-playground-requirements.txt /tmp/sample-app-qualified-artifact-tuple.json; \
-    chown -R laravel:laravel /opt/sample-app-playground
+    chown -R laravel:laravel /opt/sample-app-playground; \
+    chmod -R g=u /opt/sample-app-playground
 
 COPY --chown=laravel:laravel playground/php-runtime/composer.json playground/php-runtime/composer.lock /opt/sample-app-playground/php/
 
@@ -263,19 +264,21 @@ RUN set -eux; \
         --no-plugins \
         --no-scripts; \
     gosu laravel test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/bootstrap.php; \
-    gosu laravel test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json
+    gosu laravel test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json; \
+    chmod -R g=u /opt/sample-app-playground/php
 
 COPY --chown=laravel:laravel playground/templates/rust /tmp/sample-app-rust-playground
 
 RUN set -eux; \
-    install -d -o laravel -g laravel "$CARGO_HOME" "$CARGO_TARGET_DIR"; \
+    install -d -m 0775 -o laravel -g laravel "$CARGO_HOME" "$CARGO_TARGET_DIR"; \
     gosu laravel cargo build \
         --locked \
         --manifest-path=/tmp/sample-app-rust-playground/Cargo.toml \
         --bins; \
     rm -rf "$CARGO_TARGET_DIR/debug/incremental" /tmp/sample-app-rust-playground; \
     gosu laravel test -d "$CARGO_HOME/registry/cache"; \
-    gosu laravel test -d "$CARGO_TARGET_DIR/debug/deps"
+    gosu laravel test -d "$CARGO_TARGET_DIR/debug/deps"; \
+    chmod -R g=u "$CARGO_HOME" "$CARGO_TARGET_DIR"
 
 COPY package-lock.json /tmp/sample-app-package-lock.json
 
@@ -292,7 +295,7 @@ COPY --chown=laravel:laravel microservice/composer.json microservice/composer.lo
 
 RUN set -eux; \
     for dependency_dir in /var/www/html /var/www/html/microservice; do \
-        install -d -o laravel -g laravel "${dependency_dir}/vendor"; \
+        install -d -m 0775 -o laravel -g laravel "${dependency_dir}/vendor"; \
         for writable_path in "$dependency_dir" "${dependency_dir}/vendor"; do \
             if ! gosu laravel test -w "$writable_path"; then \
                 echo "Composer seed path is not writable by laravel: ${writable_path}" >&2; \
@@ -313,6 +316,7 @@ RUN set -eux; \
             --no-progress \
             --no-scripts; \
         gosu laravel test -s "${dependency_dir}/vendor/autoload.php"; \
+        chmod -R g=u "${dependency_dir}/vendor"; \
     done; \
     rm -rf /home/laravel/.composer/cache; \
     rm -rf /tmp/* /var/tmp/*

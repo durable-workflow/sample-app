@@ -602,7 +602,7 @@ BASH,
         $this->assertLessThan($unprivilegedSeed, $microserviceDependencyOwnership);
         $this->assertStringContainsString('gosu laravel test -w "$writable_path"', $dockerfile);
         $this->assertStringContainsString(
-            'install -d -o laravel -g laravel "${dependency_dir}/vendor"',
+            'install -d -m 0775 -o laravel -g laravel "${dependency_dir}/vendor"',
             $dockerfile,
         );
         $this->assertStringContainsString(
@@ -787,6 +787,8 @@ BASH,
         $entrypoint = $this->contents('.devcontainer/docker/start-container');
         $identityWaiter = $this->contents('.devcontainer/docker/wait-for-identity-ready');
         $identityCompose = $this->contents('scripts/ci/devcontainer-identity.sh');
+        $imageVerifier = $this->contents('.devcontainer/docker/verify-image.sh');
+        $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
         $postCreate = $this->contents('.devcontainer/post-create.sh');
 
         $this->assertStringNotContainsString('docker compose build', $script);
@@ -871,7 +873,11 @@ BASH,
         $this->assertStringContainsString('SAMPLE_APP_UID must be a positive, non-root decimal user ID.', $entrypoint);
         $this->assertStringContainsString('SAMPLE_APP_LOCAL_PASSWD_FILE', $entrypoint);
         $this->assertStringNotContainsString('getent passwd', $entrypoint);
-        $this->assertStringContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
+        $this->assertStringContainsString('update_local_passwd_uid laravel "$requested_uid"', $entrypoint);
+        $this->assertStringNotContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
+        $this->assertStringContainsString('verifying-prepared-toolchain-access', $entrypoint);
+        $this->assertStringContainsString('chmod -R g=u', $dockerfile);
+        $this->assertStringContainsString('find "$prepared_path" -perm -u+w ! -perm -g+w', $imageVerifier);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
         $this->assertStringContainsString('for language in php python rust; do', $script);
         $this->assertStringContainsString(
@@ -1112,11 +1118,96 @@ BASH);
 
             $recordedEvents = file_get_contents($events);
             $this->assertIsString($recordedEvents);
-            $this->assertStringContainsString('usermod --uid 12345 laravel', $recordedEvents);
             $this->assertStringContainsString('usermod --append --groups dockerlocal laravel', $recordedEvents);
+            $this->assertStringNotContainsString('usermod --uid 12345 laravel', $recordedEvents);
             $this->assertStringNotContainsString('getent ', $recordedEvents);
         } finally {
             fclose($socket);
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_simultaneous_non_default_uid_remaps_do_not_invoke_recursive_usermod(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-parallel-uid-remap-'.bin2hex(random_bytes(8));
+        $filesystem->mkdir($temporaryDirectory, 0700);
+
+        file_put_contents($temporaryDirectory.'/usermod', <<<'BASH'
+#!/usr/bin/env bash
+sleep 10
+BASH);
+        file_put_contents($temporaryDirectory.'/chown', <<<'BASH'
+#!/usr/bin/env bash
+exit 0
+BASH);
+        file_put_contents($temporaryDirectory.'/install', <<<'BASH'
+#!/usr/bin/env bash
+target="${@: -1}"
+mkdir -p "$target"
+chmod 0755 "$target"
+BASH);
+        file_put_contents($temporaryDirectory.'/gosu', <<<'BASH'
+#!/usr/bin/env bash
+shift
+exec "$@"
+BASH);
+        chmod($temporaryDirectory.'/usermod', 0700);
+        chmod($temporaryDirectory.'/chown', 0700);
+        chmod($temporaryDirectory.'/install', 0700);
+        chmod($temporaryDirectory.'/gosu', 0700);
+
+        $processes = [];
+        foreach ([12345, 12346] as $index => $requestedUid) {
+            $runtimeDirectory = $temporaryDirectory.'/runtime-'.$index;
+            $homeDirectory = $temporaryDirectory.'/home-'.$index;
+            $playgroundDirectory = $temporaryDirectory.'/playground-'.$index;
+            $passwd = $temporaryDirectory.'/passwd-'.$index;
+            $filesystem->mkdir([$runtimeDirectory, $homeDirectory, $playgroundDirectory], 0775);
+            file_put_contents($passwd, "laravel:x:1000:1000::{$homeDirectory}:/bin/bash\n");
+            chmod($passwd, 0644);
+
+            $processes[] = new Process(
+                [
+                    'bash',
+                    '-euc',
+                    'source "$1"; remap_laravel_uid',
+                    'bash',
+                    $this->repoPath('.devcontainer/docker/start-container'),
+                ],
+                env: [
+                    'PATH' => $temporaryDirectory.':'.getenv('PATH'),
+                    'SAMPLE_APP_IDENTITY_OPERATION_TIMEOUT_SECONDS' => '1',
+                    'SAMPLE_APP_IDENTITY_READY_MARKER' => $runtimeDirectory.'/identity-ready',
+                    'SAMPLE_APP_IDENTITY_STAGE_MARKER' => $runtimeDirectory.'/identity-stage',
+                    'SAMPLE_APP_LARAVEL_HOME' => $homeDirectory,
+                    'SAMPLE_APP_LOCAL_PASSWD_FILE' => $passwd,
+                    'SAMPLE_APP_PREPARED_PLAYGROUND_ROOT' => $playgroundDirectory,
+                    'SAMPLE_APP_UID' => (string) $requestedUid,
+                ],
+            );
+        }
+
+        try {
+            $startedAt = microtime(true);
+            foreach ($processes as $process) {
+                $process->start();
+            }
+            foreach ($processes as $process) {
+                $process->wait();
+                $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+            }
+            $this->assertLessThan(4.0, microtime(true) - $startedAt);
+
+            foreach ([12345, 12346] as $index => $requestedUid) {
+                $passwd = file_get_contents($temporaryDirectory.'/passwd-'.$index);
+                $this->assertIsString($passwd);
+                $this->assertStringContainsString("laravel:x:{$requestedUid}:1000:", $passwd);
+            }
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
             $filesystem->remove($temporaryDirectory);
         }
     }
