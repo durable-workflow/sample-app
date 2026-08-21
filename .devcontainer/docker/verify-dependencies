@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+scope="${1:-}"
+laravel_vendor="${SAMPLE_APP_LARAVEL_VENDOR:-/var/www/html/vendor}"
+microservice_vendor="${SAMPLE_APP_MICROSERVICE_VENDOR:-/var/www/html/microservice/vendor}"
+
+case "$scope" in
+    baked)
+        dependency_paths=("$laravel_vendor" "$microservice_vendor")
+        ;;
+    laravel)
+        dependency_paths=("$laravel_vendor")
+        ;;
+    microservice)
+        dependency_paths=("$microservice_vendor")
+        ;;
+    *)
+        echo 'Usage: verify-devcontainer-dependencies {baked|laravel|microservice}' >&2
+        exit 2
+        ;;
+esac
+
+for dependency_path in "${dependency_paths[@]}"; do
+    if [[ ! -s "${dependency_path}/autoload.php" ]]; then
+        echo "Prepared Composer dependencies are missing: ${dependency_path}/autoload.php." >&2
+        exit 1
+    fi
+done
+
+verify-prepared-permissions "${dependency_paths[@]}"

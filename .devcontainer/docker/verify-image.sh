@@ -38,9 +38,9 @@ test -d "${CARGO_TARGET_DIR}/debug/deps"
 verify-prepared-permissions \
     /home/laravel/.cargo \
     /home/laravel/.composer \
-    /opt/sample-app-playground \
-    /var/www/html/vendor \
-    /var/www/html/microservice/vendor
+    /opt/sample-app-playground
+
+verify-devcontainer-dependencies "${DEVCONTAINER_DEPENDENCY_SCOPE:-baked}"
 
 mysql_seed_archive=/usr/local/share/sample-app/mysql-datadir.tar
 test -x /usr/local/bin/seed-mysql-volume

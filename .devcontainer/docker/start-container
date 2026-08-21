@@ -55,7 +55,7 @@ run_bounded_identity_operation() {
 install_locked_composer_dependencies() {
     local -a command_prefix=("$@")
 
-    if ! "${command_prefix[@]}" composer validate \
+    if ! "${command_prefix[@]}" with-disposable-composer-state composer validate \
         --strict \
         --check-lock \
         --no-check-all \
@@ -71,7 +71,7 @@ install_locked_composer_dependencies() {
         return 1
     fi
 
-    if ! "${command_prefix[@]}" composer install \
+    if ! "${command_prefix[@]}" with-disposable-composer-state composer install \
         --prefer-dist \
         --no-progress \
         --no-interaction; then

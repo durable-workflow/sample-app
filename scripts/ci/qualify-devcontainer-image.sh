@@ -339,7 +339,14 @@ application_readiness_started_ms="$(timestamp_ms)"
 '
 application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"
 
-"${compose[@]}" exec -T --user laravel laravel verify-devcontainer-image
+"${compose[@]}" exec -T \
+    --env DEVCONTAINER_DEPENDENCY_SCOPE=laravel \
+    --user laravel \
+    laravel verify-devcontainer-image
+"${compose[@]}" exec -T \
+    --env DEVCONTAINER_DEPENDENCY_SCOPE=microservice \
+    --user laravel \
+    microservice verify-devcontainer-image
 "${compose[@]}" exec -T laravel sshd -t
 "${compose[@]}" exec -T --user laravel laravel node docker/playwright-smoke.js
 first_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"

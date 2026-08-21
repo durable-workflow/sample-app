@@ -245,6 +245,10 @@ final class DevcontainerImageContractTest extends TestCase
             $dockerfile,
         );
         $this->assertStringContainsString(
+            'COPY .devcontainer/docker/verify-dependencies /usr/local/bin/verify-devcontainer-dependencies',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
             'COPY .devcontainer/docker/with-disposable-composer-state /usr/local/bin/with-disposable-composer-state',
             $dockerfile,
         );
@@ -285,7 +289,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('passwd --delete laravel', $dockerfile);
         $this->assertStringContainsString('rm -f /etc/ssh/ssh_host_*_key', $dockerfile);
         $this->assertStringContainsString(
-            'DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image',
+            'DEVCONTAINER_DEPENDENCY_SCOPE=baked',
             $dockerfile,
         );
         $this->assertStringContainsString('org.opencontainers.image.revision="${VCS_REF}"', $dockerfile);
@@ -730,6 +734,142 @@ BASH);
         }
     }
 
+    public function test_startup_composer_operations_cannot_mutate_the_prepared_home(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-startup-composer-'.bin2hex(random_bytes(8));
+        $projectDirectory = $temporaryDirectory.'/project';
+        $preparedComposerHome = $temporaryDirectory.'/prepared-composer';
+        $fakeBinaryDirectory = $temporaryDirectory.'/bin';
+        $composerStateLog = $temporaryDirectory.'/composer-state';
+        $preparedSentinel = $preparedComposerHome.'/prepared-state';
+        $filesystem->mkdir([
+            $projectDirectory.'/vendor',
+            $preparedComposerHome,
+            $fakeBinaryDirectory,
+        ], 0770);
+        file_put_contents($projectDirectory.'/composer.json', "{}\n");
+        file_put_contents($projectDirectory.'/vendor/autoload.php', "<?php\n");
+        file_put_contents($preparedSentinel, "prepared\n");
+        symlink(
+            $this->repoPath('.devcontainer/docker/with-disposable-composer-state'),
+            $fakeBinaryDirectory.'/with-disposable-composer-state',
+        );
+        file_put_contents($fakeBinaryDirectory.'/composer', <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\t%s\t%s\n' "$1" "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR" >> "$FAKE_COMPOSER_STATE_LOG"
+mkdir -p "$COMPOSER_CACHE_DIR/files"
+BASH);
+        file_put_contents($fakeBinaryDirectory.'/gosu', <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+shift
+exec "$@"
+BASH);
+        chmod($fakeBinaryDirectory.'/composer', 0700);
+        chmod($fakeBinaryDirectory.'/gosu', 0700);
+
+        try {
+            foreach (['non-root' => '', 'root-remapped' => 'gosu laravel'] as $prefix) {
+                $process = new Process(
+                    [
+                        'bash',
+                        '-euc',
+                        <<<'BASH'
+cd "$1"
+source "$2"
+read -r -a command_prefix <<< "$3"
+install_locked_composer_dependencies "${command_prefix[@]}"
+BASH,
+                        'bash',
+                        $projectDirectory,
+                        $this->repoPath('.devcontainer/docker/start-container'),
+                        $prefix,
+                    ],
+                    env: [
+                        'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
+                        'COMPOSER_HOME' => $preparedComposerHome,
+                        'FAKE_COMPOSER_STATE_LOG' => $composerStateLog,
+                    ],
+                );
+                $process->mustRun();
+            }
+
+            $operations = file($composerStateLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $this->assertIsArray($operations);
+            $this->assertCount(4, $operations);
+            $this->assertSame(['validate', 'install', 'validate', 'install'], array_map(
+                static fn (string $operation): string => explode("\t", $operation)[0],
+                $operations,
+            ));
+            foreach ($operations as $operation) {
+                [, $composerHome, $composerCache] = explode("\t", $operation);
+                $this->assertNotSame($preparedComposerHome, $composerHome);
+                $this->assertSame($composerHome.'/cache', $composerCache);
+                $this->assertDirectoryDoesNotExist($composerHome);
+            }
+            $this->assertDirectoryDoesNotExist($preparedComposerHome.'/cache');
+            $this->assertFileExists($preparedSentinel);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_dependency_verification_respects_each_service_mount_boundary(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-service-dependencies-'.bin2hex(random_bytes(8));
+        $laravelVendor = $temporaryDirectory.'/laravel-vendor';
+        $microserviceVendor = $temporaryDirectory.'/microservice-vendor';
+        $fakeBinaryDirectory = $temporaryDirectory.'/bin';
+        $filesystem->mkdir([$laravelVendor, $microserviceVendor, $fakeBinaryDirectory], 0775);
+        chmod($laravelVendor, 0775);
+        chmod($microserviceVendor, 0775);
+        file_put_contents($laravelVendor.'/autoload.php', "<?php\n");
+        file_put_contents($microserviceVendor.'/autoload.php', "<?php\n");
+        chmod($laravelVendor.'/autoload.php', 0664);
+        chmod($microserviceVendor.'/autoload.php', 0644);
+        symlink(
+            $this->repoPath('.devcontainer/docker/verify-prepared-permissions'),
+            $fakeBinaryDirectory.'/verify-prepared-permissions',
+        );
+
+        $verification = static fn (string $scope): Process => new Process(
+            [
+                'bash',
+                dirname(__DIR__, 2).'/.devcontainer/docker/verify-dependencies',
+                $scope,
+            ],
+            env: [
+                'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
+                'SAMPLE_APP_LARAVEL_VENDOR' => $laravelVendor,
+                'SAMPLE_APP_MICROSERVICE_VENDOR' => $microserviceVendor,
+            ],
+        );
+
+        try {
+            $laravelRuntime = $verification('laravel');
+            $laravelRuntime->mustRun();
+
+            foreach (['baked', 'microservice'] as $scope) {
+                $failingVerification = $verification($scope);
+                $failingVerification->run();
+                $this->assertSame(1, $failingVerification->getExitCode());
+                $this->assertStringContainsString(
+                    "path={$microserviceVendor}/autoload.php",
+                    $failingVerification->getErrorOutput(),
+                );
+            }
+
+            chmod($microserviceVendor.'/autoload.php', 0664);
+            $verification('baked')->mustRun();
+            $verification('microservice')->mustRun();
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_group_shared_runner_makes_new_cache_entries_group_writable(): void
     {
         $filesystem = new Filesystem;
@@ -1042,6 +1182,8 @@ with-group-shared-umask cargo check \
 SHELL,
             $script,
         );
+        $this->assertStringContainsString('--env DEVCONTAINER_DEPENDENCY_SCOPE=laravel', $script);
+        $this->assertStringContainsString('--env DEVCONTAINER_DEPENDENCY_SCOPE=microservice', $script);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
         $this->assertStringContainsString('for language in php python rust; do', $script);
         $this->assertStringContainsString(
