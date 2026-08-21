@@ -27,8 +27,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPO_ROOT / "playground" / "docker-compose.yml"
 CONTRACT_FILE = REPO_ROOT / "playground" / "contract.json"
 LANGUAGES = ("php", "python", "rust")
+RUNTIMES = ("local", "managed")
 AUTH_TOKEN = "playground-token"
 NAMESPACE = "default"
+CREDENTIAL_VARIABLES = (
+    "DURABLE_WORKFLOW_AUTH_TOKEN",
+    "DURABLE_WORKFLOW_CLIENT_TOKEN",
+    "DURABLE_WORKFLOW_CONTROL_TOKEN",
+    "DURABLE_WORKFLOW_PROCESS_ROLE",
+    "DURABLE_WORKFLOW_PROCESS_TOKEN",
+    "DURABLE_WORKFLOW_TOKEN",
+    "DURABLE_WORKFLOW_WORKER_TOKEN",
+)
 DEFAULT_SERVICE_WAIT_SECONDS = 180
 MAX_SERVICE_WAIT_SECONDS = 600
 SERVICE_PROCESS_GUARD_SECONDS = 15
@@ -38,6 +48,20 @@ PRIMARY_DIAGNOSTIC_SERVICES = ("mysql", "server", "waterline")
 
 class PlaygroundError(RuntimeError):
     pass
+
+
+def clean_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    for name in CREDENTIAL_VARIABLES:
+        env.pop(name, None)
+    return env
+
+
+def required_environment(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise PlaygroundError(f"Set {name} before using the managed runtime.")
+    return value
 
 
 def run(
@@ -61,7 +85,7 @@ def run(
 
 
 def command_output(command: list[str], *, env: dict[str, str] | None = None) -> str:
-    result = run(command, env=env, capture=True, timeout=30)
+    result = run(command, env=env or clean_environment(), capture=True, timeout=30)
     return result.stdout.strip() or result.stderr.strip()
 
 
@@ -78,19 +102,21 @@ def require_command(name: str) -> str:
     return path
 
 
-def doctor() -> dict[str, str]:
-    for executable in (
+def doctor(*, require_docker: bool = True) -> dict[str, str]:
+    executables = [
         "php",
         "composer",
         "python",
         "pip",
         "rustc",
         "cargo",
-        "docker",
         "dw",
         "with-disposable-composer-state",
         "with-group-shared-umask",
-    ):
+    ]
+    if require_docker:
+        executables.append("docker")
+    for executable in executables:
         require_command(executable)
 
     versions = {
@@ -100,14 +126,32 @@ def doctor() -> dict[str, str]:
         "pip": command_output(["pip", "--version"]),
         "rustc": command_output(["rustc", "--version"]),
         "cargo": command_output(["cargo", "--version"]),
-        "docker": command_output(
-            ["docker", "version", "--format", "{{.Client.Version}}"]
-        ),
-        "compose": command_output(["docker", "compose", "version", "--short"]),
         "dw": command_output(["dw", "--version"]),
     }
-    run(["python", "-m", "venv", "--help"], capture=True, timeout=30)
-    run(["docker", "info", "--format", "{{.ServerVersion}}"], capture=True, timeout=30)
+    if require_docker:
+        versions.update(
+            {
+                "docker": command_output(
+                    ["docker", "version", "--format", "{{.Client.Version}}"]
+                ),
+                "compose": command_output(
+                    ["docker", "compose", "version", "--short"]
+                ),
+            }
+        )
+    run(
+        ["python", "-m", "venv", "--help"],
+        env=clean_environment(),
+        capture=True,
+        timeout=30,
+    )
+    if require_docker:
+        run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            env=clean_environment(),
+            capture=True,
+            timeout=30,
+        )
 
     python_match = re.search(r"Python (\d+)\.(\d+)", versions["python"])
     rust_match = re.search(r"rustc (\d+)\.(\d+)", versions["rustc"])
@@ -201,14 +245,30 @@ def load_contract() -> dict[str, Any]:
         "activity_type",
         "task_queue",
         "workflow_id_prefix",
+        "input",
         "worker_command",
         "start_command",
         "expected_result",
     }
     for language in LANGUAGES:
         scenario = scenarios[language]
-        if not isinstance(scenario, dict) or not required.issubset(scenario):
+        if (
+            not isinstance(scenario, dict)
+            or not required.issubset(scenario)
+            or not isinstance(scenario["input"], dict)
+            or not isinstance(scenario["expected_result"], dict)
+        ):
             raise PlaygroundError(f"The {language} playground scenario is invalid.")
+        if scenario["expected_result"].get("input") != scenario["input"]:
+            raise PlaygroundError(
+                f"The {language} playground result does not preserve its authored input."
+            )
+    runtime = contract.get("runtime")
+    if not isinstance(runtime, dict) or runtime.get("default") != "local":
+        raise PlaygroundError("The playground runtime contract has no local default.")
+    targets = runtime.get("targets")
+    if not isinstance(targets, dict) or set(targets) != set(RUNTIMES):
+        raise PlaygroundError("The playground runtime targets are incomplete.")
     return contract
 
 
@@ -247,7 +307,7 @@ def effective_scenario(
 
 
 def resolve_artifacts() -> dict[str, str]:
-    env = os.environ.copy()
+    env = clean_environment()
     env.setdefault("DURABLE_WORKFLOW_ARTIFACT_SOURCE", "pinned")
     output = command_output(
         [str(REPO_ROOT / "scripts" / "resolve-current-artifacts.sh")], env=env
@@ -356,7 +416,7 @@ def compose_command(project: str) -> list[str]:
 
 
 def compose_environment(artifacts: dict[str, str]) -> dict[str, str]:
-    env = os.environ.copy()
+    env = clean_environment()
     env.update(artifacts)
     env.setdefault("PLAYGROUND_SERVER_PORT", "18082")
     env.setdefault("PLAYGROUND_WATERLINE_PORT", "18083")
@@ -385,6 +445,61 @@ def public_waterline_base() -> str:
         )
         return f"https://{codespace}-{port}.{domain}/waterline"
     return f"http://localhost:{port}/waterline"
+
+
+def managed_runtime_configuration(
+    runtime_url: str | None,
+    namespace: str | None,
+    task_queue: str | None,
+) -> tuple[str, str, str, str, str]:
+    values = {
+        "--runtime-url": runtime_url,
+        "--namespace": namespace,
+        "--task-queue": task_queue,
+    }
+    missing = [name for name, value in values.items() if not value or not value.strip()]
+    if missing:
+        raise PlaygroundError(
+            "Managed runtime mode requires explicit " + ", ".join(missing) + "."
+        )
+    assert runtime_url is not None and namespace is not None and task_queue is not None
+    parsed = urllib.parse.urlparse(runtime_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise PlaygroundError("--runtime-url must be an absolute HTTP or HTTPS URL.")
+    if parsed.query or parsed.fragment or parsed.path.rstrip("/").endswith("/api"):
+        raise PlaygroundError(
+            "--runtime-url must identify the namespace runtime root without a query, fragment, or terminal /api."
+        )
+    if any(character.isspace() for character in namespace + task_queue):
+        raise PlaygroundError("--namespace and --task-queue cannot contain whitespace.")
+
+    worker_token = required_environment("DURABLE_WORKFLOW_WORKER_TOKEN")
+    client_token = required_environment("DURABLE_WORKFLOW_CLIENT_TOKEN")
+    if worker_token == client_token:
+        raise PlaygroundError(
+            "Managed runtime worker and client credentials must use separate role-scoped values."
+        )
+    return (
+        runtime_url.rstrip("/"),
+        namespace,
+        task_queue,
+        worker_token,
+        client_token,
+    )
+
+
+def result_shape(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {name: result_shape(entry) for name, entry in value.items()}
+    if isinstance(value, list):
+        return [result_shape(entry) for entry in value]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
 
 
 def service_wait_seconds(env: dict[str, str]) -> int:
@@ -618,17 +733,18 @@ def scenario_command(scenario: dict[str, Any], name: str) -> list[str]:
 
 
 def runtime_environment(
-    server_url: str,
+    runtime_url: str,
+    namespace: str,
     task_queue: str,
     worker_id: str,
     scenario: dict[str, Any],
 ) -> dict[str, str]:
-    env = os.environ.copy()
+    env = clean_environment()
     env.update(
         {
-            "DURABLE_WORKFLOW_RUNTIME_URL": server_url,
-            "DURABLE_WORKFLOW_SERVER_URL": server_url,
-            "DURABLE_WORKFLOW_NAMESPACE": NAMESPACE,
+            "DURABLE_WORKFLOW_RUNTIME_URL": runtime_url,
+            "DURABLE_WORKFLOW_SERVER_URL": runtime_url,
+            "DURABLE_WORKFLOW_NAMESPACE": namespace,
             "DURABLE_WORKFLOW_TASK_QUEUE": task_queue,
             "DURABLE_WORKFLOW_WORKER_ID": worker_id,
             "SAMPLE_APP_PLAYGROUND_SCENARIO": json.dumps(
@@ -643,14 +759,17 @@ def runtime_environment(
     return env
 
 
-def dw_environment(server_url: str) -> dict[str, str]:
-    env = os.environ.copy()
+def dw_environment(
+    runtime_url: str, namespace: str, client_token: str
+) -> dict[str, str]:
+    env = clean_environment()
     env.update(
         {
-            "DURABLE_WORKFLOW_SERVER_URL": server_url,
-            "DURABLE_WORKFLOW_AUTH_TOKEN": AUTH_TOKEN,
-            "DURABLE_WORKFLOW_CLIENT_TOKEN": AUTH_TOKEN,
-            "DURABLE_WORKFLOW_NAMESPACE": NAMESPACE,
+            "DURABLE_WORKFLOW_RUNTIME_URL": runtime_url,
+            "DURABLE_WORKFLOW_SERVER_URL": runtime_url,
+            "DURABLE_WORKFLOW_AUTH_TOKEN": client_token,
+            "DURABLE_WORKFLOW_CLIENT_TOKEN": client_token,
+            "DURABLE_WORKFLOW_NAMESPACE": namespace,
         }
     )
     return env
@@ -676,7 +795,9 @@ def wait_for_registration(
     expected_worker_id: str | None,
     workflow_type: str,
     activity_type: str,
-    server_url: str,
+    runtime_url: str,
+    namespace: str,
+    client_token: str,
     worker: subprocess.Popen[str],
 ) -> dict[str, Any]:
     deadline = time.monotonic() + 60
@@ -689,7 +810,7 @@ def wait_for_registration(
         try:
             roster = json_command(
                 ["dw", "worker:list", f"--task-queue={task_queue}", "--json"],
-                env=dw_environment(server_url),
+                env=dw_environment(runtime_url, namespace, client_token),
             )
             workers = roster.get("workers")
             if isinstance(workers, list):
@@ -775,19 +896,52 @@ def terminate_worker(worker: subprocess.Popen[str]) -> None:
         worker.wait(timeout=5)
 
 
-def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, Any]:
+def journey(
+    language: str,
+    source_dir: Path,
+    evidence_path: Path,
+    *,
+    runtime: str = "local",
+    runtime_url: str | None = None,
+    namespace: str | None = None,
+    task_queue: str | None = None,
+) -> dict[str, Any]:
     started_at = time.time()
     started_monotonic = time.monotonic()
     contract = load_contract()
-    versions = doctor()
+    if runtime == "managed":
+        (
+            effective_runtime_url,
+            effective_namespace,
+            effective_task_queue,
+            worker_token,
+            client_token,
+        ) = managed_runtime_configuration(runtime_url, namespace, task_queue)
+    elif runtime == "local":
+        if any(value is not None for value in (runtime_url, namespace, task_queue)):
+            raise PlaygroundError(
+                "--runtime-url, --namespace, and --task-queue are available only with --runtime managed."
+            )
+        effective_runtime_url = endpoint(
+            "PLAYGROUND_SERVER_URL", "PLAYGROUND_SERVER_PORT", "18082"
+        )
+        effective_namespace = NAMESPACE
+        effective_task_queue = ""
+        worker_token = AUTH_TOKEN
+        client_token = AUTH_TOKEN
+    else:
+        raise PlaygroundError(f"Unsupported playground runtime: {runtime}")
+
+    versions = doctor(require_docker=runtime == "local")
     artifacts = resolve_artifacts()
     suffix = hashlib.sha256(f"{source_dir}-{os.getpid()}".encode()).hexdigest()[:10]
     scenario = effective_scenario(language, source_dir, suffix)
+    if effective_task_queue:
+        scenario["task_queue"] = effective_task_queue
     created = scaffold(language, source_dir, scenario=scenario)
     project = os.environ.get("PLAYGROUND_COMPOSE_PROJECT", "sample-app-playground")
     task_queue = str(scenario["task_queue"])
     worker_id = f"sample-app-playground-{language}-worker-{suffix}"
-    server_url = endpoint("PLAYGROUND_SERVER_URL", "PLAYGROUND_SERVER_PORT", "18082")
     waterline_internal = endpoint(
         "PLAYGROUND_WATERLINE_INTERNAL_URL", "PLAYGROUND_WATERLINE_PORT", "18083"
     )
@@ -802,6 +956,19 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         "--evidence",
         str(evidence_path),
     ]
+    if runtime == "managed":
+        retry_command.extend(
+            [
+                "--runtime",
+                "managed",
+                "--runtime-url",
+                effective_runtime_url,
+                "--namespace",
+                effective_namespace,
+                "--task-queue",
+                task_queue,
+            ]
+        )
     worker: subprocess.Popen[str] | None = None
     services_started = False
 
@@ -816,29 +983,41 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             + json.dumps(
                 {
                     "language": language,
+                    "runtime": runtime,
+                    "runtime_url": effective_runtime_url,
+                    "namespace": effective_namespace,
                     "workflow_type": scenario["workflow_type"],
                     "activity_type": scenario["activity_type"],
                     "task_queue": scenario["task_queue"],
+                    "input": scenario["input"],
                     "worker_command": scenario["worker_command"],
                     "start_command": scenario["start_command"],
                     "expected_result": scenario["expected_result"],
+                    "expected_result_shape": result_shape(
+                        scenario["expected_result"]
+                    ),
                 },
                 indent=2,
                 sort_keys=True,
             ),
             flush=True,
         )
-        start_services(
-            compose,
-            compose_env,
-            cleanup_command=cleanup_command,
-            retry_command=retry_command,
+        if runtime == "local":
+            start_services(
+                compose,
+                compose_env,
+                cleanup_command=cleanup_command,
+                retry_command=retry_command,
+            )
+            services_started = True
+        worker_env = runtime_environment(
+            effective_runtime_url,
+            effective_namespace,
+            task_queue,
+            worker_id,
+            scenario,
         )
-        services_started = True
-        worker_env = runtime_environment(server_url, task_queue, worker_id, scenario)
-        worker_env["DURABLE_WORKFLOW_WORKER_TOKEN"] = AUTH_TOKEN
-        worker_env.pop("DURABLE_WORKFLOW_CLIENT_TOKEN", None)
-        worker_env.pop("DURABLE_WORKFLOW_CONTROL_TOKEN", None)
+        worker_env["DURABLE_WORKFLOW_WORKER_TOKEN"] = worker_token
         test_command = scenario.get("test_command")
         if isinstance(test_command, list):
             run(
@@ -862,7 +1041,9 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             expected_worker_id,
             str(scenario["workflow_type"]),
             str(scenario["activity_type"]),
-            server_url,
+            effective_runtime_url,
+            effective_namespace,
+            client_token,
             worker,
         )
         registered_workers = registration["workers"]
@@ -879,16 +1060,21 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         )
         print(
             "Worker ready: "
-            f"id={registered_worker_id} queue={task_queue} "
+            f"target={runtime} runtime_url={effective_runtime_url} "
+            f"namespace={effective_namespace} id={registered_worker_id} queue={task_queue} "
             f"workflow_type={scenario['workflow_type']} "
             f"activity_type={scenario['activity_type']}",
             flush=True,
         )
 
-        client_env = runtime_environment(server_url, task_queue, worker_id, scenario)
-        client_env["DURABLE_WORKFLOW_CLIENT_TOKEN"] = AUTH_TOKEN
-        client_env["DURABLE_WORKFLOW_CONTROL_TOKEN"] = AUTH_TOKEN
-        client_env.pop("DURABLE_WORKFLOW_WORKER_TOKEN", None)
+        client_env = runtime_environment(
+            effective_runtime_url,
+            effective_namespace,
+            task_queue,
+            worker_id,
+            scenario,
+        )
+        client_env["DURABLE_WORKFLOW_CLIENT_TOKEN"] = client_token
         client = run(
             scenario_command(scenario, "start_command"),
             env=client_env,
@@ -901,7 +1087,9 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         if not isinstance(workflow_id, str) or not workflow_id:
             raise PlaygroundError("The SDK client result did not contain workflow_id.")
 
-        cli_env = dw_environment(server_url)
+        cli_env = dw_environment(
+            effective_runtime_url, effective_namespace, client_token
+        )
         description = json_command(
             ["dw", "workflow:describe", workflow_id, "--json"], env=cli_env
         )
@@ -924,12 +1112,15 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             else []
         )
 
-        quoted_workflow = urllib.parse.quote(workflow_id, safe="")
-        quoted_run = urllib.parse.quote(run_id, safe="")
-        page_path = f"/flows/instances/{quoted_workflow}/runs/{quoted_run}"
-        api_path = f"/api/instances/{quoted_workflow}/runs/{quoted_run}"
-        selection = fetch_json(f"{waterline_internal}/waterline{api_path}")
-        exact_waterline_url = f"{public_waterline_base()}{page_path}"
+        selection: dict[str, Any] | None = None
+        exact_waterline_url: str | None = None
+        if runtime == "local":
+            quoted_workflow = urllib.parse.quote(workflow_id, safe="")
+            quoted_run = urllib.parse.quote(run_id, safe="")
+            page_path = f"/flows/instances/{quoted_workflow}/runs/{quoted_run}"
+            api_path = f"/api/instances/{quoted_workflow}/runs/{quoted_run}"
+            selection = fetch_json(f"{waterline_internal}/waterline{api_path}")
+            exact_waterline_url = f"{public_waterline_base()}{page_path}"
 
         required_events = contract["proof"]["required_history_events"]
         missing_events = [
@@ -945,8 +1136,9 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             )
         if missing_events:
             failures.append(f"history is missing {', '.join(missing_events)}")
-        if (
-            selection.get("instance_id") != workflow_id
+        if runtime == "local" and (
+            selection is None
+            or selection.get("instance_id") != workflow_id
             or selection.get("selected_run_id") != run_id
         ):
             failures.append(
@@ -960,6 +1152,11 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             "schema": "durable-workflow.sample-app.playground-evidence",
             "schema_version": 1,
             "language": language,
+            "runtime": {
+                "target": runtime,
+                "url": effective_runtime_url,
+                "namespace": effective_namespace,
+            },
             "normal_user": {"uid": os.getuid(), "gid": os.getgid()},
             "source": {
                 "directory": str(source_dir),
@@ -994,8 +1191,12 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
             "waterline": {
                 "url": exact_waterline_url,
                 "selection": {
-                    "instance_id": selection.get("instance_id"),
-                    "selected_run_id": selection.get("selected_run_id"),
+                    "instance_id": selection.get("instance_id")
+                    if selection is not None
+                    else None,
+                    "selected_run_id": selection.get("selected_run_id")
+                    if selection is not None
+                    else None,
                 },
             },
             "started_epoch_ms": round(started_at * 1000),
@@ -1006,7 +1207,26 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         print(
             f"Completed {language} workflow {workflow_id}: {json.dumps(result, separators=(',', ':'))}"
         )
-        print(f"Inspect this exact run in Waterline: {exact_waterline_url}")
+        print(
+            "Playground success: "
+            + json.dumps(
+                {
+                    "runtime_target": runtime,
+                    "runtime_url": effective_runtime_url,
+                    "namespace": effective_namespace,
+                    "task_queue": task_queue,
+                    "workflow_type": scenario["workflow_type"],
+                    "activity_type": scenario["activity_type"],
+                    "expected_result_shape": result_shape(
+                        scenario["expected_result"]
+                    ),
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        if exact_waterline_url is not None:
+            print(f"Inspect this exact run in Waterline: {exact_waterline_url}")
         print(f"Journey evidence: {evidence_path}")
         return payload
     except Exception:
@@ -1035,7 +1255,7 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
         except UnboundLocalError:
             pass
         worker_log.unlink(missing_ok=True)
-        if os.environ.get("PLAYGROUND_CLEANUP") == "1":
+        if runtime == "local" and os.environ.get("PLAYGROUND_CLEANUP") == "1":
             subprocess.run(
                 compose + ["down", "--volumes", "--remove-orphans"],
                 env=compose_env,
@@ -1045,19 +1265,43 @@ def journey(language: str, source_dir: Path, evidence_path: Path) -> dict[str, A
 
 
 def parse_args() -> argparse.Namespace:
+    managed_help = (
+        "Managed mode requires explicit --runtime-url, --namespace, and "
+        "--task-queue arguments plus separate DURABLE_WORKFLOW_WORKER_TOKEN "
+        "and DURABLE_WORKFLOW_CLIENT_TOKEN environment values. Credential "
+        "values are scoped to their respective child processes and are never printed."
+    )
     parser = argparse.ArgumentParser(
-        description="Create and run a caller-owned workflow and activity with a first-party SDK."
+        description="Create and run a caller-owned workflow and activity with a first-party SDK.",
+        epilog=managed_help,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for language in LANGUAGES:
         journey_parser = subparsers.add_parser(
-            language, help=f"Run the {language} playground journey"
+            language,
+            help=f"Run the {language} playground journey",
+            epilog=managed_help,
         )
         journey_parser.add_argument(
             "--source", type=Path, help="Caller-owned source directory"
         )
         journey_parser.add_argument(
             "--evidence", type=Path, help="Evidence JSON output"
+        )
+        journey_parser.add_argument(
+            "--runtime",
+            choices=RUNTIMES,
+            default="local",
+            help="Runtime target; local published Server is the default",
+        )
+        journey_parser.add_argument(
+            "--runtime-url", help="Explicit namespace runtime URL for managed mode"
+        )
+        journey_parser.add_argument(
+            "--namespace", help="Explicit namespace for managed mode"
+        )
+        journey_parser.add_argument(
+            "--task-queue", help="Explicit task queue for managed mode"
         )
 
     scaffold_parser = subparsers.add_parser(
@@ -1131,7 +1375,15 @@ def main() -> int:
         .expanduser()
         .resolve()
     )
-    journey(language, source_dir, evidence_path)
+    journey(
+        language,
+        source_dir,
+        evidence_path,
+        runtime=args.runtime,
+        runtime_url=args.runtime_url,
+        namespace=args.namespace,
+        task_queue=args.task_queue,
+    )
     return 0
 
 

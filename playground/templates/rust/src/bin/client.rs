@@ -29,7 +29,12 @@ async fn main() -> Result<()> {
         .control_token(Some(required("DURABLE_WORKFLOW_CLIENT_TOKEN")))
         .build()?;
     let handle = client
-        .start_workflow(workflow_type, task_queue, &workflow_id, json!([]))
+        .start_workflow(
+            workflow_type,
+            task_queue,
+            &workflow_id,
+            json!([scenario["input"]]),
+        )
         .await?;
     let run_id = handle.run_id.clone();
     let result = handle

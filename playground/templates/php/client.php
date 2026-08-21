@@ -5,7 +5,7 @@ declare(strict_types=1);
 use DurableWorkflow\WorkflowClientInterface;
 use SampleAppPlayground\Scenario;
 
-[$app] = require __DIR__.'/bootstrap.php';
+[$app, $scenario] = require __DIR__.'/bootstrap.php';
 $client = $app->make(WorkflowClientInterface::class);
 $prefix = trim((string) getenv('SAMPLE_APP_PLAYGROUND_WORKFLOW_ID_PREFIX'));
 if ($prefix === '') {
@@ -17,6 +17,7 @@ $handle = $client->startWorkflow(
     Scenario::WORKFLOW_TYPE,
     $workflowId,
     (string) getenv('DURABLE_WORKFLOW_TASK_QUEUE'),
+    [$scenario['input']],
 );
 $result = $handle->result(90.0, 0.25);
 $runId = property_exists($handle, 'selectedRunId') ? $handle->selectedRunId : null;

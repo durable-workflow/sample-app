@@ -8,6 +8,11 @@ start with the repository playground instead of the conformance matrix.
 - Run `scripts/playground <language>`. It scaffolds missing caller-owned source,
   preserves existing source, launches an isolated published Server, and prints
   the completed result and exact Waterline run URL.
+- Keep that no-access-required local runtime as the default. When the user has
+  an existing managed namespace, use the same command with `--runtime managed`,
+  `--runtime-url`, `--namespace`, and `--task-queue`; provide its separate
+  worker and client role credentials through the named process environment
+  variables described by `scripts/playground <language> --help`.
 - Treat the printed effective contract and `Worker ready` checkpoint as the
   source of truth for workflow type, activity type, task queue, worker command,
   start command, and expected result. Do not repeat scenario identities in an
@@ -22,9 +27,8 @@ start with the repository playground instead of the conformance matrix.
   and SDK test fake when editing the caller-owned workflow and activity.
 - For a framework-free PHP process, run
   `scripts/playground scaffold php --standalone --source <dir>` and use the
-  installed SDK package's own worker and client examples. Preserve the
-  role-specific credential variables and pass a full Cloud namespace runtime
-  URI unchanged.
+  installed SDK package's own worker and client examples as scaffold material.
+  Keep completed local or managed execution on the shared language journey.
 - Run `scripts/playground doctor` before diagnosing toolchain or Docker access.
   Do not install operating-system packages, run `rustup`, compile `dw`, or
   rebuild SDK toolchains during Codespaces setup or recovery.

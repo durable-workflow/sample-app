@@ -28,7 +28,7 @@ async def main() -> None:
             workflow_type=scenario["workflow_type"],
             workflow_id=workflow_id,
             task_queue=scenario["task_queue"],
-            input=[],
+            input=[scenario["input"]],
         )
         result = await handle.result(timeout=90.0, poll_interval=0.5)
 

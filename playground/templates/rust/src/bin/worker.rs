@@ -31,21 +31,27 @@ async fn main() -> Result<()> {
         .worker_id(required("DURABLE_WORKFLOW_WORKER_ID"))
         .poll_timeout(Duration::from_secs(5));
 
-    worker.register_activity(activity_type.clone(), move |_context, _arguments| {
+    worker.register_activity(activity_type.clone(), move |_context, arguments| {
         let expected = expected.clone();
+        let authored_input = arguments.get(0).cloned().unwrap_or(Value::Null);
         async move {
             Ok(json!({
                 "greeting": expected["greeting"],
+                "input": authored_input,
                 "activity_runtime": "rust"
             }))
         }
     });
-    worker.register_workflow(workflow_type, move |context, _input| {
+    worker.register_workflow(workflow_type, move |context, input| {
         let activity_type = activity_type.clone();
         async move {
-            let activity = context.activity(activity_type, json!([])).await?;
+            let authored_input = input.get(0).cloned().unwrap_or(Value::Null);
+            let activity = context
+                .activity(activity_type, json!([authored_input]))
+                .await?;
             Ok(json!({
                 "greeting": activity["greeting"],
+                "input": activity["input"],
                 "activity_runtime": activity["activity_runtime"],
                 "workflow_runtime": "rust"
             }))

@@ -27,19 +27,6 @@ When setup finishes, choose either deployment path:
 | [Service mode](#service-mode) | One approachable run showing the complete first-party language story | PHP workflow + Python activity + Rust activity + standalone Server |
 | [Embedded Laravel](#embedded-laravel) | A Laravel application that owns workflow execution and storage | Laravel app + queue worker |
 
-Enrolled in Durable Workflow Cloud controlled early access and evaluating
-Rust? Follow the dedicated
-[Rust Cloud quickstart](https://durable-workflow.com/docs/2.0/polyglot/rust-cloud-quickstart/).
-From this Codespace it culminates in one memorable command:
-
-```bash
-scripts/rust-cloud.sh run
-```
-
-The guide provides the namespace runtime URL and separate client/worker
-credential setup, exact SDK and CLI selection, completed result, clean worker
-shutdown, and Managed Waterline check. It uses a development build.
-
 <!-- codespaces-path: service-mode -->
 ### Service mode
 
@@ -102,6 +89,29 @@ SDK dependency and development build caches, so first use does not rebuild an
 SDK graph. Remove the isolated Server, database, Redis, and Waterline state
 with `scripts/playground down <language>`.
 
+Local published Server remains the default and requires no managed-service
+access. To run the same authored journey against an existing managed runtime,
+provide separate worker and client credentials through
+`DURABLE_WORKFLOW_WORKER_TOKEN` and `DURABLE_WORKFLOW_CLIENT_TOKEN`, then make
+the runtime contract explicit on the same language command:
+
+```bash
+language=rust # Choose php, python, or rust.
+scripts/playground "$language" --runtime managed \
+  --runtime-url "https://runtime.example/namespaces/example" \
+  --namespace "example" \
+  --task-queue "sample-app-playground-example"
+```
+
+The runner keeps the two credentials in their respective worker and client
+processes. It waits until the managed runtime advertises the generated
+workflow type, activity type, and exact queue before starting the client. The
+completed result must contain the caller input after it crosses both the
+workflow and activity boundaries; the final success record names the runtime,
+namespace, queue, registered types, and expected result shape without printing
+credential values. Runtime enrollment and credential creation remain the
+managed service's setup responsibility.
+
 The default `php` journey uses the framework-neutral `durable-workflow/sdk`
 through its Laravel bridge. The caller-owned activity receives configuration
 and a PSR logger from Laravel's container, the worker uses the bridge's
@@ -119,9 +129,9 @@ scripts/playground scaffold php --standalone --source "$HOME/durable-php-worker"
 ```
 
 The installed package owns `bootstrap.php`, `worker.php`, and `client.php`.
-Provide the runtime URI, namespace, task queue, and separate role-scoped worker
-and control credentials described by its quickstart when running those files
-against Cloud.
+This scaffold-only variation does not replace the executed playground journey;
+use the shared language command above for either the local or managed runtime
+proof.
 
 #### Laravel integration variation
 

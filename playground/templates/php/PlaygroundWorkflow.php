@@ -9,13 +9,16 @@ use DurableWorkflow\Worker\WorkflowContext;
 
 final class PlaygroundWorkflow
 {
-    /** @return array{greeting: string, activity_runtime: string, workflow_runtime: string} */
+    /**
+     * @param  array{name: string}  $input
+     * @return array{greeting: string, input: array{name: string}, activity_runtime: string, workflow_runtime: string}
+     */
     #[Workflow(Scenario::WORKFLOW_TYPE)]
-    public function run(WorkflowContext $context): array
+    public function run(WorkflowContext $context, array $input): array
     {
         $activity = $context->activity(
             Scenario::ACTIVITY_TYPE,
-            [],
+            [$input],
             ['start_to_close_timeout' => 30],
         );
 

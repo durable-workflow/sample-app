@@ -1,6 +1,6 @@
 {
   "schema": "durable-workflow.sample-app.playground",
-  "schema_version": 2,
+  "schema_version": 3,
   "interface": "scripts/playground",
   "choices": [
     "php",
@@ -10,11 +10,29 @@
   "source_ownership": "caller",
   "artifact_source": "polyglot/qualified-artifact-tuple.json",
   "runtime": {
-    "server_distribution": "published-image",
-    "server_artifact": "server",
-    "waterline_distribution": "published-service-image",
-    "waterline_artifact": "waterline",
-    "isolated_state_per_journey": true
+    "default": "local",
+    "targets": {
+      "local": {
+        "server_distribution": "published-image",
+        "server_artifact": "server",
+        "waterline_distribution": "published-service-image",
+        "waterline_artifact": "waterline",
+        "isolated_state_per_journey": true,
+        "requires_external_access": false
+      },
+      "managed": {
+        "service_orchestration": "external",
+        "required_arguments": [
+          "--runtime-url",
+          "--namespace",
+          "--task-queue"
+        ],
+        "credential_roles": {
+          "worker": "DURABLE_WORKFLOW_WORKER_TOKEN",
+          "client": "DURABLE_WORKFLOW_CLIENT_TOKEN"
+        }
+      }
+    }
   },
   "proof": {
     "required_status": "completed",
@@ -34,11 +52,17 @@
       "activity_type": "sample-app.playground.php.authored-activity",
       "task_queue": "sample-app-playground-php-{run_suffix}",
       "workflow_id_prefix": "sample-app-playground-php",
+      "input": {
+        "name": "Durable Workflow"
+      },
       "test_command": ["php", "{source}/test.php"],
       "worker_command": ["php", "{source}/worker.php"],
       "start_command": ["php", "{source}/client.php"],
       "expected_result": {
-        "greeting": "Hello from the Sample App PHP playground",
+        "greeting": "Hello, Durable Workflow, from the Sample App PHP playground",
+        "input": {
+          "name": "Durable Workflow"
+        },
         "activity_runtime": "php",
         "workflow_runtime": "php"
       }
@@ -49,10 +73,16 @@
       "activity_type": "sample-app.playground.python.authored-activity",
       "task_queue": "sample-app-playground-python-{run_suffix}",
       "workflow_id_prefix": "sample-app-playground-python",
+      "input": {
+        "name": "Durable Workflow"
+      },
       "worker_command": ["python", "{source}/worker.py"],
       "start_command": ["python", "{source}/client.py"],
       "expected_result": {
-        "greeting": "Hello from the Sample App Python playground",
+        "greeting": "Hello, Durable Workflow, from the Sample App Python playground",
+        "input": {
+          "name": "Durable Workflow"
+        },
         "activity_runtime": "python",
         "workflow_runtime": "python"
       }
@@ -63,6 +93,9 @@
       "activity_type": "sample-app.playground.rust.authored-activity",
       "task_queue": "sample-app-playground-rust-{run_suffix}",
       "workflow_id_prefix": "sample-app-playground-rust",
+      "input": {
+        "name": "Durable Workflow"
+      },
       "worker_command": [
         "cargo", "run", "--quiet", "--locked", "{cargo_offline}",
         "--manifest-path", "{source}/Cargo.toml", "--bin", "worker"
@@ -72,7 +105,10 @@
         "--manifest-path", "{source}/Cargo.toml", "--bin", "client"
       ],
       "expected_result": {
-        "greeting": "Hello from the Sample App Rust playground",
+        "greeting": "Hello, Durable Workflow, from the Sample App Rust playground",
+        "input": {
+          "name": "Durable Workflow"
+        },
         "activity_runtime": "rust",
         "workflow_runtime": "rust"
       }

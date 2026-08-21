@@ -18,11 +18,25 @@ final class PlaygroundContractTest extends TestCase
         $compose = Yaml::parseFile($this->path('playground/docker-compose.yml'));
 
         $this->assertSame('durable-workflow.sample-app.playground', $contract['schema'] ?? null);
-        $this->assertSame(2, $contract['schema_version'] ?? null);
+        $this->assertSame(3, $contract['schema_version'] ?? null);
         $this->assertSame(['php', 'python', 'rust'], $contract['choices'] ?? null);
         $this->assertSame('caller', $contract['source_ownership'] ?? null);
         $this->assertSame('polyglot/qualified-artifact-tuple.json', $contract['artifact_source'] ?? null);
-        $this->assertTrue($contract['runtime']['isolated_state_per_journey'] ?? false);
+        $this->assertSame('local', $contract['runtime']['default'] ?? null);
+        $this->assertSame(['local', 'managed'], array_keys($contract['runtime']['targets'] ?? []));
+        $this->assertTrue($contract['runtime']['targets']['local']['isolated_state_per_journey'] ?? false);
+        $this->assertFalse($contract['runtime']['targets']['local']['requires_external_access'] ?? true);
+        $this->assertSame(
+            ['--runtime-url', '--namespace', '--task-queue'],
+            $contract['runtime']['targets']['managed']['required_arguments'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'worker' => 'DURABLE_WORKFLOW_WORKER_TOKEN',
+                'client' => 'DURABLE_WORKFLOW_CLIENT_TOKEN',
+            ],
+            $contract['runtime']['targets']['managed']['credential_roles'] ?? null,
+        );
         $this->assertTrue($contract['proof']['requires_worker_registration'] ?? false);
         $this->assertTrue($contract['proof']['requires_selected_waterline_run'] ?? false);
 
@@ -33,6 +47,8 @@ final class PlaygroundContractTest extends TestCase
             $this->assertStringStartsWith("sample-app-playground-{$language}-", $scenario['task_queue'] ?? '');
             $this->assertNotEmpty($scenario['worker_command'] ?? []);
             $this->assertNotEmpty($scenario['start_command'] ?? []);
+            $this->assertIsArray($scenario['input'] ?? null);
+            $this->assertSame($scenario['input'], $scenario['expected_result']['input'] ?? null);
             $this->assertSame($language, $scenario['expected_result']['workflow_runtime'] ?? null);
             $this->assertSame($language, $scenario['expected_result']['activity_runtime'] ?? null);
         }
@@ -195,6 +211,202 @@ PYTHON;
         $process->run();
 
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+    }
+
+    public function test_managed_runtime_keeps_worker_and_client_roles_isolated_for_every_sdk(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-managed-'.bin2hex(random_bytes(8));
+        $filesystem->mkdir($temporaryDirectory);
+        $harness = <<<'PYTHON'
+import json
+import runpy
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+playground = runpy.run_path(sys.argv[1])
+journey = playground["journey"]
+events = []
+active = {}
+
+class FakeWorker:
+    returncode = None
+
+    def poll(self):
+        return None
+
+def fake_popen(command, **kwargs):
+    environment = kwargs["env"]
+    active.update(
+        worker_id=environment["DURABLE_WORKFLOW_WORKER_ID"],
+        scenario=json.loads(environment["SAMPLE_APP_PLAYGROUND_SCENARIO"]),
+    )
+    events.append({"role": "worker", "env": environment})
+    return FakeWorker()
+
+def fake_run(command, *, env=None, cwd=None, capture=False, timeout=None):
+    assert env is not None
+    if "DURABLE_WORKFLOW_CLIENT_TOKEN" in env:
+        events.append({"role": "client", "env": env})
+        output = json.dumps({
+            "workflow_id": "managed-input-proof",
+            "run_id": "managed-run",
+            "result": json.loads(env["SAMPLE_APP_PLAYGROUND_SCENARIO"])["expected_result"],
+        })
+    else:
+        events.append({"role": "worker-test", "env": env})
+        output = ""
+    return SimpleNamespace(stdout=output, stderr="", returncode=0)
+
+def fake_json_command(command, *, env, timeout=30):
+    events.append({"role": "control", "env": env})
+    if command[1] == "worker:list":
+        scenario = active["scenario"]
+        return {"workers": [{
+            "worker_id": active["worker_id"],
+            "supported_workflow_types": [scenario["workflow_type"]],
+            "supported_activity_types": [scenario["activity_type"]],
+        }]}
+    if command[1] == "workflow:describe":
+        return {"status": "completed", "run_id": "managed-run"}
+    if command[1] == "workflow:history":
+        return {"events": [
+            {"event_type": "WorkflowStarted"},
+            {"event_type": "ActivityScheduled"},
+            {"event_type": "ActivityCompleted"},
+            {"event_type": "WorkflowCompleted"},
+        ]}
+    raise AssertionError(command)
+
+globals = journey.__globals__
+globals["doctor"] = lambda *, require_docker=True: (
+    (_ for _ in ()).throw(AssertionError("managed mode required Docker"))
+    if require_docker else {"dw": "prepared"}
+)
+globals["resolve_artifacts"] = lambda: {
+    "DURABLE_SERVER_IMAGE": "unused-local-server",
+    "DURABLE_WORKFLOW_PHP_SDK_VERSION": "prepared",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "prepared",
+    "DURABLE_WORKFLOW_RUST_SDK_VERSION": "prepared",
+    "DURABLE_WORKFLOW_WATERLINE_IMAGE": "unused-local-waterline",
+}
+globals["scaffold"] = lambda language, source, scenario=None: []
+globals["start_services"] = lambda *args, **kwargs: (_ for _ in ()).throw(
+    AssertionError("managed mode started local services")
+)
+globals["fetch_json"] = lambda *args, **kwargs: (_ for _ in ()).throw(
+    AssertionError("managed mode fetched local Waterline")
+)
+globals["run"] = fake_run
+globals["json_command"] = fake_json_command
+globals["terminate_worker"] = lambda worker: None
+globals["subprocess"].Popen = fake_popen
+
+root = Path(sys.argv[2])
+summaries = []
+for language in ("php", "python", "rust"):
+    active.clear()
+    source = root / language
+    source.mkdir()
+    payload = journey(
+        language,
+        source,
+        root / f"{language}.json",
+        runtime="managed",
+        runtime_url="https://runtime.example/namespaces/example",
+        namespace="example",
+        task_queue=f"sample-app-playground-{language}-managed",
+    )
+    assert payload["runtime"]["target"] == "managed"
+    assert payload["workflow"]["result"]["input"] == payload["effective_contract"]["input"]
+    summaries.append(payload["language"])
+
+for event in events:
+    environment = event["env"]
+    for bridge_variable in (
+        "DURABLE_WORKFLOW_TOKEN",
+        "DURABLE_WORKFLOW_PROCESS_ROLE",
+        "DURABLE_WORKFLOW_PROCESS_TOKEN",
+    ):
+        assert bridge_variable not in environment
+    if event["role"] in {"worker", "worker-test"}:
+        assert environment["DURABLE_WORKFLOW_WORKER_TOKEN"] == "worker-secret"
+        assert "DURABLE_WORKFLOW_CLIENT_TOKEN" not in environment
+        assert "DURABLE_WORKFLOW_CONTROL_TOKEN" not in environment
+    else:
+        assert environment["DURABLE_WORKFLOW_CLIENT_TOKEN"] == "client-secret"
+        assert "DURABLE_WORKFLOW_WORKER_TOKEN" not in environment
+
+print("managed-harness=" + json.dumps(summaries))
+PYTHON;
+
+        try {
+            $process = new Process(
+                ['python3', '-c', $harness, $this->path('scripts/playground'), $temporaryDirectory],
+                env: [
+                    ...getenv(),
+                    'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',
+                    'DURABLE_WORKFLOW_PROCESS_ROLE' => 'shared',
+                    'DURABLE_WORKFLOW_PROCESS_TOKEN' => 'ambient-process-secret',
+                    'DURABLE_WORKFLOW_TOKEN' => 'ambient-shared-secret',
+                    'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-secret',
+                ],
+            );
+            $process->mustRun();
+
+            $output = $process->getOutput();
+            $this->assertStringContainsString('managed-harness=["php", "python", "rust"]', $output);
+            $this->assertSame(3, substr_count($output, 'Worker ready: target=managed'));
+            $this->assertSame(3, substr_count($output, '"runtime_target":"managed"'));
+            $this->assertStringNotContainsString('worker-secret', $output);
+            $this->assertStringNotContainsString('client-secret', $output);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_managed_runtime_requires_the_complete_explicit_contract(): void
+    {
+        $process = new Process(
+            [$this->path('scripts/playground'), 'rust', '--runtime', 'managed'],
+            env: [
+                ...getenv(),
+                'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',
+                'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-secret',
+            ],
+        );
+        $process->run();
+
+        $this->assertSame(1, $process->getExitCode());
+        $this->assertStringContainsString(
+            'Managed runtime mode requires explicit --runtime-url, --namespace, --task-queue.',
+            $process->getErrorOutput(),
+        );
+    }
+
+    public function test_retired_top_level_scaffold_and_entry_point_cannot_return(): void
+    {
+        $retiredName = 'rust'.'-cloud';
+        $retiredScript = 'scripts/'.$retiredName.'.sh';
+
+        $this->assertDirectoryDoesNotExist($this->path($retiredName));
+        $this->assertFileDoesNotExist($this->path($retiredScript));
+
+        $tracked = (new Process(['git', 'ls-files', '-z'], $this->path('')))->mustRun()->getOutput();
+        $staleReferences = [];
+        foreach (array_filter(explode("\0", $tracked)) as $relativePath) {
+            $path = $this->path($relativePath);
+            if (! is_file($path)) {
+                continue;
+            }
+            $contents = file_get_contents($path);
+            if (is_string($contents) && str_contains($contents, $retiredName)) {
+                $staleReferences[] = $relativePath;
+            }
+        }
+
+        $this->assertSame([], $staleReferences, 'Retired scaffold references: '.implode(', ', $staleReferences));
     }
 
     public function test_doctor_composer_probes_cannot_mutate_the_prepared_home(): void

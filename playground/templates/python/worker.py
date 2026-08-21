@@ -19,18 +19,23 @@ SCENARIO: dict[str, Any] = json.loads(required("SAMPLE_APP_PLAYGROUND_SCENARIO")
 
 
 @activity.defn(name=SCENARIO["activity_type"])
-def greet() -> dict[str, str]:
+def greet(authored_input: dict[str, str]) -> dict[str, Any]:
     expected = SCENARIO["expected_result"]
+    if authored_input != SCENARIO["input"]:
+        raise RuntimeError("The playground activity did not receive the authored input.")
     return {
         "greeting": expected["greeting"],
+        "input": authored_input,
         "activity_runtime": "python",
     }
 
 
 @workflow.defn(name=SCENARIO["workflow_type"])
 class PlaygroundWorkflow:
-    def run(self, context):
-        activity_result = yield context.schedule_activity(SCENARIO["activity_type"], [])
+    def run(self, context, authored_input):
+        activity_result = yield context.schedule_activity(
+            SCENARIO["activity_type"], [authored_input]
+        )
         return {**activity_result, "workflow_runtime": "python"}
 
 

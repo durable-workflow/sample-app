@@ -5,12 +5,12 @@ complete PHP/Python/Rust validation stack. It also holds a narrower Laravel
 integration variation. Every scenario runs against a standalone Durable
 Workflow Server and uses published 2.0 artifacts.
 
-For a first Rust run in Durable Workflow Cloud controlled early access rather
-than this exhaustive self-hosted matrix, use the dedicated
-[Rust Cloud quickstart](https://durable-workflow.com/docs/2.0/polyglot/rust-cloud-quickstart/)
-and the repository's `scripts/rust-cloud.sh run` entry point. That path uses one
-Rust workflow/activity pair, separate client and worker credentials, the
-Cloud-aware CLI, a development build, and Managed Waterline verification.
+For a focused authored workflow/activity journey instead of this exhaustive
+matrix, use `scripts/playground` with `php`, `python`, or `rust` from the
+repository root.
+Its local published Server is the default. The same command also accepts the
+shared explicit managed-runtime contract documented in the root README, with
+separate client and worker credential roles for every supported SDK.
 
 ## Service mode: PolyglotWorkflow
 

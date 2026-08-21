@@ -16,14 +16,20 @@ final class PlaygroundActivity
         private readonly LoggerInterface $logger,
     ) {}
 
-    /** @return array{greeting: string, activity_runtime: string} */
+    /**
+     * @param  array{name: string}  $input
+     * @return array{greeting: string, input: array{name: string}, activity_runtime: string}
+     */
     #[Activity(Scenario::ACTIVITY_TYPE)]
-    public function greet(ActivityContext $context): array
+    public function greet(ActivityContext $context, array $input): array
     {
         $context->heartbeat(['phase' => 'sample_app_playground_activity']);
         $result = $this->config->get('sample-app-playground.activity_result');
         if (! is_array($result)) {
             throw new \RuntimeException('The Sample App playground activity result is not configured.');
+        }
+        if ($input !== ($result['input'] ?? null)) {
+            throw new \RuntimeException('The Sample App playground activity did not receive the authored input.');
         }
 
         $this->logger->info('sample_app.playground.php_activity_completed', [
@@ -33,6 +39,7 @@ final class PlaygroundActivity
 
         return [
             'greeting' => (string) ($result['greeting'] ?? ''),
+            'input' => $input,
             'activity_runtime' => (string) ($result['activity_runtime'] ?? ''),
         ];
     }

@@ -1,9 +1,0 @@
-[package]
-name = "durable-workflow-rust-cloud-quickstart"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-durable-workflow = "=2.0.0-rc.32"
-tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "signal"] }

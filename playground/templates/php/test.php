@@ -17,8 +17,9 @@ $worker = $app->make(WorkerFactory::class)->make((string) getenv('DURABLE_WORKFL
 $harness = new WorkerTestHarness($worker);
 $harness->assertActivityResult(Scenario::ACTIVITY_TYPE, [
     'greeting' => $expected['greeting'],
+    'input' => $scenario['input'],
     'activity_runtime' => $expected['activity_runtime'],
-]);
+], [$scenario['input']]);
 
 $workflowId = $scenario['workflow_id_prefix'].'-test';
 $fake = (new WorkflowClientFake)->setWorkflowResult($workflowId, $expected);
@@ -27,11 +28,12 @@ $handle = $app->make(WorkflowClientInterface::class)->startWorkflow(
     Scenario::WORKFLOW_TYPE,
     $workflowId,
     (string) getenv('DURABLE_WORKFLOW_TASK_QUEUE'),
+    [$scenario['input']],
 );
 if ($handle->result() !== $expected) {
     throw new RuntimeException('The Laravel SDK fake returned an unexpected result.');
 }
-$fake->assertWorkflowStarted(Scenario::WORKFLOW_TYPE);
+$fake->assertWorkflowStarted(Scenario::WORKFLOW_TYPE, [$scenario['input']]);
 $fake->assertResultRequested($workflowId);
 
 echo "Laravel bridge dependency injection, configuration, logging, and test fake: ready\n";
