@@ -197,6 +197,127 @@ PYTHON;
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
     }
 
+    public function test_doctor_composer_probes_cannot_mutate_the_prepared_home(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-doctor-'.bin2hex(random_bytes(8));
+        $fakeBinaryDirectory = $temporaryDirectory.'/bin';
+        $phpRuntime = $temporaryDirectory.'/php-runtime';
+        $preparedComposerHome = $temporaryDirectory.'/prepared-composer';
+        $composerStateLog = $temporaryDirectory.'/composer-state';
+        $preparedSentinel = $preparedComposerHome.'/prepared-state';
+        $filesystem->mkdir([
+            $fakeBinaryDirectory,
+            $phpRuntime.'/vendor/durable-workflow/sdk/docs',
+            $preparedComposerHome,
+        ], 0770);
+        file_put_contents(
+            $phpRuntime.'/vendor/durable-workflow/sdk/docs/quickstart-contract.json',
+            json_encode([
+                'package' => ['published_version' => '2.0.0-rc.40'],
+            ], JSON_THROW_ON_ERROR),
+        );
+        file_put_contents($preparedSentinel, "prepared\n");
+        symlink(
+            $this->path('.devcontainer/docker/with-disposable-composer-state'),
+            $fakeBinaryDirectory.'/with-disposable-composer-state',
+        );
+        file_put_contents($fakeBinaryDirectory.'/composer', <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\t%s\t%s\n' "$1" "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR" >> "$FAKE_COMPOSER_STATE_LOG"
+mkdir -p "$COMPOSER_CACHE_DIR/files"
+if [[ "$1" == "--version" ]]; then
+    printf 'Composer version 2.10.2 2026-07-01 11:24:45\n'
+else
+    printf '{"versions":["2.0.0-rc.40"]}\n'
+fi
+BASH);
+
+        $fakeCommands = [
+            'php' => 'printf "8.4.0\\n"',
+            'python' => <<<'BASH'
+if [[ " $* " == *" --version "* ]]; then
+    printf 'Python 3.11.0\n'
+elif [[ " $* " == *" importlib.metadata "* ]]; then
+    printf '2.0.0rc32\n'
+fi
+BASH,
+            'pip' => 'printf "pip 26.0\\n"',
+            'rustc' => 'printf "rustc 1.86.0 (test)\\n"',
+            'cargo' => 'printf "cargo 1.86.0 (test)\\n"',
+            'docker' => <<<'BASH'
+if [[ "$1" == "compose" ]]; then
+    printf '2.39.0\n'
+else
+    printf '28.3.0\n'
+fi
+BASH,
+            'dw' => 'printf "dw 0.4.0\\n"',
+            'with-group-shared-umask' => 'exec "$@"',
+        ];
+        foreach ($fakeCommands as $name => $body) {
+            file_put_contents(
+                $fakeBinaryDirectory.'/'.$name,
+                "#!/usr/bin/env bash\nset -euo pipefail\n{$body}\n",
+            );
+        }
+        foreach (glob($fakeBinaryDirectory.'/*') ?: [] as $fakeCommand) {
+            if (! is_link($fakeCommand)) {
+                chmod($fakeCommand, 0700);
+            }
+        }
+
+        $harness = <<<'PYTHON'
+import json
+import runpy
+import sys
+from pathlib import Path
+
+playground = runpy.run_path(sys.argv[1])
+doctor = playground["doctor"]
+doctor.__globals__["resolve_artifacts"] = lambda: {
+    "DURABLE_SERVER_IMAGE": "durableworkflow/server:2.0.0-rc.20",
+    "DURABLE_WORKFLOW_PHP_SDK_VERSION": "2.0.0-rc.40",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.32",
+    "DURABLE_WORKFLOW_RUST_SDK_VERSION": "2.0.0-rc.32",
+}
+doctor.__globals__["php_runtime"] = lambda: Path(sys.argv[2])
+versions = doctor()
+assert versions["sdk_php_laravel"] == "2.0.0-rc.40", json.dumps(versions)
+PYTHON;
+
+        try {
+            $process = new Process(
+                ['python3', '-c', $harness, $this->path('scripts/playground'), $phpRuntime],
+                env: [
+                    ...getenv(),
+                    'PATH' => $fakeBinaryDirectory.PATH_SEPARATOR.getenv('PATH'),
+                    'COMPOSER_HOME' => $preparedComposerHome,
+                    'FAKE_COMPOSER_STATE_LOG' => $composerStateLog,
+                ],
+            );
+            $process->mustRun();
+
+            $operations = file($composerStateLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $this->assertIsArray($operations);
+            $this->assertSame(['--version', 'show'], array_map(
+                static fn (string $operation): string => explode("\t", $operation)[0],
+                $operations,
+            ));
+            foreach ($operations as $operation) {
+                [, $composerHome, $composerCache] = explode("\t", $operation);
+                $this->assertNotSame($preparedComposerHome, $composerHome);
+                $this->assertSame($composerHome.'/cache', $composerCache);
+                $this->assertDirectoryDoesNotExist($composerHome);
+            }
+            $this->assertDirectoryDoesNotExist($preparedComposerHome.'/cache');
+            $this->assertFileExists($preparedSentinel);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_service_health_stall_has_a_bounded_deadline_and_actionable_diagnostics(): void
     {
         $filesystem = new Filesystem;

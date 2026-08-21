@@ -65,6 +65,10 @@ def command_output(command: list[str], *, env: dict[str, str] | None = None) -> 
     return result.stdout.strip() or result.stderr.strip()
 
 
+def composer_output(arguments: list[str]) -> str:
+    return command_output(["with-disposable-composer-state", "composer", *arguments])
+
+
 def require_command(name: str) -> str:
     path = shutil.which(name)
     if path is None:
@@ -84,13 +88,14 @@ def doctor() -> dict[str, str]:
         "cargo",
         "docker",
         "dw",
+        "with-disposable-composer-state",
         "with-group-shared-umask",
     ):
         require_command(executable)
 
     versions = {
         "php": command_output(["php", "-r", "echo PHP_VERSION;"]),
-        "composer": command_output(["composer", "--version", "--no-ansi"]),
+        "composer": composer_output(["--version", "--no-ansi"]),
         "python": command_output(["python", "--version"]),
         "pip": command_output(["pip", "--version"]),
         "rustc": command_output(["rustc", "--version"]),
@@ -133,9 +138,8 @@ def doctor() -> dict[str, str]:
         r'\[\[package\]\]\s+name = "durable-workflow"\s+version = "([^"]+)"', rust_lock
     )
     laravel_php_package = json.loads(
-        command_output(
+        composer_output(
             [
-                "composer",
                 "show",
                 "--working-dir",
                 str(REPO_ROOT),

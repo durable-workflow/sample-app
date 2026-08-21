@@ -1171,6 +1171,10 @@ BASH,
             'with-disposable-composer-state composer validate',
             $script,
         );
+        $this->assertStringContainsString(
+            'with-disposable-composer-state composer check-platform-reqs --no-dev',
+            $script,
+        );
         $this->assertStringNotContainsString('cargo metadata', $script);
         $this->assertStringContainsString(
             <<<'SHELL'

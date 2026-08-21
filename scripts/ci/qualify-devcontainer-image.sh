@@ -412,7 +412,7 @@ fi
 '
 "${compose[@]}" exec -T --user laravel laravel bash -euc '
     [[ "$(id -u)" == "$SAMPLE_APP_UID" ]]
-    composer check-platform-reqs --no-dev
+    with-disposable-composer-state composer check-platform-reqs --no-dev
     probe=.devcontainer-qualification-write-test
     printf "editable\n" > "$probe"
     [[ "$(<"$probe")" == "editable" ]]
