@@ -295,6 +295,23 @@ run_in_ready_devcontainer laravel bash -euc '
     [[ " $(id -G) " == *" ${socket_gid} "* ]]
     docker version >/dev/null
     docker compose version >/dev/null
+    for prepared_home in "${COMPOSER_HOME:?}" "${CARGO_HOME:?}"; do
+        prepared_state_probe="${prepared_home}/.devcontainer-qualification-write-test"
+        printf "prepared-state-access\n" > "$prepared_state_probe"
+        rm "$prepared_state_probe"
+    done
+    composer validate \
+        --working-dir=. \
+        --strict \
+        --check-lock \
+        --no-check-all \
+        --no-interaction
+    cargo metadata \
+        --locked \
+        --offline \
+        --format-version=1 \
+        --manifest-path=playground/templates/rust/Cargo.toml \
+        >/dev/null
     if [[ -e .env ]]; then
         [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
         [[ -w .env ]]

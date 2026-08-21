@@ -222,6 +222,28 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('for dependency_dir in /var/www/html /var/www/html/microservice', $dockerfile);
         $this->assertStringContainsString('test -s "${dependency_dir}/vendor/autoload.php"', $dockerfile);
         $this->assertStringContainsString('rm -rf /home/laravel/.composer/cache', $dockerfile);
+        $composerCacheRemoval = strpos($dockerfile, 'rm -rf /home/laravel/.composer/cache');
+        $composerCredentialGuard = strpos(
+            $dockerfile,
+            'test -e /home/laravel/.composer/auth.json',
+        );
+        $composerPermissionNormalization = strpos(
+            $dockerfile,
+            'chmod -R g=u /home/laravel/.composer',
+        );
+        $this->assertNotFalse($composerCacheRemoval);
+        $this->assertNotFalse($composerCredentialGuard);
+        $this->assertNotFalse($composerPermissionNormalization);
+        $this->assertLessThan($composerCredentialGuard, $composerCacheRemoval);
+        $this->assertLessThan($composerPermissionNormalization, $composerCredentialGuard);
+        $this->assertStringContainsString(
+            'Composer credentials must not be baked into the development image.',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
+            'COPY .devcontainer/docker/verify-prepared-permissions /usr/local/bin/verify-prepared-permissions',
+            $dockerfile,
+        );
         $this->assertStringContainsString('apt-get purge -y --auto-remove', $dockerfile);
         $this->assertStringContainsString('canonical_library="$(readlink -f "$library")"', $dockerfile);
         $this->assertStringContainsString('dpkg-query --search "$canonical_library"', $dockerfile);
@@ -611,6 +633,39 @@ BASH,
         );
     }
 
+    public function test_prepared_permission_verifier_reports_the_exact_entry_and_mode(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-prepared-permissions-'.bin2hex(random_bytes(8));
+        $composerHome = $temporaryDirectory.'/.composer';
+        $failingEntry = $composerHome.'/cache-entry';
+        $filesystem->mkdir($composerHome, 0770);
+        chmod($composerHome, 0770);
+        file_put_contents($failingEntry, "prepared\n");
+        chmod($failingEntry, 0600);
+
+        $process = new Process([
+            'bash',
+            $this->repoPath('.devcontainer/docker/verify-prepared-permissions'),
+            $composerHome,
+        ]);
+
+        try {
+            $process->run();
+            $this->assertSame(1, $process->getExitCode());
+            $this->assertStringContainsString(
+                'mode=600 owner='.(string) fileowner($failingEntry).' group='.(string) filegroup($failingEntry)." path={$failingEntry}",
+                $process->getErrorOutput(),
+            );
+
+            chmod($failingEntry, 0660);
+            $process->run();
+            $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_codespaces_schema_dump_records_every_current_migration(): void
     {
         $schema = $this->contents('.devcontainer/schema/mysql-schema.sql');
@@ -877,7 +932,14 @@ BASH,
         $this->assertStringNotContainsString('usermod --uid "$requested_uid" laravel', $entrypoint);
         $this->assertStringContainsString('verifying-prepared-toolchain-access', $entrypoint);
         $this->assertStringContainsString('chmod -R g=u', $dockerfile);
-        $this->assertStringContainsString('find "$prepared_path" -perm -u+w ! -perm -g+w', $imageVerifier);
+        $this->assertStringContainsString('verify-prepared-permissions', $imageVerifier);
+        $this->assertStringContainsString(
+            'for prepared_home in "${COMPOSER_HOME:?}" "${CARGO_HOME:?}"',
+            $script,
+        );
+        $this->assertStringContainsString('composer validate', $script);
+        $this->assertStringContainsString('cargo metadata', $script);
+        $this->assertStringContainsString('--offline', $script);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);
         $this->assertStringContainsString('for language in php python rust; do', $script);
         $this->assertStringContainsString(

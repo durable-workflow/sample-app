@@ -319,6 +319,11 @@ RUN set -eux; \
         chmod -R g=u "${dependency_dir}/vendor"; \
     done; \
     rm -rf /home/laravel/.composer/cache; \
+    if test -e /home/laravel/.composer/auth.json; then \
+        echo 'Composer credentials must not be baked into the development image.' >&2; \
+        exit 1; \
+    fi; \
+    chmod -R g=u /home/laravel/.composer; \
     rm -rf /tmp/* /var/tmp/*
 
 ENV COMPOSER_HOME=/home/laravel/.composer
@@ -327,12 +332,14 @@ COPY --from=mysql-seed /tmp/sample-app-mysql-seed.tar /usr/local/share/sample-ap
 COPY .devcontainer/docker/start-container /usr/local/bin/start-container
 COPY .devcontainer/docker/wait-for-identity-ready /usr/local/bin/wait-for-devcontainer-identity
 COPY .devcontainer/docker/seed-mysql-volume /usr/local/bin/seed-mysql-volume
+COPY .devcontainer/docker/verify-prepared-permissions /usr/local/bin/verify-prepared-permissions
 COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image
 COPY .devcontainer/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .devcontainer/docker/php.ini /usr/local/etc/php/conf.d/99-laravel.ini
 
 RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container \
-        /usr/local/bin/verify-devcontainer-image /usr/local/bin/wait-for-devcontainer-identity \
+        /usr/local/bin/verify-devcontainer-image /usr/local/bin/verify-prepared-permissions \
+        /usr/local/bin/wait-for-devcontainer-identity \
     && DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image
 
 EXPOSE 22 80 5173

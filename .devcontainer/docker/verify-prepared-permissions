@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo 'Usage: verify-prepared-permissions PATH [...]' >&2
+    exit 2
+fi
+
+for prepared_path in "$@"; do
+    if [[ ! -e "$prepared_path" ]]; then
+        echo "Prepared development dependency is missing: ${prepared_path}." >&2
+        exit 1
+    fi
+
+    failing_entry="$(
+        find "$prepared_path" \
+            -perm -u+w \
+            ! -perm -g+w \
+            -printf 'mode=%m owner=%U group=%G path=%p\n' \
+            -quit
+    )"
+    if [[ -n "$failing_entry" ]]; then
+        echo "Prepared development dependency is not writable through the laravel group: ${failing_entry}." >&2
+        exit 1
+    fi
+done
