@@ -244,6 +244,14 @@ final class DevcontainerImageContractTest extends TestCase
             'COPY .devcontainer/docker/verify-prepared-permissions /usr/local/bin/verify-prepared-permissions',
             $dockerfile,
         );
+        $this->assertStringContainsString(
+            'COPY .devcontainer/docker/with-disposable-composer-state /usr/local/bin/with-disposable-composer-state',
+            $dockerfile,
+        );
+        $this->assertStringContainsString(
+            'with-disposable-composer-state composer --no-ansi --version',
+            $verification,
+        );
         $this->assertStringContainsString('apt-get purge -y --auto-remove', $dockerfile);
         $this->assertStringContainsString('canonical_library="$(readlink -f "$library")"', $dockerfile);
         $this->assertStringContainsString('dpkg-query --search "$canonical_library"', $dockerfile);
@@ -666,6 +674,58 @@ BASH,
         }
     }
 
+    public function test_composer_state_runner_uses_and_removes_disposable_state(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-composer-verifier-'.bin2hex(random_bytes(8));
+        $preparedComposerHome = $temporaryDirectory.'/prepared-composer';
+        $fakeBinaryDirectory = $temporaryDirectory.'/bin';
+        $composerStateLog = $temporaryDirectory.'/composer-state';
+        $preparedSentinel = $preparedComposerHome.'/prepared-state';
+        $filesystem->mkdir([$preparedComposerHome, $fakeBinaryDirectory], 0770);
+        file_put_contents($preparedSentinel, "prepared\n");
+        file_put_contents($fakeBinaryDirectory.'/composer', <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n%s\n' "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR" > "$FAKE_COMPOSER_STATE_LOG"
+mkdir -p "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR"
+printf 'Composer version 2.9.0 2026-08-20 00:00:00\n'
+BASH);
+        chmod($fakeBinaryDirectory.'/composer', 0700);
+
+        $process = new Process(
+            [
+                'bash',
+                $this->repoPath('.devcontainer/docker/with-disposable-composer-state'),
+                'composer',
+                '--no-ansi',
+                '--version',
+            ],
+            env: [
+                'PATH' => $fakeBinaryDirectory.':'.getenv('PATH'),
+                'COMPOSER_HOME' => $preparedComposerHome,
+                'FAKE_COMPOSER_STATE_LOG' => $composerStateLog,
+            ],
+        );
+
+        try {
+            $process->mustRun();
+            $verificationComposerState = file($composerStateLog, FILE_IGNORE_NEW_LINES);
+            $this->assertIsArray($verificationComposerState);
+            [$verificationComposerHome, $verificationComposerCache] = $verificationComposerState;
+            $this->assertNotSame($preparedComposerHome, $verificationComposerHome);
+            $this->assertSame($verificationComposerHome.'/cache', $verificationComposerCache);
+            $this->assertNotSame($preparedComposerHome.'/cache', $verificationComposerCache);
+            $this->assertDirectoryDoesNotExist($verificationComposerHome);
+            $this->assertDirectoryDoesNotExist($verificationComposerCache);
+            $this->assertDirectoryDoesNotExist(dirname($verificationComposerHome));
+            $this->assertDirectoryDoesNotExist($preparedComposerHome.'/cache');
+            $this->assertFileExists($preparedSentinel);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_codespaces_schema_dump_records_every_current_migration(): void
     {
         $schema = $this->contents('.devcontainer/schema/mysql-schema.sql');
@@ -938,6 +998,10 @@ BASH,
             $script,
         );
         $this->assertStringContainsString('composer validate', $script);
+        $this->assertStringContainsString(
+            'with-disposable-composer-state composer validate',
+            $script,
+        );
         $this->assertStringContainsString('cargo metadata', $script);
         $this->assertStringContainsString('--offline', $script);
         $this->assertStringContainsString('chown -R laravel:laravel "$generated_dir"', $entrypoint);

@@ -300,7 +300,7 @@ run_in_ready_devcontainer laravel bash -euc '
         printf "prepared-state-access\n" > "$prepared_state_probe"
         rm "$prepared_state_probe"
     done
-    composer validate \
+    with-disposable-composer-state composer validate \
         --working-dir=. \
         --strict \
         --check-lock \

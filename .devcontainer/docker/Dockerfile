@@ -334,11 +334,13 @@ COPY .devcontainer/docker/wait-for-identity-ready /usr/local/bin/wait-for-devcon
 COPY .devcontainer/docker/seed-mysql-volume /usr/local/bin/seed-mysql-volume
 COPY .devcontainer/docker/verify-prepared-permissions /usr/local/bin/verify-prepared-permissions
 COPY .devcontainer/docker/verify-image.sh /usr/local/bin/verify-devcontainer-image
+COPY .devcontainer/docker/with-disposable-composer-state /usr/local/bin/with-disposable-composer-state
 COPY .devcontainer/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .devcontainer/docker/php.ini /usr/local/etc/php/conf.d/99-laravel.ini
 
 RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container \
         /usr/local/bin/verify-devcontainer-image /usr/local/bin/verify-prepared-permissions \
+        /usr/local/bin/with-disposable-composer-state \
         /usr/local/bin/wait-for-devcontainer-identity \
     && DEVCONTAINER_SSH_HOST_KEY_STATE=absent gosu laravel verify-devcontainer-image
 

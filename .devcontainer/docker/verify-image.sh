@@ -3,7 +3,7 @@
 set -euo pipefail
 
 [[ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" == "8.4" ]]
-[[ "$(composer --no-ansi --version | awk '{print $3}' | cut -d. -f1)" == "2" ]]
+[[ "$(with-disposable-composer-state composer --no-ansi --version | awk '{print $3}' | cut -d. -f1)" == "2" ]]
 [[ "$(node --version | sed -E 's/^v([0-9]+).*/\1/')" == "22" ]]
 python -c 'import sys; assert sys.version_info >= (3, 10)'
 python -c 'import durable_workflow'

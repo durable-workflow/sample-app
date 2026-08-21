@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+    echo 'Usage: with-disposable-composer-state COMMAND [ARG ...]' >&2
+    exit 2
+fi
+
+state_root="$(mktemp -d)"
+
+cleanup_state_root() {
+    if [[ -d "$state_root" ]]; then
+        rm -rf -- "$state_root"
+    fi
+}
+
+trap cleanup_state_root EXIT
+
+composer_home="${state_root}/home"
+COMPOSER_HOME="$composer_home" COMPOSER_CACHE_DIR="${composer_home}/cache" "$@"
