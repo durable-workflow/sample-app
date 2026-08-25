@@ -165,6 +165,141 @@ final class PlaygroundContractTest extends TestCase
         }
     }
 
+    public function test_generated_php_worker_resolves_handlers_and_registers_the_invocation_identity(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-php-worker-'.bin2hex(random_bytes(8));
+        $sourceDirectory = $temporaryDirectory.'/source';
+        $registrationLog = $temporaryDirectory.'/registrations.jsonl';
+        $router = $temporaryDirectory.'/runtime.php';
+        $server = null;
+        $filesystem->mkdir($sourceDirectory);
+
+        try {
+            (new Process([
+                $this->path('scripts/playground'),
+                'scaffold',
+                'php',
+                '--source',
+                $sourceDirectory,
+            ]))->mustRun();
+
+            file_put_contents($router, <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+$request = [
+    'method' => $_SERVER['REQUEST_METHOD'],
+    'path' => parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH),
+    'body' => json_decode(file_get_contents('php://input') ?: 'null', true),
+];
+file_put_contents(
+    (string) getenv('PLAYGROUND_REGISTRATION_LOG'),
+    json_encode($request, JSON_THROW_ON_ERROR).PHP_EOL,
+    FILE_APPEND,
+);
+
+header('Content-Type: application/json');
+if ($request['path'] === '/api/worker/register') {
+    echo json_encode(['registered' => true, 'heartbeat_interval_seconds' => 30], JSON_THROW_ON_ERROR);
+
+    return;
+}
+if ($request['path'] === '/api/worker/workflow-tasks/poll') {
+    echo json_encode(
+        ['task' => null, 'poll_status' => 'stopped', 'reason' => 'worker_stopped'],
+        JSON_THROW_ON_ERROR,
+    );
+
+    return;
+}
+
+http_response_code(404);
+echo json_encode(['message' => 'unexpected test runtime request'], JSON_THROW_ON_ERROR);
+PHP);
+
+            $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+            if (! is_resource($socket)) {
+                self::fail("Unable to reserve the PHP test runtime port: {$errorCode} {$errorMessage}");
+            }
+            $address = stream_socket_get_name($socket, false);
+            fclose($socket);
+            self::assertIsString($address);
+
+            $server = new Process(
+                [PHP_BINARY, '-S', $address, $router],
+                $temporaryDirectory,
+                env: [
+                    ...getenv(),
+                    'PLAYGROUND_REGISTRATION_LOG' => $registrationLog,
+                ],
+            );
+            $server->start();
+            $ready = false;
+            $port = (int) substr(strrchr($address, ':') ?: '', 1);
+            for ($attempt = 0; $attempt < 100; $attempt++) {
+                $connection = @fsockopen('127.0.0.1', $port, timeout: 0.1);
+                if (is_resource($connection)) {
+                    fclose($connection);
+                    $ready = true;
+                    break;
+                }
+                usleep(10_000);
+            }
+            self::assertTrue($ready, $server->getErrorOutput());
+
+            $scenario = $this->contract()['scenarios']['php'];
+            $worker = new Process(
+                [PHP_BINARY, $sourceDirectory.'/worker.php'],
+                $sourceDirectory,
+                env: [
+                    ...getenv(),
+                    'DURABLE_WORKFLOW_NAMESPACE' => 'generated-worker-test',
+                    'DURABLE_WORKFLOW_RUNTIME_URL' => 'http://'.$address,
+                    'DURABLE_WORKFLOW_TASK_QUEUE' => 'generated-php-worker',
+                    'DURABLE_WORKFLOW_WORKER_ID' => 'generated-php-worker-current-invocation',
+                    'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-role-secret',
+                    'SAMPLE_APP_PLAYGROUND_SCENARIO' => json_encode($scenario, JSON_THROW_ON_ERROR),
+                    'SAMPLE_APP_ROOT' => $this->path(''),
+                ],
+            );
+            $worker->setTimeout(20);
+            $worker->mustRun();
+
+            self::assertFileExists(
+                $registrationLog,
+                'Generated PHP worker never reached registration: '
+                    .$worker->getOutput().$worker->getErrorOutput(),
+            );
+
+            $requests = array_map(
+                static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
+                file($registrationLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],
+            );
+            $registration = array_values(array_filter(
+                $requests,
+                static fn (array $request): bool => $request['path'] === '/api/worker/register',
+            ));
+            self::assertCount(1, $registration, json_encode($requests, JSON_THROW_ON_ERROR));
+            self::assertSame(
+                'generated-php-worker-current-invocation',
+                $registration[0]['body']['worker_id'] ?? null,
+            );
+            self::assertSame(
+                [$scenario['workflow_type']],
+                $registration[0]['body']['supported_workflow_types'] ?? null,
+            );
+            self::assertSame(
+                [$scenario['activity_type']],
+                $registration[0]['body']['supported_activity_types'] ?? null,
+            );
+        } finally {
+            $server?->stop();
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_development_image_bakes_tools_and_sdk_caches_before_post_create(): void
     {
         $dockerfile = file_get_contents($this->path('.devcontainer/docker/Dockerfile')) ?: '';

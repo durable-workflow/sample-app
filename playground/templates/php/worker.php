@@ -20,4 +20,8 @@ $worker = new Worker(
     container: $app,
     logger: $app->make(LoggerInterface::class),
 );
-$worker->register(...$configuration->handlers)->run($configuration->pollTimeoutSeconds);
+$handlers = array_map(
+    static fn (string $handler): object => $app->make($handler),
+    $configuration->handlers,
+);
+$worker->register(...$handlers)->run($configuration->pollTimeoutSeconds);
