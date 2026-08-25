@@ -104,18 +104,21 @@ scripts/playground "$language" --runtime managed \
 ```
 
 The runner keeps the two credentials in their respective worker and client
-processes. It waits until the managed runtime advertises the generated
-workflow type, activity type, and exact queue before starting the client. The
-completed result must contain the caller input after it crosses both the
-workflow and activity boundaries; the final success record names the runtime,
-namespace, queue, registered types, and expected result shape without printing
-credential values. Runtime enrollment and credential creation remain the
-managed service's setup responsibility.
+processes. It waits until the managed runtime advertises the current
+invocation's generated worker identity, workflow type, activity type, and exact
+queue before starting the client. The completed result must contain the caller
+input after it crosses both the workflow and activity boundaries; the final
+success record names the runtime, namespace, queue, registered types, and
+expected result shape without printing credential values. Managed evidence
+records explicitly identify Waterline proof as omitted because this mode does
+not provision a Waterline observer. Runtime enrollment and credential creation
+remain the managed service's setup responsibility.
 
 The default `php` journey uses the framework-neutral `durable-workflow/sdk`
 through its Laravel bridge. The caller-owned activity receives configuration
-and a PSR logger from Laravel's container, the worker uses the bridge's
-`WorkerFactory`, and the scaffold includes a focused SDK test fake. The journey
+and a PSR logger from Laravel's container, and the live worker uses the bridge's
+role-scoped client and service configuration with the generated invocation
+identity. The scaffold's focused SDK test fake uses `WorkerFactory`. The journey
 runs that local test before registering the live worker, so moving from the
 embedded engine to service mode retains dependency injection, application
 configuration, logging, and testability.

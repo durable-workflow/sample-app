@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import signal
@@ -269,6 +270,10 @@ def load_contract() -> dict[str, Any]:
     targets = runtime.get("targets")
     if not isinstance(targets, dict) or set(targets) != set(RUNTIMES):
         raise PlaygroundError("The playground runtime targets are incomplete.")
+    proof = contract.get("proof")
+    proof_by_runtime = proof.get("runtime") if isinstance(proof, dict) else None
+    if not isinstance(proof_by_runtime, dict) or set(proof_by_runtime) != set(RUNTIMES):
+        raise PlaygroundError("The playground proof requirements are not runtime-scoped.")
     return contract
 
 
@@ -792,7 +797,7 @@ def json_command(
 
 def wait_for_registration(
     task_queue: str,
-    expected_worker_id: str | None,
+    expected_worker_id: str,
     workflow_type: str,
     activity_type: str,
     runtime_url: str,
@@ -819,18 +824,16 @@ def wait_for_registration(
                     for entry in workers
                     if isinstance(entry, dict)
                     and isinstance(entry.get("worker_id"), str)
-                    and (
-                        expected_worker_id is None
-                        or entry["worker_id"] == expected_worker_id
-                    )
+                    and entry["worker_id"] == expected_worker_id
                     and workflow_type in (entry.get("supported_workflow_types") or [])
                     and activity_type in (entry.get("supported_activity_types") or [])
                 ]
                 if matches:
                     return roster
                 last_error = (
-                    "worker registration did not advertise the effective "
-                    f"workflow/activity types: {workflow_type}, {activity_type}"
+                    "worker registration did not advertise the current invocation "
+                    f"identity and effective types: {expected_worker_id}, "
+                    f"{workflow_type}, {activity_type}"
                 )
         except (PlaygroundError, subprocess.SubprocessError) as error:
             last_error = str(error)
@@ -934,7 +937,7 @@ def journey(
 
     versions = doctor(require_docker=runtime == "local")
     artifacts = resolve_artifacts()
-    suffix = hashlib.sha256(f"{source_dir}-{os.getpid()}".encode()).hexdigest()[:10]
+    suffix = secrets.token_hex(8)
     scenario = effective_scenario(language, source_dir, suffix)
     if effective_task_queue:
         scenario["task_queue"] = effective_task_queue
@@ -1035,10 +1038,9 @@ def journey(
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        expected_worker_id = None if language == "php" else worker_id
         registration = wait_for_registration(
             task_queue,
-            expected_worker_id,
+            worker_id,
             str(scenario["workflow_type"]),
             str(scenario["activity_type"]),
             effective_runtime_url,
@@ -1052,7 +1054,7 @@ def journey(
             for entry in registered_workers
             if isinstance(entry, dict)
             and isinstance(entry.get("worker_id"), str)
-            and (expected_worker_id is None or entry["worker_id"] == expected_worker_id)
+            and entry["worker_id"] == worker_id
             and scenario["workflow_type"]
             in (entry.get("supported_workflow_types") or [])
             and scenario["activity_type"]
@@ -1150,7 +1152,7 @@ def journey(
         source_files = sorted(path for path in source_dir.rglob("*") if path.is_file())
         payload = {
             "schema": "durable-workflow.sample-app.playground-evidence",
-            "schema_version": 1,
+            "schema_version": 2,
             "language": language,
             "runtime": {
                 "target": runtime,
@@ -1188,17 +1190,23 @@ def journey(
                 "result": result,
                 "history_event_types": event_types,
             },
-            "waterline": {
-                "url": exact_waterline_url,
-                "selection": {
-                    "instance_id": selection.get("instance_id")
-                    if selection is not None
-                    else None,
-                    "selected_run_id": selection.get("selected_run_id")
-                    if selection is not None
-                    else None,
-                },
-            },
+            "waterline": (
+                {
+                    "status": "validated",
+                    "url": exact_waterline_url,
+                    "selection": {
+                        "instance_id": selection["instance_id"],
+                        "selected_run_id": selection["selected_run_id"],
+                    },
+                }
+                if runtime == "local" and selection is not None
+                else {
+                    "status": "omitted",
+                    "reason": contract["proof"]["runtime"]["managed"][
+                        "selected_waterline_run"
+                    ]["reason"],
+                }
+            ),
             "started_epoch_ms": round(started_at * 1000),
             "completed_epoch_ms": round(time.time() * 1000),
             "elapsed_ms": round((time.monotonic() - started_monotonic) * 1000),

@@ -36,12 +36,24 @@ def validate(path: Path, contract: dict[str, Any]) -> str:
 
     if record.get("schema") != "durable-workflow.sample-app.playground-evidence":
         fail(f"{path} has an unsupported evidence schema")
-    if record.get("schema_version") != 1:
+    if record.get("schema_version") != 2:
         fail(f"{path} has an unsupported evidence schema version")
 
     language = record.get("language")
     if language not in LANGUAGES:
         fail(f"{path} has an unsupported language: {language}")
+
+    runtime = require_dict(record.get("runtime"), f"{path}: runtime")
+    runtime_target = runtime.get("target")
+    if runtime_target not in {"local", "managed"}:
+        fail(f"{path} has an unsupported runtime target: {runtime_target}")
+    runtime_contract = require_dict(
+        require_dict(
+            require_dict(contract.get("proof"), "contract.proof").get("runtime"),
+            "contract.proof.runtime",
+        ).get(runtime_target),
+        f"contract.proof.runtime.{runtime_target}",
+    )
 
     normal_user = require_dict(record.get("normal_user"), f"{path}: normal_user")
     if not isinstance(normal_user.get("uid"), int) or normal_user["uid"] <= 0:
@@ -126,19 +138,36 @@ def validate(path: Path, contract: dict[str, Any]) -> str:
     if result != effective.get("expected_result"):
         fail(f"{path} result does not match the {language} activity: {result}")
 
+    waterline_requirement = require_dict(
+        runtime_contract.get("selected_waterline_run"),
+        f"contract.proof.runtime.{runtime_target}.selected_waterline_run",
+    )
     waterline = require_dict(record.get("waterline"), f"{path}: waterline")
-    selection = require_dict(waterline.get("selection"), f"{path}: waterline.selection")
-    if selection.get("instance_id") != workflow["workflow_id"]:
-        fail(f"{path} Waterline selected a different workflow")
-    if selection.get("selected_run_id") != workflow["run_id"]:
-        fail(f"{path} Waterline selected a different run")
-    url = waterline.get("url")
-    if (
-        not isinstance(url, str)
-        or workflow["workflow_id"] not in url
-        or workflow["run_id"] not in url
-    ):
-        fail(f"{path} does not contain an exact Waterline run URL")
+    if waterline_requirement.get("requirement") == "required":
+        if waterline.get("status") != "validated":
+            fail(f"{path} did not validate its required Waterline proof")
+        selection = require_dict(
+            waterline.get("selection"), f"{path}: waterline.selection"
+        )
+        if selection.get("instance_id") != workflow["workflow_id"]:
+            fail(f"{path} Waterline selected a different workflow")
+        if selection.get("selected_run_id") != workflow["run_id"]:
+            fail(f"{path} Waterline selected a different run")
+        url = waterline.get("url")
+        if (
+            not isinstance(url, str)
+            or workflow["workflow_id"] not in url
+            or workflow["run_id"] not in url
+        ):
+            fail(f"{path} does not contain an exact Waterline run URL")
+    elif waterline_requirement.get("requirement") == "omitted":
+        if waterline != {
+            "status": "omitted",
+            "reason": waterline_requirement.get("reason"),
+        }:
+            fail(f"{path} did not authoritatively explain omitted Waterline proof")
+    else:
+        fail(f"{path} has an unsupported Waterline proof requirement")
 
     if not isinstance(record.get("elapsed_ms"), int) or record["elapsed_ms"] <= 0:
         fail(f"{path} journey timing is missing")

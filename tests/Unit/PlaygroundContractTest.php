@@ -18,7 +18,7 @@ final class PlaygroundContractTest extends TestCase
         $compose = Yaml::parseFile($this->path('playground/docker-compose.yml'));
 
         $this->assertSame('durable-workflow.sample-app.playground', $contract['schema'] ?? null);
-        $this->assertSame(3, $contract['schema_version'] ?? null);
+        $this->assertSame(4, $contract['schema_version'] ?? null);
         $this->assertSame(['php', 'python', 'rust'], $contract['choices'] ?? null);
         $this->assertSame('caller', $contract['source_ownership'] ?? null);
         $this->assertSame('polyglot/qualified-artifact-tuple.json', $contract['artifact_source'] ?? null);
@@ -38,7 +38,17 @@ final class PlaygroundContractTest extends TestCase
             $contract['runtime']['targets']['managed']['credential_roles'] ?? null,
         );
         $this->assertTrue($contract['proof']['requires_worker_registration'] ?? false);
-        $this->assertTrue($contract['proof']['requires_selected_waterline_run'] ?? false);
+        $this->assertSame(
+            ['requirement' => 'required'],
+            $contract['proof']['runtime']['local']['selected_waterline_run'] ?? null,
+        );
+        $this->assertSame(
+            [
+                'requirement' => 'omitted',
+                'reason' => 'managed-runtime-waterline-not-provisioned',
+            ],
+            $contract['proof']['runtime']['managed']['selected_waterline_run'] ?? null,
+        );
 
         foreach ($contract['choices'] as $language) {
             $scenario = $contract['scenarios'][$language] ?? [];
@@ -54,6 +64,10 @@ final class PlaygroundContractTest extends TestCase
         }
 
         $this->assertSame('laravel-bridge', $contract['scenarios']['php']['integration'] ?? null);
+        $phpWorker = file_get_contents($this->path('playground/templates/php/worker.php')) ?: '';
+        $this->assertStringContainsString('ProcessCredentialResolver::workerClient', $phpWorker);
+        $this->assertStringContainsString("getenv('DURABLE_WORKFLOW_WORKER_ID')", $phpWorker);
+        $this->assertStringContainsString('workerId: $workerId', $phpWorker);
         $services = $compose['services'] ?? [];
         $this->assertSame(
             '${DURABLE_SERVER_IMAGE:?resolve the published artifact tuple first}',
@@ -238,6 +252,75 @@ PYTHON;
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
     }
 
+    public function test_worker_readiness_requires_the_current_invocation_registration(): void
+    {
+        $harness = <<<'PYTHON'
+import runpy
+import sys
+
+playground = runpy.run_path(sys.argv[1])
+wait_for_registration = playground["wait_for_registration"]
+PlaygroundError = playground["PlaygroundError"]
+globals = wait_for_registration.__globals__
+
+class FakeWorker:
+    returncode = None
+
+    def poll(self):
+        return None
+
+stale = {
+    "worker_id": "stale-worker",
+    "supported_workflow_types": ["authored-workflow"],
+    "supported_activity_types": ["authored-activity"],
+}
+current = {**stale, "worker_id": "current-worker"}
+
+def wait_with(workers, *, expire):
+    clock = {"now": 0}
+    globals["json_command"] = lambda command, *, env, timeout=30: {"workers": workers}
+    globals["time"].monotonic = lambda: clock["now"]
+    globals["time"].sleep = lambda seconds: clock.update(now=61 if expire else seconds)
+    return wait_for_registration(
+        "shared-queue",
+        "current-worker",
+        "authored-workflow",
+        "authored-activity",
+        "https://runtime.example/namespaces/example",
+        "example",
+        "client-secret",
+        FakeWorker(),
+    )
+
+try:
+    wait_with([stale], expire=True)
+except PlaygroundError as error:
+    assert "current-worker" in str(error)
+else:
+    raise AssertionError("A stale matching registration satisfied readiness")
+
+roster = wait_with([stale, current], expire=False)
+assert [worker["worker_id"] for worker in roster["workers"]] == [
+    "stale-worker",
+    "current-worker",
+]
+print("invocation-registration-proof=ready")
+PYTHON;
+
+        $process = new Process([
+            'python3',
+            '-c',
+            $harness,
+            $this->path('scripts/playground'),
+        ]);
+        $process->mustRun();
+
+        $this->assertStringContainsString(
+            'invocation-registration-proof=ready',
+            $process->getOutput(),
+        );
+    }
+
     public function test_managed_runtime_keeps_worker_and_client_roles_isolated_for_every_sdk(): void
     {
         $filesystem = new Filesystem;
@@ -274,10 +357,11 @@ def fake_run(command, *, env=None, cwd=None, capture=False, timeout=None):
     assert env is not None
     if "DURABLE_WORKFLOW_CLIENT_TOKEN" in env:
         events.append({"role": "client", "env": env})
+        scenario = json.loads(env["SAMPLE_APP_PLAYGROUND_SCENARIO"])
         output = json.dumps({
-            "workflow_id": "managed-input-proof",
+            "workflow_id": scenario["workflow_id_prefix"] + "-managed-input-proof",
             "run_id": "managed-run",
-            "result": json.loads(env["SAMPLE_APP_PLAYGROUND_SCENARIO"])["expected_result"],
+            "result": scenario["expected_result"],
         })
     else:
         events.append({"role": "worker-test", "env": env})
@@ -288,11 +372,14 @@ def fake_json_command(command, *, env, timeout=30):
     events.append({"role": "control", "env": env})
     if command[1] == "worker:list":
         scenario = active["scenario"]
-        return {"workers": [{
-            "worker_id": active["worker_id"],
+        registration = {
             "supported_workflow_types": [scenario["workflow_type"]],
             "supported_activity_types": [scenario["activity_type"]],
-        }]}
+        }
+        return {"workers": [
+            {**registration, "worker_id": "stale-matching-worker"},
+            {**registration, "worker_id": active["worker_id"]},
+        ]}
     if command[1] == "workflow:describe":
         return {"status": "completed", "run_id": "managed-run"}
     if command[1] == "workflow:history":
@@ -316,7 +403,12 @@ globals["resolve_artifacts"] = lambda: {
     "DURABLE_WORKFLOW_RUST_SDK_VERSION": "prepared",
     "DURABLE_WORKFLOW_WATERLINE_IMAGE": "unused-local-waterline",
 }
-globals["scaffold"] = lambda language, source, scenario=None: []
+def fake_scaffold(language, source, scenario=None):
+    authored = source / "authored-source"
+    authored.write_text(language)
+    return [authored]
+
+globals["scaffold"] = fake_scaffold
 globals["start_services"] = lambda *args, **kwargs: (_ for _ in ()).throw(
     AssertionError("managed mode started local services")
 )
@@ -330,14 +422,16 @@ globals["subprocess"].Popen = fake_popen
 
 root = Path(sys.argv[2])
 summaries = []
+evidence_paths = []
 for language in ("php", "python", "rust"):
     active.clear()
     source = root / language
     source.mkdir()
+    evidence_path = root / f"{language}.json"
     payload = journey(
         language,
         source,
-        root / f"{language}.json",
+        evidence_path,
         runtime="managed",
         runtime_url="https://runtime.example/namespaces/example",
         namespace="example",
@@ -345,7 +439,32 @@ for language in ("php", "python", "rust"):
     )
     assert payload["runtime"]["target"] == "managed"
     assert payload["workflow"]["result"]["input"] == payload["effective_contract"]["input"]
+    assert payload["workflow"]["worker_id"] == active["worker_id"]
+    assert payload["waterline"] == {
+        "status": "omitted",
+        "reason": "managed-runtime-waterline-not-provisioned",
+    }
     summaries.append(payload["language"])
+    evidence_paths.append(evidence_path)
+
+validator = runpy.run_path(sys.argv[3])
+contract = json.loads(Path(sys.argv[4]).read_text())
+for evidence_path in evidence_paths:
+    validator["validate"](evidence_path, contract)
+
+ambiguous_path = root / "ambiguous-managed.json"
+ambiguous = json.loads(evidence_paths[0].read_text())
+ambiguous["waterline"] = {
+    "url": None,
+    "selection": {"instance_id": None, "selected_run_id": None},
+}
+ambiguous_path.write_text(json.dumps(ambiguous))
+try:
+    validator["validate"](ambiguous_path, contract)
+except SystemExit as error:
+    assert "authoritatively explain omitted Waterline proof" in str(error)
+else:
+    raise AssertionError("Ambiguous managed Waterline proof passed validation")
 
 for event in events:
     environment = event["env"]
@@ -368,7 +487,15 @@ PYTHON;
 
         try {
             $process = new Process(
-                ['python3', '-c', $harness, $this->path('scripts/playground'), $temporaryDirectory],
+                [
+                    'python3',
+                    '-c',
+                    $harness,
+                    $this->path('scripts/playground'),
+                    $temporaryDirectory,
+                    $this->path('scripts/ci/validate-playground-evidence.py'),
+                    $this->path('playground/contract.json'),
+                ],
                 env: [
                     ...getenv(),
                     'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',

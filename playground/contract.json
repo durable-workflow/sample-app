@@ -1,6 +1,6 @@
 {
   "schema": "durable-workflow.sample-app.playground",
-  "schema_version": 3,
+  "schema_version": 4,
   "interface": "scripts/playground",
   "choices": [
     "php",
@@ -43,7 +43,19 @@
       "WorkflowCompleted"
     ],
     "requires_worker_registration": true,
-    "requires_selected_waterline_run": true
+    "runtime": {
+      "local": {
+        "selected_waterline_run": {
+          "requirement": "required"
+        }
+      },
+      "managed": {
+        "selected_waterline_run": {
+          "requirement": "omitted",
+          "reason": "managed-runtime-waterline-not-provisioned"
+        }
+      }
+    }
   },
   "scenarios": {
     "php": {

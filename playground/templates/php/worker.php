@@ -2,10 +2,22 @@
 
 declare(strict_types=1);
 
-use DurableWorkflow\Bridge\Laravel\WorkerFactory;
+use DurableWorkflow\Bridge\Laravel\ProcessCredentialResolver;
+use DurableWorkflow\Bridge\ServiceConfiguration;
+use DurableWorkflow\Worker;
+use Psr\Log\LoggerInterface;
 
 [$app] = require __DIR__.'/bootstrap.php';
-$factory = $app->make(WorkerFactory::class);
-$factory->make((string) getenv('DURABLE_WORKFLOW_TASK_QUEUE'))->run(
-    $factory->pollTimeoutSeconds(),
+$configuration = $app->make(ServiceConfiguration::class);
+$workerId = trim((string) getenv('DURABLE_WORKFLOW_WORKER_ID'));
+if ($workerId === '') {
+    throw new RuntimeException('Set DURABLE_WORKFLOW_WORKER_ID before starting the worker.');
+}
+$worker = new Worker(
+    ProcessCredentialResolver::workerClient($configuration),
+    $configuration->taskQueue((string) getenv('DURABLE_WORKFLOW_TASK_QUEUE')),
+    workerId: $workerId,
+    container: $app,
+    logger: $app->make(LoggerInterface::class),
 );
+$worker->register(...$configuration->handlers)->run($configuration->pollTimeoutSeconds);
