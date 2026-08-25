@@ -21,19 +21,36 @@ x-server-environment: &server-environment
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mariadb:11.4
+    command:
+      - "--innodb-flush-method=nosync"
+      - "--innodb-flush-log-at-trx-commit=0"
+      - "--innodb-doublewrite=OFF"
+      - "--innodb-file-per-table=OFF"
+      - "--innodb-buffer-pool-size=64M"
+      - "--innodb-log-file-size=16M"
+      - "--performance-schema=OFF"
+      - "--skip-name-resolve"
     environment:
       MYSQL_DATABASE: durable_workflow_playground
       MYSQL_USER: workflow
       MYSQL_PASSWORD: workflow
       MYSQL_ROOT_PASSWORD: root
-    volumes:
-      - mysql-data:/var/lib/mysql
+    tmpfs:
+      - /var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=TCP", "--silent"]
+      test:
+        - CMD-SHELL
+        - >-
+          healthcheck.sh --connect --innodb_initialized &&
+          mariadb --protocol=tcp --host=127.0.0.1
+          --user="$${MYSQL_USER}" --password="$${MYSQL_PASSWORD}"
+          --database="$${MYSQL_DATABASE}" --batch --skip-column-names
+          --execute='SELECT 1' >/dev/null
       interval: 3s
       timeout: 3s
       retries: 40
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -92,6 +109,5 @@ services:
       retries: 40
 
 volumes:
-  mysql-data:
   redis-data:
   waterline-data:

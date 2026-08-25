@@ -61,6 +61,31 @@ final class PlaygroundContractTest extends TestCase
         );
         $this->assertArrayNotHasKey('build', $services['server'] ?? []);
         $this->assertArrayNotHasKey('build', $services['waterline'] ?? []);
+
+        $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
+        $this->assertSame(
+            [
+                '--innodb-flush-method=nosync',
+                '--innodb-flush-log-at-trx-commit=0',
+                '--innodb-doublewrite=OFF',
+                '--innodb-file-per-table=OFF',
+                '--innodb-buffer-pool-size=64M',
+                '--innodb-log-file-size=16M',
+                '--performance-schema=OFF',
+                '--skip-name-resolve',
+            ],
+            $services['mysql']['command'] ?? null,
+        );
+        $this->assertSame(['/var/lib/mysql'], $services['mysql']['tmpfs'] ?? null);
+        $this->assertArrayNotHasKey('mysql-data', $compose['volumes'] ?? []);
+        $this->assertSame(
+            [
+                'CMD-SHELL',
+                'healthcheck.sh --connect --innodb_initialized && mariadb --protocol=tcp --host=127.0.0.1 --user="$${MYSQL_USER}" --password="$${MYSQL_PASSWORD}" --database="$${MYSQL_DATABASE}" --batch --skip-column-names --execute=\'SELECT 1\' >/dev/null',
+            ],
+            $services['mysql']['healthcheck']['test'] ?? null,
+        );
+        $this->assertSame('10s', $services['mysql']['healthcheck']['start_period'] ?? null);
     }
 
     #[DataProvider('languageProvider')]
