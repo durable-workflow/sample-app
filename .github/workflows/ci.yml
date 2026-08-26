@@ -71,6 +71,9 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
+      - name: Run Node regression tests against the installed packages
+        run: npm run test:node
+
       - name: Install the isolated framework-neutral PHP playground runtime
         run: >-
           composer install --working-dir=playground/php-runtime

@@ -79,6 +79,11 @@ class WorkflowRoutingTest(unittest.TestCase):
         self.assertIn("hashFiles('composer.lock')", php)
         self.assertNotIn("hashFiles('**/composer.lock')", php)
         self.assertIn("run: php artisan test", php)
+        self.assertIn("run: npm run test:node", php)
+        self.assertLess(
+            php.index("composer install --prefer-dist --no-progress --no-interaction"),
+            php.index("npm run test:node"),
+        )
         self.assertIn(
             "name: microservice composer and tests (php ${{ matrix.php }})",
             microservice,
