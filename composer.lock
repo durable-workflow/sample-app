@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f8c1414391f35ce744da3dec24a767ff",
+    "content-hash": "2ad4f621c86749bb5f3280d1fd60de94",
     "packages": [
         {
             "name": "apache/avro",
@@ -811,16 +811,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-rc.21",
+            "version": "2.0.0-rc.28",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "35e1bf6f59760177d522ffb7c32d632b6b126af1"
+                "reference": "53673e3074aef06fd075784d34067606bd639235"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/35e1bf6f59760177d522ffb7c32d632b6b126af1",
-                "reference": "35e1bf6f59760177d522ffb7c32d632b6b126af1",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/53673e3074aef06fd075784d34067606bd639235",
+                "reference": "53673e3074aef06fd075784d34067606bd639235",
                 "shasum": ""
             },
             "require": {
@@ -831,8 +831,8 @@
                 "laravel-workflow/waterline": "self.version"
             },
             "require-dev": {
-                "durable-workflow/sdk": "2.0.0-rc.14",
-                "durable-workflow/workflow": "2.0.0-rc.14",
+                "durable-workflow/sdk": "2.0.0-rc.45",
+                "durable-workflow/workflow": "2.0.0-rc.33",
                 "fakerphp/faker": "^1.9.1",
                 "mockery/mockery": "^1.4.4",
                 "orchestra/testbench": "^10.11",
@@ -854,7 +854,7 @@
                     ]
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.0-rc.21",
+                    "product-train": "2.0.0-rc.28",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -884,9 +884,9 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.21"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.28"
             },
-            "time": "2026-08-14T20:11:16+00:00"
+            "time": "2026-08-26T07:24:13+00:00"
         },
         {
             "name": "durable-workflow/workflow",

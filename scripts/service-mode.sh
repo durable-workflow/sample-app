@@ -11,8 +11,18 @@ evidence_name="$(basename "$evidence_path")"
 browser_evidence_name="${evidence_name%.json}-waterline.png"
 mount_evidence_name="${evidence_name%.json}-waterline-mount.json"
 dialog_evidence_name="${evidence_name%.json}-waterline-dialogs"
+run_detail_evidence_name="${evidence_name%.json}-waterline-run-detail"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sample-app-service-mode}"
 export SERVICE_MODE_PORT="${SERVICE_MODE_PORT:-18081}"
+
+sample_app_revision="${SERVICE_MODE_SAMPLE_APP_REVISION:-${GITHUB_SHA:-}}"
+if [[ -z "$sample_app_revision" ]]; then
+    sample_app_revision="$(git -C "$repo_root" rev-parse HEAD)"
+fi
+if [[ ! "$sample_app_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Service mode needs an exact 40-character Sample App revision; got ${sample_app_revision}." >&2
+    exit 1
+fi
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
     echo 'Service mode needs Docker Engine with the Compose v2 plugin.' >&2
@@ -87,6 +97,32 @@ run_phase "service startup and readiness" \
     "${compose[@]}" up --detach --no-build --wait \
         server php-worker python-worker waterline
 
+installed_waterline_json="$(
+    "${compose[@]}" exec -T waterline php -r '
+require "vendor/autoload.php";
+echo json_encode([
+    "package" => "durable-workflow/waterline",
+    "version" => \Composer\InstalledVersions::getPrettyVersion("durable-workflow/waterline"),
+    "reference" => \Composer\InstalledVersions::getReference("durable-workflow/waterline"),
+], JSON_THROW_ON_ERROR);
+'
+)"
+SERVICE_MODE_INSTALLED_WATERLINE_JSON="$installed_waterline_json" \
+node <<'NODE'
+const installed = JSON.parse(process.env.SERVICE_MODE_INSTALLED_WATERLINE_JSON);
+const expected = process.env.DURABLE_WORKFLOW_WATERLINE_VERSION;
+
+if (
+  installed.package !== 'durable-workflow/waterline'
+  || installed.version !== expected
+  || !/^[0-9a-f]{40}$/.test(installed.reference || '')
+) {
+  throw new Error(
+    `Installed Waterline identity ${JSON.stringify(installed)} does not match ${expected}.`,
+  );
+}
+NODE
+
 startup_ms="$(( $(date +%s%3N) - started_ms ))"
 echo "Ready in ${startup_ms} ms. Starting a unique Laravel workflow..."
 
@@ -155,7 +191,16 @@ dialog_started_ms="$(date +%s%3N)"
     --output-dir "/evidence/${dialog_evidence_name}"
 dialog_elapsed_ms="$(( $(date +%s%3N) - dialog_started_ms ))"
 
+run_detail_started_ms="$(date +%s%3N)"
+"${compose[@]}" run --no-deps --rm -T --entrypoint node browser-smoke \
+    /observer/vendor/durable-workflow/waterline/scripts/ci/run-detail-visual.mjs \
+    --base-url http://waterline:8081 \
+    --output-dir "/evidence/${run_detail_evidence_name}"
+run_detail_elapsed_ms="$(( $(date +%s%3N) - run_detail_started_ms ))"
+
 SERVICE_MODE_JOURNEY_JSON="$journey_json" \
+SERVICE_MODE_SAMPLE_APP_REVISION="$sample_app_revision" \
+SERVICE_MODE_INSTALLED_WATERLINE_JSON="$installed_waterline_json" \
 SERVICE_MODE_STARTUP_MS="$startup_ms" \
 SERVICE_MODE_ELAPSED_MS="$journey_elapsed_ms" \
 SERVICE_MODE_BROWSER_MS="$browser_elapsed_ms" \
@@ -163,6 +208,8 @@ SERVICE_MODE_BROWSER_SCREENSHOT="$browser_evidence_name" \
 SERVICE_MODE_MOUNT_EVIDENCE="$mount_evidence_name" \
 SERVICE_MODE_DIALOG_MS="$dialog_elapsed_ms" \
 SERVICE_MODE_DIALOG_EVIDENCE="${dialog_evidence_name}/summary.json" \
+SERVICE_MODE_RUN_DETAIL_MS="$run_detail_elapsed_ms" \
+SERVICE_MODE_RUN_DETAIL_EVIDENCE="${run_detail_evidence_name}/summary.json" \
 SERVICE_MODE_EVIDENCE_OUTPUT="$evidence_path" \
 node <<'NODE'
 const fs = require('node:fs');
@@ -173,9 +220,23 @@ const lines = process.env.SERVICE_MODE_JOURNEY_JSON
   .filter(Boolean);
 const result = JSON.parse(lines.at(-1));
 const evidence = {
-  schema: 'durable-workflow.sample-app.service-mode-evidence.v1',
+  schema: 'durable-workflow.sample-app.service-mode-evidence.v2',
   captured_at: new Date().toISOString(),
   compose_project: process.env.COMPOSE_PROJECT_NAME,
+  consumer: {
+    repository: 'durable-workflow/sample-app',
+    revision: process.env.SERVICE_MODE_SAMPLE_APP_REVISION,
+  },
+  installed: {
+    waterline: JSON.parse(process.env.SERVICE_MODE_INSTALLED_WATERLINE_JSON),
+  },
+  ci: {
+    event_name: process.env.GITHUB_EVENT_NAME || null,
+    ref: process.env.GITHUB_REF || null,
+    run_id: process.env.GITHUB_RUN_ID || null,
+    run_attempt: process.env.GITHUB_RUN_ATTEMPT || null,
+  },
+  public_completion_gate: 'https://github.com/durable-workflow/waterline/issues/79',
   startup_ms: Number(process.env.SERVICE_MODE_STARTUP_MS),
   journey_ms: Number(process.env.SERVICE_MODE_ELAPSED_MS),
   browser_ms: Number(process.env.SERVICE_MODE_BROWSER_MS),
@@ -183,6 +244,8 @@ const evidence = {
   mount_evidence: process.env.SERVICE_MODE_MOUNT_EVIDENCE,
   dialog_ms: Number(process.env.SERVICE_MODE_DIALOG_MS),
   dialog_evidence: process.env.SERVICE_MODE_DIALOG_EVIDENCE,
+  run_detail_ms: Number(process.env.SERVICE_MODE_RUN_DETAIL_MS),
+  run_detail_evidence: process.env.SERVICE_MODE_RUN_DETAIL_EVIDENCE,
   workflow: result,
   artifacts: {
     server: process.env.DURABLE_SERVER_IMAGE,

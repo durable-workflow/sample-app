@@ -205,8 +205,25 @@ BASH));
         $this->assertStringContainsString('service-mode-evidence.json', $script);
         $this->assertStringContainsString('waterline-mount-readiness.mjs', $script);
         $this->assertStringContainsString('run-service-mode-dialog-visual.mjs', $script);
+        $this->assertStringContainsString(
+            'vendor/durable-workflow/waterline/scripts/ci/run-detail-visual.mjs',
+            $script,
+        );
+        $this->assertStringContainsString('Composer\\InstalledVersions::getPrettyVersion', $script);
+        $this->assertStringContainsString('SERVICE_MODE_SAMPLE_APP_REVISION', $script);
         $this->assertStringContainsString('SERVICE_MODE_MOUNT_EVIDENCE', $script);
         $this->assertStringContainsString('SERVICE_MODE_DIALOG_EVIDENCE', $script);
+        $this->assertStringContainsString('SERVICE_MODE_RUN_DETAIL_EVIDENCE', $script);
+
+        $retentionSteps = array_values(array_filter(
+            $workflow['jobs']['service-mode']['steps'] ?? [],
+            static fn (array $step): bool => ($step['uses'] ?? null)
+                === 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        ));
+        $this->assertCount(1, $retentionSteps);
+        $evidencePaths = $retentionSteps[0]['with']['path'] ?? '';
+        $this->assertStringContainsString('service-mode-*-waterline-dialogs/**', $evidencePaths);
+        $this->assertStringContainsString('service-mode-*-waterline-run-detail/**', $evidencePaths);
     }
 
     public function test_observer_bootstrap_publishes_assets_from_the_installed_waterline_package(): void

@@ -50,6 +50,7 @@ jobs:
         sample-app-service-${{ github.run_id }}-${{ github.run_attempt }}
       DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
       SERVICE_MODE_PORT: "18081"
+      SERVICE_MODE_SAMPLE_APP_REVISION: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -85,17 +86,32 @@ jobs:
           curl --fail --silent --show-error --location "$waterline_url" \
             | grep -E 'Waterline|waterline'
 
-      - name: Retain startup and result timing evidence
+      - name: Retain service-mode visual and runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
-          name: service-mode-onboarding-evidence
+          name: waterline-service-mode-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             service-mode-*.json
             service-mode-*-waterline.png
             service-mode-*-waterline-dialogs/**
+            service-mode-*-waterline-run-detail/**
           if-no-files-found: error
           retention-days: 30
+
+      - name: Link protected evidence to the public completion gate
+        if: >-
+          success() && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        run: |
+          {
+            echo '## Released Waterline service-mode qualification'
+            echo
+            echo "- Sample App revision: \`${GITHUB_SHA}\`"
+            echo "- Waterline package: \`${DURABLE_WORKFLOW_WATERLINE_VERSION}\`"
+            echo '- [Public completion gate](https://github.com/durable-workflow/waterline/issues/79)'
+            echo "- [Retained evidence run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dump service-mode logs
         if: failure()
