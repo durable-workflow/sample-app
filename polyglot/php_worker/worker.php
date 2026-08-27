@@ -423,15 +423,15 @@ function phpToPythonWorkflow(): Closure
 function signalQueryWorkflow(): Closure
 {
     return static function (WorkflowContext $context, array $request): ?array {
-        $deliveries = $context->signals('polyglot-signal');
-        if (count($deliveries) < 2) {
-            Fiber::suspend(new WorkflowCommand('open_condition_wait', 'condition_wait', [
-                'condition_key' => 'polyglot.signal.polyglot-signal',
-                'condition_definition_fingerprint' => hash('sha256', 'polyglot.signal.polyglot-signal'),
-            ]));
+        $conditionKey = 'polyglot.signal.polyglot-signal';
+        Fiber::suspend(WorkflowCommand::conditionWait(
+            static fn (): bool => count($context->signals('polyglot-signal')) >= 2,
+            $conditionKey,
+            hash('sha256', $conditionKey),
+            null,
+        ));
 
-            return null;
-        }
+        $deliveries = $context->signals('polyglot-signal');
 
         return [
             'workflow_runtime' => 'php',

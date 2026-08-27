@@ -70,16 +70,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.0-rc.40",
+            "version": "2.0.0-rc.47",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "820c3cfb686761388ed6d40e862178fcd9216443"
+                "reference": "180c32ae0599dc460fbef4d6fee832176eecbd78"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/820c3cfb686761388ed6d40e862178fcd9216443",
-                "reference": "820c3cfb686761388ed6d40e862178fcd9216443",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/180c32ae0599dc460fbef4d6fee832176eecbd78",
+                "reference": "180c32ae0599dc460fbef4d6fee832176eecbd78",
                 "shasum": ""
             },
             "require": {
@@ -120,13 +120,36 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.0-rc.40",
+                    "product-train": "2.0.0-rc.47",
                     "payload-codecs": [
                         "avro"
                     ],
+                    "message-streams": true,
+                    "version-markers": true,
+                    "workflow-streams": {
+                        "contract": "durable-workflow.v2.workflow-streams.contract@1",
+                        "delivery": "at-least-once",
+                        "operations": [
+                            "list",
+                            "describe",
+                            "subscribe",
+                            "append",
+                            "close",
+                            "error"
+                        ],
+                        "authoring-command": "record_side_effect.workflow_stream",
+                        "external-payload-references": "opaque-reference"
+                    },
                     "control-plane-version": "2",
-                    "worker-protocol-version": "1.13",
-                    "supported-server-versions": "2.0.0-rc.38"
+                    "version-marker-command": "record_version_marker",
+                    "version-marker-helpers": [
+                        "patched",
+                        "deprecatePatch"
+                    ],
+                    "worker-protocol-version": "1.16",
+                    "supported-server-versions": "2.0.0-rc.50",
+                    "version-marker-history-event": "VersionMarkerRecorded",
+                    "message-streams-minimum-worker-protocol-version": "1.15"
                 }
             },
             "autoload": {
@@ -157,7 +180,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-08-20T17:32:57+00:00"
+            "time": "2026-08-26T14:36:52+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",

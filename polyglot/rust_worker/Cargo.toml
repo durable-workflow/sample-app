@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 apache-avro = "=0.21.0"
 base64 = "=0.22.1"
-durable-workflow = "=2.0.0-rc.32"
+durable-workflow = "=2.0.0-rc.34"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "signal"] }
 
 [dev-dependencies]

@@ -713,7 +713,7 @@ PYTHON;
         file_put_contents(
             $phpRuntime.'/vendor/durable-workflow/sdk/docs/quickstart-contract.json',
             json_encode([
-                'package' => ['published_version' => '2.0.0-rc.40'],
+                'package' => ['published_version' => '2.0.0-rc.47'],
             ], JSON_THROW_ON_ERROR),
         );
         file_put_contents($preparedSentinel, "prepared\n");
@@ -729,7 +729,7 @@ mkdir -p "$COMPOSER_CACHE_DIR/files"
 if [[ "$1" == "--version" ]]; then
     printf 'Composer version 2.10.2 2026-07-01 11:24:45\n'
 else
-    printf '{"versions":["2.0.0-rc.40"]}\n'
+    printf '{"versions":["2.0.0-rc.47"]}\n'
 fi
 BASH);
 
@@ -739,7 +739,7 @@ BASH);
 if [[ " $* " == *" --version "* ]]; then
     printf 'Python 3.11.0\n'
 elif [[ " $* " == *" importlib.metadata "* ]]; then
-    printf '2.0.0rc32\n'
+    printf '2.0.0rc36\n'
 fi
 BASH,
             'pip' => 'printf "pip 26.0\\n"',
@@ -776,14 +776,14 @@ from pathlib import Path
 playground = runpy.run_path(sys.argv[1])
 doctor = playground["doctor"]
 doctor.__globals__["resolve_artifacts"] = lambda: {
-    "DURABLE_SERVER_IMAGE": "durableworkflow/server:2.0.0-rc.20",
-    "DURABLE_WORKFLOW_PHP_SDK_VERSION": "2.0.0-rc.40",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.32",
-    "DURABLE_WORKFLOW_RUST_SDK_VERSION": "2.0.0-rc.32",
+    "DURABLE_SERVER_IMAGE": "durableworkflow/server:2.0.0-rc.50",
+    "DURABLE_WORKFLOW_PHP_SDK_VERSION": "2.0.0-rc.47",
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.36",
+    "DURABLE_WORKFLOW_RUST_SDK_VERSION": "2.0.0-rc.34",
 }
 doctor.__globals__["php_runtime"] = lambda: Path(sys.argv[2])
 versions = doctor()
-assert versions["sdk_php_laravel"] == "2.0.0-rc.40", json.dumps(versions)
+assert versions["sdk_php_laravel"] == "2.0.0-rc.47", json.dumps(versions)
 PYTHON;
 
         try {
