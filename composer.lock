@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ff29f7e16218acab8ca1067bc1a18ebf",
+    "content-hash": "3c067d70f6bc049ae7dbfde2635f6f06",
     "packages": [
         {
             "name": "apache/avro",
@@ -834,16 +834,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.0.0-rc.31",
+            "version": "2.0.0-rc.32",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "c854fad62aae2a34ba892b6a0a6b0f400044baab"
+                "reference": "e69b66b3a0d47e173afdf49f5379854f86c7ac7f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/c854fad62aae2a34ba892b6a0a6b0f400044baab",
-                "reference": "c854fad62aae2a34ba892b6a0a6b0f400044baab",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/e69b66b3a0d47e173afdf49f5379854f86c7ac7f",
+                "reference": "e69b66b3a0d47e173afdf49f5379854f86c7ac7f",
                 "shasum": ""
             },
             "require": {
@@ -877,7 +877,7 @@
                     ]
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.0-rc.31",
+                    "product-train": "2.0.0-rc.32",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -907,9 +907,9 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.31"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.0.0-rc.32"
             },
-            "time": "2026-08-27T00:56:12+00:00"
+            "time": "2026-08-27T03:09:58+00:00"
         },
         {
             "name": "durable-workflow/workflow",
