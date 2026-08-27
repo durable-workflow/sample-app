@@ -69,7 +69,8 @@ diagnostics() {
         echo 'Service mode did not finish. Current container status:' >&2
         "${compose[@]}" ps >&2 || true
         "${compose[@]}" logs --no-color --tail=80 \
-            mysql observer-app-setup waterline-migrate server php-worker python-worker waterline >&2 || true
+            mysql observer-app-setup waterline-migrate server php-worker python-worker \
+            waterline waterline-embedded >&2 || true
     fi
     return "$status"
 }
@@ -83,7 +84,8 @@ started_ms="$(date +%s%3N)"
 run_phase "published artifact pull" \
     "${compose[@]}" pull --quiet \
         mysql redis worker-app-setup observer-app-setup python-setup waterline-migrate \
-        bootstrap server php-worker python-worker waterline journey browser-smoke
+        bootstrap server php-worker python-worker waterline waterline-embedded \
+        journey browser-smoke
 run_phase "previous service shutdown" "${compose[@]}" down --remove-orphans
 run_phase "application and language setup" \
     "${compose[@]}" up --no-build --force-recreate \
@@ -95,7 +97,7 @@ run_phase "Waterline database migrations" \
         --exit-code-from waterline-migrate waterline-migrate
 run_phase "service startup and readiness" \
     "${compose[@]}" up --detach --no-build --wait \
-        server php-worker python-worker waterline
+        server php-worker python-worker waterline waterline-embedded
 
 installed_waterline_json="$(
     "${compose[@]}" exec -T waterline php -r '
@@ -194,7 +196,8 @@ dialog_elapsed_ms="$(( $(date +%s%3N) - dialog_started_ms ))"
 run_detail_started_ms="$(date +%s%3N)"
 "${compose[@]}" run --no-deps --rm -T --entrypoint node browser-smoke \
     /observer/vendor/durable-workflow/waterline/scripts/ci/run-detail-visual.mjs \
-    --base-url http://waterline:8081 \
+    --base-url http://waterline-embedded:8082 \
+    --service-base-url http://waterline:8081 \
     --output-dir "/evidence/${run_detail_evidence_name}"
 run_detail_elapsed_ms="$(( $(date +%s%3N) - run_detail_started_ms ))"
 

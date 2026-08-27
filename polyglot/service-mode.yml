@@ -259,6 +259,40 @@ services:
       timeout: 3s
       retries: 40
 
+  waterline-embedded:
+    image: *development-image
+    user: "1000:1000"
+    working_dir: /var/www/html
+    entrypoint:
+      - php
+      - artisan
+      - serve
+      - --host=0.0.0.0
+      - --port=8082
+    environment:
+      <<: *laravel-environment
+      WATERLINE_ALLOW_UNAUTHENTICATED: "true"
+      WATERLINE_BACKEND: embedded
+      WATERLINE_ENGINE_SOURCE: v2
+      WATERLINE_NAMESPACE: default
+      WATERLINE_PATH: waterline
+    expose:
+      - "8082"
+    volumes:
+      - service-observer-app:/var/www/html
+    depends_on:
+      waterline-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8082/waterline/api/v2/health
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
   journey:
     image: *development-image
     user: "1000:1000"

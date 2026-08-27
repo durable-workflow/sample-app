@@ -14,6 +14,7 @@ from typing import Any
 VERSION = re.compile(r"^2\.0\.0-(?:beta|rc)\.\d+$")
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 PUBLIC_COMPLETION_GATE = "https://github.com/durable-workflow/waterline/issues/79"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_DIALOG_CASES = {
     ("filters", "desktop", 1440, 900),
     ("filters", "intermediate", 900, 768),
@@ -24,15 +25,28 @@ EXPECTED_DIALOG_CASES = {
     ("view-options", "mobile", 390, 844),
     ("view-options", "short-height", 1280, 480),
 }
+RUN_DETAIL_VIEWPORTS = {
+    "desktop": (1440, 900),
+    "intermediate": (768, 1024),
+    "mobile": (390, 844),
+    "short-height": (1280, 360),
+}
+RUN_DETAIL_NAVIGATION_STATES = {"initial", "deep-section"}
+RUN_DETAIL_PRESENTATIONS = {"embedded", "service"}
+RUN_DETAIL_RESULTS = {"populated", "supported-empty", "unavailable", "degraded"}
+RUN_DETAIL_STATES = {
+    (f"{presentation}-{result}-expanded", presentation, result, True)
+    for presentation in RUN_DETAIL_PRESENTATIONS
+    for result in RUN_DETAIL_RESULTS
+} | {
+    (f"{presentation}-populated-collapsed", presentation, "populated", False)
+    for presentation in RUN_DETAIL_PRESENTATIONS
+}
 EXPECTED_RUN_DETAIL_CASES = {
-    ("streams-expanded", "desktop", 1440, 900),
-    ("streams-expanded", "intermediate", 900, 768),
-    ("streams-expanded", "mobile", 390, 844),
-    ("streams-expanded", "short-height", 1280, 480),
-    ("streams-collapsed", "desktop", 1440, 900),
-    ("streams-collapsed", "intermediate", 900, 768),
-    ("streams-collapsed", "mobile", 390, 844),
-    ("streams-collapsed", "short-height", 1280, 480),
+    (state, presentation, result, navigation, viewport, width, height)
+    for state, presentation, result, _expanded in RUN_DETAIL_STATES
+    for navigation in RUN_DETAIL_NAVIGATION_STATES
+    for viewport, (width, height) in RUN_DETAIL_VIEWPORTS.items()
 }
 
 
@@ -57,6 +71,12 @@ def require_empty_list(value: Any, label: str) -> None:
         fail(f"{label} must be empty")
 
 
+def require_number(value: Any, label: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        fail(f"{label} must be a number")
+    return value
+
+
 def summary_path(evidence_path: Path, value: Any, label: str) -> Path:
     if not isinstance(value, str) or Path(value).name != "summary.json":
         fail(f"{evidence_path} does not identify responsive {label} evidence")
@@ -69,6 +89,31 @@ def summary_path(evidence_path: Path, value: Any, label: str) -> Path:
 def load_json_mapping(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as source:
         return require_mapping(json.load(source), str(path))
+
+
+def locked_waterline_identity() -> tuple[str, str]:
+    lock = load_json_mapping(REPOSITORY_ROOT / "composer.lock")
+    packages = require_list(lock.get("packages"), "composer.lock packages")
+
+    for package in packages:
+        package = require_mapping(package, "composer.lock package")
+        if package.get("name") != "durable-workflow/waterline":
+            continue
+
+        source = require_mapping(package.get("source"), "locked Waterline source")
+        version = package.get("version")
+        reference = source.get("reference")
+        if (
+            not isinstance(version, str)
+            or VERSION.fullmatch(version) is None
+            or not isinstance(reference, str)
+            or REVISION.fullmatch(reference) is None
+        ):
+            fail("composer.lock has an invalid Waterline identity")
+
+        return version, reference
+
+    fail("composer.lock does not contain durable-workflow/waterline")
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -276,15 +321,31 @@ def load(path: Path) -> dict[str, Any]:
         != "durable-workflow.waterline.run-detail-visual-summary.v1"
     ):
         fail(f"{run_detail_summary_path} has an unsupported schema")
+    expected_run_detail_count = len(EXPECTED_RUN_DETAIL_CASES)
     if (
-        run_detail_summary.get("expectedCases") != 8
-        or run_detail_summary.get("observedCases") != 8
-        or run_detail_summary.get("passedCases") != 8
+        run_detail_summary.get("expectedCases") != expected_run_detail_count
+        or run_detail_summary.get("observedCases") != expected_run_detail_count
+        or run_detail_summary.get("passedCases") != expected_run_detail_count
         or run_detail_summary.get("failedCases") != 0
     ):
         fail(f"{run_detail_summary_path} did not pass all responsive run-detail cases")
 
-    observed_run_detail_cases: set[tuple[str, str, int, int]] = set()
+    base_urls = require_mapping(
+        run_detail_summary.get("baseUrls"), f"{run_detail_summary_path} baseUrls"
+    )
+    for presentation in RUN_DETAIL_PRESENTATIONS:
+        base_url = base_urls.get(presentation)
+        if not isinstance(base_url, str) or not base_url.startswith("http://"):
+            fail(
+                f"{run_detail_summary_path} does not identify the {presentation} presentation"
+            )
+    if (
+        base_urls["embedded"] == base_urls["service"]
+        or run_detail_summary.get("baseUrl") != base_urls["embedded"]
+    ):
+        fail(f"{run_detail_summary_path} does not retain distinct presentation URLs")
+
+    observed_run_detail_cases: set[tuple[str, str, str, str, str, int, int]] = set()
     for case in require_list(
         run_detail_summary.get("cases"), f"{run_detail_summary_path} cases"
     ):
@@ -294,15 +355,26 @@ def load(path: Path) -> dict[str, Any]:
         )
         key = (
             case.get("state"),
+            case.get("presentation"),
+            case.get("result"),
+            case.get("navigation"),
             viewport.get("name"),
             viewport.get("width"),
             viewport.get("height"),
         )
         observed_run_detail_cases.add(key)
+        if key not in EXPECTED_RUN_DETAIL_CASES:
+            fail(f"{run_detail_summary_path} contains an unexpected run-detail case")
         if case.get("status") != "passed" or case.get("failure") is not None:
             fail(f"{run_detail_summary_path} contains a failed run-detail case")
+        expected_stream_state = f"{case.get('presentation')}-{case.get('result')}"
+        if case.get("streamState") != expected_stream_state:
+            fail(f"{run_detail_summary_path} contains an invalid stream fixture")
         screenshot_name = case.get("screenshot")
-        report_name = f"{case.get('state')}-{viewport.get('name')}.json"
+        report_name = (
+            f"{case.get('state')}-{case.get('navigation')}-"
+            f"{viewport.get('name')}.json"
+        )
         for filename in (screenshot_name, report_name):
             if not isinstance(filename, str) or Path(filename).name != filename:
                 fail(f"{run_detail_summary_path} has an invalid case artifact name")
@@ -317,10 +389,32 @@ def load(path: Path) -> dict[str, Any]:
             or report.get("status") != "passed"
             or report.get("failure") is not None
             or report.get("state") != case.get("state")
+            or report.get("streamState") != case.get("streamState")
+            or report.get("presentation") != case.get("presentation")
+            or report.get("result") != case.get("result")
+            or report.get("navigation") != case.get("navigation")
             or report.get("viewport") != viewport
             or report.get("screenshot") != screenshot_name
         ):
             fail(f"{report_path} does not retain a passing run-detail result")
+        bootstrap = require_mapping(report.get("bootstrap"), f"{report_path} bootstrap")
+        expected_bootstrap = {
+            "embedded": {
+                "mode": "embedded",
+                "label": "Embedded Laravel",
+                "transport": "workflow-package",
+            },
+            "service": {
+                "mode": "service",
+                "label": "Standalone service",
+                "transport": "durable-workflow/sdk",
+            },
+        }[case["presentation"]]
+        if any(
+            bootstrap.get(field) != value
+            for field, value in expected_bootstrap.items()
+        ):
+            fail(f"{report_path} does not retain the expected presentation identity")
         for field in ("browserErrors", "requestFailures", "errorResponses"):
             require_empty_list(report.get(field), f"{report_path} {field}")
         if not require_list(report.get("contrast"), f"{report_path} contrast"):
@@ -328,7 +422,7 @@ def load(path: Path) -> dict[str, Any]:
         disclosure = require_mapping(
             report.get("disclosure"), f"{report_path} disclosure"
         )
-        expanded = case.get("state") == "streams-expanded"
+        expanded = case.get("state", "").endswith("-expanded")
         expected_disclosure = {
             "text": "Collapse Workflow Streams"
             if expanded
@@ -346,6 +440,75 @@ def load(path: Path) -> dict[str, Any]:
             "overlapping_floating_elements",
         ):
             require_empty_list(geometry.get(field), f"{report_path} geometry.{field}")
+        document = require_mapping(
+            geometry.get("document"), f"{report_path} geometry.document"
+        )
+        document_scroll_width = require_number(
+            document.get("scrollWidth"), f"{report_path} document scroll width"
+        )
+        if document_scroll_width > viewport["width"] + 1:
+            fail(f"{report_path} retains horizontal document overflow")
+
+        simultaneous_navigation = require_mapping(
+            geometry.get("simultaneous_navigation"),
+            f"{report_path} geometry.simultaneous_navigation",
+        )
+        sidebar = require_mapping(
+            simultaneous_navigation.get("sidebar"),
+            f"{report_path} simultaneous navigation sidebar",
+        )
+        sidebar_scroll_left = require_number(
+            sidebar.get("scrollLeft"), f"{report_path} navigation scroll position"
+        )
+        if sidebar_scroll_left > 1:
+            fail(f"{report_path} retains a horizontally scrolled initial navigation")
+        navigation_links = [
+            require_mapping(link, f"{report_path} simultaneous navigation link")
+            for link in require_list(
+                simultaneous_navigation.get("links"),
+                f"{report_path} simultaneous navigation links",
+            )
+        ]
+        for label in ("Dashboard", "Workers"):
+            matches = [link for link in navigation_links if link.get("name") == label]
+            if len(matches) != 1 or matches[0].get("inViewport") is not True:
+                fail(f"{report_path} does not retain a visible {label} navigation link")
+
+        simultaneous_topbar = require_mapping(
+            geometry.get("simultaneous_topbar"),
+            f"{report_path} geometry.simultaneous_topbar",
+        )
+        topbar_actions = require_mapping(
+            simultaneous_topbar.get("actions"),
+            f"{report_path} simultaneous top-bar actions",
+        )
+        actions_scroll_left = require_number(
+            topbar_actions.get("scrollLeft"), f"{report_path} action scroll position"
+        )
+        actions_scroll_width = require_number(
+            topbar_actions.get("scrollWidth"), f"{report_path} action scroll width"
+        )
+        actions_client_width = require_number(
+            topbar_actions.get("clientWidth"), f"{report_path} action client width"
+        )
+        if actions_scroll_left > 1 or actions_scroll_width > actions_client_width + 1:
+            fail(f"{report_path} retains overflowing persistent actions")
+        topbar_items = [
+            require_mapping(item, f"{report_path} simultaneous top-bar item")
+            for item in require_list(
+                simultaneous_topbar.get("items"),
+                f"{report_path} simultaneous top-bar items",
+            )
+        ]
+        for label in ("Scope", "Backend", "Auto refresh", "Theme"):
+            matches = [item for item in topbar_items if item.get("name") == label]
+            if (
+                len(matches) != 1
+                or matches[0].get("inViewport") is not True
+                or matches[0].get("inTopbar") is not True
+                or matches[0].get("clipped") is not False
+            ):
+                fail(f"{report_path} does not retain a visible {label} top-bar item")
         controls = require_list(report.get("controls"), f"{report_path} controls")
         if not controls:
             fail(f"{report_path} does not retain run-detail control reachability")
@@ -400,11 +563,12 @@ def load(path: Path) -> dict[str, Any]:
     installed_waterline = require_mapping(
         installed.get("waterline"), f"{path} installed.waterline"
     )
+    locked_version, locked_reference = locked_waterline_identity()
     if (
         installed_waterline.get("package") != "durable-workflow/waterline"
-        or installed_waterline.get("version") != artifacts.get("waterline")
-        or not isinstance(installed_waterline.get("reference"), str)
-        or REVISION.fullmatch(installed_waterline["reference"]) is None
+        or artifacts.get("waterline") != locked_version
+        or installed_waterline.get("version") != locked_version
+        or installed_waterline.get("reference") != locked_reference
     ):
         fail(f"{path} does not bind the exact installed Waterline package")
 

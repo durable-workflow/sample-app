@@ -20,7 +20,7 @@ final class ServiceModeOnboardingContractTest extends TestCase
         foreach ($services as $service) {
             $this->assertArrayNotHasKey('build', $service);
         }
-        foreach (['worker-app-setup', 'observer-app-setup', 'waterline-migrate', 'php-worker', 'waterline', 'journey', 'browser-smoke'] as $serviceName) {
+        foreach (['worker-app-setup', 'observer-app-setup', 'waterline-migrate', 'php-worker', 'waterline', 'waterline-embedded', 'journey', 'browser-smoke'] as $serviceName) {
             $this->assertSame($developmentImage, $services[$serviceName]['image'] ?? null);
         }
         foreach (['python-setup', 'python-worker'] as $serviceName) {
@@ -70,10 +70,12 @@ final class ServiceModeOnboardingContractTest extends TestCase
             'client',
             $services['journey']['environment']['DURABLE_WORKFLOW_PROCESS_ROLE'] ?? null,
         );
-        foreach (['php-worker', 'waterline', 'journey'] as $serviceName) {
+        foreach (['php-worker', 'waterline', 'waterline-embedded', 'journey'] as $serviceName) {
             $this->assertSame('file', $services[$serviceName]['environment']['SESSION_DRIVER'] ?? null);
         }
         $this->assertSame('service', $services['waterline']['environment']['WATERLINE_BACKEND'] ?? null);
+        $this->assertSame('embedded', $services['waterline-embedded']['environment']['WATERLINE_BACKEND'] ?? null);
+        $this->assertSame('v2', $services['waterline-embedded']['environment']['WATERLINE_ENGINE_SOURCE'] ?? null);
         $this->assertSame(
             'http://server:8080',
             $services['waterline']['environment']['WATERLINE_SERVER_ENDPOINT'] ?? null,
@@ -110,6 +112,10 @@ final class ServiceModeOnboardingContractTest extends TestCase
         $this->assertSame(
             'service_completed_successfully',
             $services['waterline']['depends_on']['waterline-migrate']['condition'] ?? null,
+        );
+        $this->assertSame(
+            'service_completed_successfully',
+            $services['waterline-embedded']['depends_on']['waterline-migrate']['condition'] ?? null,
         );
 
         $script = (string) file_get_contents($this->repoPath('scripts/service-mode.sh'));
@@ -209,6 +215,8 @@ BASH));
             'vendor/durable-workflow/waterline/scripts/ci/run-detail-visual.mjs',
             $script,
         );
+        $this->assertStringContainsString('--base-url http://waterline-embedded:8082', $script);
+        $this->assertStringContainsString('--service-base-url http://waterline:8081', $script);
         $this->assertStringContainsString('Composer\\InstalledVersions::getPrettyVersion', $script);
         $this->assertStringContainsString('SERVICE_MODE_SAMPLE_APP_REVISION', $script);
         $this->assertStringContainsString('SERVICE_MODE_MOUNT_EVIDENCE', $script);
