@@ -23,6 +23,23 @@ TASK_QUEUE = os.environ.get("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-pytho
 POLL_TIMEOUT_SECONDS = float(os.environ.get("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "90"))
 TYPED_ERROR_HEARTBEAT_SECONDS = float(os.environ.get("POLYGLOT_TYPED_ERROR_HEARTBEAT_SECONDS", "30"))
 PYTHON_TYPED_ERROR_ACTIVITY = "polyglot.php-to-python.typed-error"
+TYPED_ERROR_WORKER_CAPABILITY_MANIFEST = {
+    "local_activities": {
+        "supported": False,
+        "minimum_protocol_version": "1.18",
+        "reason": "python_worker_does_not_execute_record_local_activity",
+    },
+    "worker_sessions": {
+        "supported": False,
+        "minimum_protocol_version": "1.18",
+        "reason": "python_worker_has_no_typed_session_lifecycle",
+    },
+    "sticky_execution": {
+        "supported": False,
+        "minimum_protocol_version": "1.18",
+        "reason": "python_worker_uses_complete_durable_history_replay",
+    },
+}
 LOG = logging.getLogger("polyglot.python_worker")
 _MISSING_CODEC = object()
 
@@ -130,8 +147,11 @@ async def run_typed_error_worker(client: Client, worker_id: str) -> None:
     ack = await client.register_worker(
         worker_id=worker_id,
         task_queue=TASK_QUEUE,
+        supported_workflow_types=[],
         supported_activity_types=[PYTHON_TYPED_ERROR_ACTIVITY],
         max_concurrent_activity_tasks=1,
+        capabilities=[],
+        capability_manifest=TYPED_ERROR_WORKER_CAPABILITY_MANIFEST,
     )
     heartbeat_seconds = typed_error_heartbeat_seconds(ack)
     heartbeat_task = asyncio.create_task(

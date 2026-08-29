@@ -4,6 +4,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pinned_artifact_tuple_file="${repo_root}/polyglot/qualified-artifact-tuple.json"
 current_artifact_tuple_url="${DURABLE_WORKFLOW_CURRENT_ARTIFACT_TUPLE_URL:-https://durable-workflow.com/docs-page-release-audit.json}"
+resolver_mode="${1:-artifacts}"
+
+case "$resolver_mode" in
+  artifacts|--task-codec-evidence)
+    ;;
+  *)
+    printf 'resolve-current-artifacts: unsupported argument %s\n' "$resolver_mode" >&2
+    exit 1
+    ;;
+esac
 
 artifact_source="${DURABLE_WORKFLOW_ARTIFACT_SOURCE:-current}"
 legacy_resolve_latest="${DURABLE_WORKFLOW_RESOLVE_LATEST:-}"
@@ -59,6 +69,121 @@ require_command() {
     exit 1
   fi
 }
+
+normalize_task_codec_evidence() {
+  local name="$1"
+  local runtime="$2"
+  local artifact_name="$3"
+  local expected_version="$4"
+  local evidence="$5"
+
+  require_command node "validate task-codec rejection evidence"
+
+  printf '%s' "$evidence" | node -e '
+const [name, runtime, artifactName, expectedVersion] = process.argv.slice(1);
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  let evidence;
+  try {
+    evidence = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${name} is not valid JSON: ${error.message}`);
+  }
+
+  if (
+    !evidence
+    || evidence.schema !== "durable-workflow.sample-app.task-codec-rejection-probe"
+    || evidence.version !== 1
+    || evidence.runtime !== runtime
+  ) {
+    throw new Error(`${name} does not contain ${runtime} task-codec rejection evidence`);
+  }
+
+  const artifact = evidence.artifact;
+  const pythonVersion = value => {
+    const match = /^(\d+\.\d+\.\d+)(a|b|rc)(\d+)$/.exec(value);
+    if (!match) {
+      return value;
+    }
+    const channel = {a: "alpha", b: "beta", rc: "rc"}[match[2]];
+    return `${match[1]}-${channel}.${match[3]}`;
+  };
+  const observedVersion = runtime === "python"
+    ? pythonVersion(artifact?.version)
+    : artifact?.version;
+  if (!artifact || artifact.name !== artifactName || observedVersion !== expectedVersion) {
+    throw new Error(
+      `${name} artifact must be ${artifactName}:${expectedVersion}; received `
+      + `${JSON.stringify(artifact)}`,
+    );
+  }
+
+  process.stdout.write(JSON.stringify(evidence));
+});
+' "$name" "$runtime" "$artifact_name" "$expected_version"
+}
+
+emit_task_codec_evidence() {
+  local name="$1"
+  local runtime="$2"
+  local artifact_name="$3"
+  local expected_version="$4"
+  local evidence="${!name:-}"
+  local normalized
+
+  if [[ -z "$evidence" ]]; then
+    printf 'resolve-current-artifacts: %s is required to resolve exact-tuple task-codec evidence\n' \
+      "$name" >&2
+    exit 1
+  fi
+
+  if ! normalized="$(
+    normalize_task_codec_evidence \
+      "$name" \
+      "$runtime" \
+      "$artifact_name" \
+      "$expected_version" \
+      "$evidence"
+  )"; then
+    printf 'resolve-current-artifacts: failed to validate %s\n' "$name" >&2
+    exit 1
+  fi
+
+  emit_assignment "$name" "$normalized"
+}
+
+if [[ "$resolver_mode" == "--task-codec-evidence" ]]; then
+  for name in \
+    DURABLE_WORKFLOW_PHP_SDK_VERSION \
+    DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
+    DURABLE_WORKFLOW_RUST_SDK_VERSION
+  do
+    if [[ -z "${!name:-}" ]]; then
+      printf 'resolve-current-artifacts: %s is required to bind task-codec evidence to the exact tuple\n' \
+        "$name" >&2
+      exit 1
+    fi
+  done
+
+  emit_task_codec_evidence \
+    POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
+    php \
+    durable-workflow/sdk \
+    "$DURABLE_WORKFLOW_PHP_SDK_VERSION"
+  emit_task_codec_evidence \
+    POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
+    python \
+    durable-workflow \
+    "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"
+  emit_task_codec_evidence \
+    POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE \
+    rust \
+    durable-workflow \
+    "$DURABLE_WORKFLOW_RUST_SDK_VERSION"
+  exit 0
+fi
 
 parse_artifact_tuple_json() {
   local label="$1"

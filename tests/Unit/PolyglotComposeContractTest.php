@@ -588,6 +588,30 @@ SH,
         }
     }
 
+    public function test_polyglot_validation_fails_promptly_with_the_first_worker_startup_exception(): void
+    {
+        $output = [];
+        $exitCode = 0;
+        $startedAt = microtime(true);
+
+        $this->runPolyglotValidationWithFakeDocker(
+            'cold-cache',
+            'python-activity-worker',
+            $output,
+            $exitCode,
+        );
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertLessThan(10.0, microtime(true) - $startedAt);
+        $rendered = implode("\n", $output);
+        $this->assertStringContainsString(
+            "TypeError: Client.register_worker() missing 1 required keyword-only argument: 'capability_manifest'",
+            $rendered,
+        );
+        $this->assertStringContainsString('first retained worker startup exception', $rendered);
+        $this->assertStringNotContainsString('timed out after 90s', $rendered);
+    }
+
     public function test_polyglot_smoke_installs_published_cli_and_configures_waterline(): void
     {
         $compose = Yaml::parseFile($this->repoPath('polyglot/docker-compose.yml'));
@@ -951,6 +975,51 @@ SH,
         $this->assertSame('durable-workflow/waterline:'.$componentVersion.'@beta', $assignments['DURABLE_WORKFLOW_WATERLINE_PIN'] ?? null);
     }
 
+    public function test_polyglot_artifact_resolver_binds_task_codec_evidence_to_the_exact_tuple(): void
+    {
+        $version = '2.0.0-rc.53';
+        $evidence = static function (
+            string $runtime,
+            string $artifact,
+            ?string $artifactVersion = null,
+        ) use ($version): string {
+            return json_encode([
+                'schema' => 'durable-workflow.sample-app.task-codec-rejection-probe',
+                'version' => 1,
+                'runtime' => $runtime,
+                'artifact' => [
+                    'name' => $artifact,
+                    'version' => $artifactVersion ?? $version,
+                ],
+                'rejection_outcomes' => [],
+                'valid_controls' => [],
+                'summary' => ['status' => 'passed', 'failed_count' => 0],
+            ], JSON_THROW_ON_ERROR);
+        };
+        $phpEvidence = $evidence('php', 'durable-workflow/sdk');
+        $assignments = $this->resolveArtifactAssignments([
+            'DURABLE_WORKFLOW_PHP_SDK_VERSION' => $version,
+            'DURABLE_WORKFLOW_PYTHON_SDK_VERSION' => $version,
+            'DURABLE_WORKFLOW_RUST_SDK_VERSION' => $version,
+            'POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE' => $phpEvidence,
+            'POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE' => $evidence(
+                'python',
+                'durable-workflow',
+                '2.0.0rc53',
+            ),
+            'POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE' => $evidence('rust', 'durable-workflow'),
+        ], false, '--task-codec-evidence');
+
+        $this->assertSame(
+            json_decode($phpEvidence, true, flags: JSON_THROW_ON_ERROR),
+            json_decode(
+                $assignments['POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE'] ?? '',
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            ),
+        );
+    }
+
     public function test_polyglot_artifact_resolver_rejects_genuinely_unknown_tuple_key(): void
     {
         $fixture = $this->repoPath('tests/Fixtures/unknown-artifact-tuple.json');
@@ -1293,8 +1362,12 @@ SH,
     /**
      * @return list<string>
      */
-    private function runPolyglotValidationWithFakeDocker(string $cacheMode): array
-    {
+    private function runPolyglotValidationWithFakeDocker(
+        string $cacheMode,
+        ?string $failedService = null,
+        ?array &$runOutput = null,
+        ?int &$runExitCode = null,
+    ): array {
         $temporaryDirectory = sys_get_temp_dir().'/polyglot-validation-'.bin2hex(random_bytes(6));
         $dockerPath = $temporaryDirectory.'/docker';
         $logPath = $temporaryDirectory.'/docker.log';
@@ -1308,12 +1381,40 @@ printf '%s\n' "$*" >> "$POLYGLOT_FAKE_DOCKER_LOG"
 
 if [[ "${1:-}" == "compose" && "${2:-}" == "ps" && "${3:-}" == "-q" && "${4:-}" == "server" ]]; then
   printf 'stable-server-container\n'
+elif [[ "${1:-}" == "compose" && "${2:-}" == "ps" && "${3:-}" == "--all" && "${4:-}" == "-q" ]]; then
+  printf '%s-container\n' "${5:-unknown}"
 elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{.State.Running}}" ]]; then
   printf 'true\n'
 elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{if .State.Health}}{{.State.Health.Status}}{{end}}" ]]; then
   printf 'healthy\n'
+elif [[ "${1:-}" == "inspect" && "${3:-}" == "{{.State.Status}}" ]]; then
+  if [[ -n "${POLYGLOT_FAKE_FAILED_SERVICE:-}" && "${4:-}" == "${POLYGLOT_FAKE_FAILED_SERVICE}-container" ]]; then
+    printf 'exited\n'
+  else
+    printf 'running\n'
+  fi
+elif [[ "${1:-}" == "wait" ]]; then
+  if [[ -z "${POLYGLOT_FAKE_FAILED_SERVICE:-}" || "${2:-}" != "${POLYGLOT_FAKE_FAILED_SERVICE}-container" ]]; then
+    sleep 5
+  fi
 elif [[ "$*" == *"task_codec_rejection_probe.php"* || "$*" == *"task_codec_rejection_probe.py"* || "$*" == *"task-codec-rejection-probe"* ]]; then
-  printf '{}\n'
+  runtime=python
+  artifact=durable-workflow
+  version="$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"
+  if [[ "$*" == *"task_codec_rejection_probe.php"* ]]; then
+    runtime=php
+    artifact=durable-workflow/sdk
+    version="$DURABLE_WORKFLOW_PHP_SDK_VERSION"
+  elif [[ "$*" == *"task-codec-rejection-probe"* ]]; then
+    runtime=rust
+    version="$DURABLE_WORKFLOW_RUST_SDK_VERSION"
+  fi
+  printf '{"schema":"durable-workflow.sample-app.task-codec-rejection-probe","version":1,"runtime":"%s","artifact":{"name":"%s","version":"%s"}}\n' \
+    "$runtime" "$artifact" "$version"
+elif [[ "$*" == *"--readiness-only"* && -n "${POLYGLOT_FAKE_FAILED_SERVICE:-}" ]]; then
+  sleep 5
+elif [[ "${1:-}" == "compose" && "${2:-}" == "logs" && "$*" == *"${POLYGLOT_FAKE_FAILED_SERVICE:-missing}"* ]]; then
+  printf "TypeError: Client.register_worker() missing 1 required keyword-only argument: 'capability_manifest'\n"
 fi
 BASH);
         chmod($dockerPath, 0700);
@@ -1330,6 +1431,10 @@ BASH);
             'POLYGLOT_REGISTRATION_STEP_TIMEOUT_SECONDS' => '5',
             'POLYGLOT_SMOKE_TIMEOUT_SECONDS' => '5',
             'POLYGLOT_CLEANUP_TIMEOUT_SECONDS' => '5',
+            'POLYGLOT_FAKE_FAILED_SERVICE' => $failedService ?? '',
+            'DURABLE_WORKFLOW_PHP_SDK_VERSION' => '2.0.0-rc.53',
+            'DURABLE_WORKFLOW_PYTHON_SDK_VERSION' => '2.0.0-rc.40',
+            'DURABLE_WORKFLOW_RUST_SDK_VERSION' => '2.0.0-rc.38',
         ];
         $command = 'env';
         foreach ($environment as $name => $value) {
@@ -1339,7 +1444,11 @@ BASH);
 
         try {
             exec($command, $output, $exitCode);
-            $this->assertSame(0, $exitCode, implode("\n", $output));
+            if ($failedService === null) {
+                $this->assertSame(0, $exitCode, implode("\n", $output));
+            }
+            $runOutput = $output;
+            $runExitCode = $exitCode;
 
             $commands = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             $this->assertIsArray($commands);
@@ -1415,8 +1524,11 @@ BASH);
      * @param  array<string, string>  $env
      * @return array<string, string>
      */
-    private function resolveArtifactAssignments(array $env = [], bool $includeFixture = true): array
-    {
+    private function resolveArtifactAssignments(
+        array $env = [],
+        bool $includeFixture = true,
+        string $arguments = '',
+    ): array {
         $command = 'env -i PATH='.escapeshellarg((string) getenv('PATH'));
         if ($includeFixture) {
             $env = [
@@ -1428,6 +1540,9 @@ BASH);
             $command .= ' '.escapeshellarg($name.'='.$value);
         }
         $command .= ' bash '.escapeshellarg($this->repoPath('scripts/resolve-current-artifacts.sh'));
+        if ($arguments !== '') {
+            $command .= ' '.escapeshellarg($arguments);
+        }
 
         $output = [];
         $exitCode = 0;

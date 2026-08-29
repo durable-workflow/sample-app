@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import importlib.util
 import sys
 import types
@@ -86,6 +88,65 @@ class NativeBinaryWorkerTest(unittest.TestCase):
         self.assertEqual(
             self.payload["binary_base64"],
             legacy_evidence["activity"]["base64"],
+        )
+
+    def test_manual_typed_error_worker_registers_truthful_current_capabilities(
+        self,
+    ) -> None:
+        async def exercise_registration() -> dict[str, Any]:
+            registered = asyncio.Event()
+
+            class FakeClient:
+                registration: dict[str, Any] = {}
+
+                async def register_worker(self, **kwargs: Any) -> dict[str, int]:
+                    self.registration = kwargs
+                    registered.set()
+
+                    return {"heartbeat_interval_seconds": 30}
+
+                async def poll_activity_task(self, **_kwargs: Any) -> None:
+                    await asyncio.Future()
+
+            client = FakeClient()
+            worker = asyncio.create_task(
+                activities.run_typed_error_worker(client, "typed-error-worker"),
+            )
+            await asyncio.wait_for(registered.wait(), timeout=1)
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
+
+            return client.registration
+
+        registration = asyncio.run(exercise_registration())
+
+        self.assertEqual([], registration["supported_workflow_types"])
+        self.assertEqual(
+            [activities.PYTHON_TYPED_ERROR_ACTIVITY],
+            registration["supported_activity_types"],
+        )
+        self.assertEqual([], registration["capabilities"])
+        self.assertEqual(1, registration["max_concurrent_activity_tasks"])
+        self.assertEqual(
+            {
+                "local_activities": {
+                    "supported": False,
+                    "minimum_protocol_version": "1.18",
+                    "reason": "python_worker_does_not_execute_record_local_activity",
+                },
+                "worker_sessions": {
+                    "supported": False,
+                    "minimum_protocol_version": "1.18",
+                    "reason": "python_worker_has_no_typed_session_lifecycle",
+                },
+                "sticky_execution": {
+                    "supported": False,
+                    "minimum_protocol_version": "1.18",
+                    "reason": "python_worker_uses_complete_durable_history_replay",
+                },
+            },
+            registration["capability_manifest"],
         )
 
     def test_python_activity_rejects_a_base64_metadata_object(self) -> None:

@@ -36,9 +36,23 @@ topology_services=(
   rust-activity-worker
   waterline
 )
+worker_services=(
+  python-activity-worker
+  php-same-workflow-worker
+  php-same-activity-worker
+  php-workflow-worker
+  polyglot-workflow-worker
+  php-to-rust-workflow-worker
+  php-query-worker
+  php-activity-worker
+  python-workflow-worker
+  rust-workflow-worker
+  rust-activity-worker
+)
 
 server_container_id=""
 failure_context="validation failure"
+first_worker_startup_exception=""
 
 compose_diagnostics() {
   local context="$1"
@@ -48,6 +62,10 @@ compose_diagnostics() {
   printf 'polyglot-validation: expected server container=%s current=%s\n' \
     "${server_container_id:-not-captured}" \
     "$(docker compose ps -q server 2>/dev/null || true)" >&2
+  if [[ -n "$first_worker_startup_exception" ]]; then
+    printf '\npolyglot-validation: first retained worker startup exception\n%s\n' \
+      "$first_worker_startup_exception" >&2
+  fi
   docker compose ps --all >&2 || true
   docker compose images >&2 || true
   docker compose logs \
@@ -160,6 +178,143 @@ capture_task_codec_probe() {
   fi
 }
 
+capture_first_worker_startup_exception() {
+  local service
+  local container_id
+  local status
+
+  for service in "${worker_services[@]}"; do
+    container_id="$(docker compose ps --all -q "$service" 2>/dev/null || true)"
+    [[ -n "$container_id" ]] || continue
+
+    status="$(
+      docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true
+    )"
+    if [[ "$status" == "running" ]]; then
+      continue
+    fi
+    if [[ "$status" != "exited" && "$status" != "dead" && "$status" != "restarting" ]]; then
+      continue
+    fi
+
+    if [[ -z "$first_worker_startup_exception" ]]; then
+      first_worker_startup_exception="$(
+        docker compose logs \
+          --no-color \
+          --timestamps \
+          --tail="${POLYGLOT_STARTUP_EXCEPTION_LOG_LINES:-80}" \
+          "$service" 2>&1 || true
+      )"
+    fi
+    failure_context="worker startup for $service"
+    printf 'polyglot-validation: %s stopped during registration readiness (status=%s)\n' \
+      "$service" \
+      "$status" >&2
+    if [[ -n "$first_worker_startup_exception" ]]; then
+      printf '%s\n' "$first_worker_startup_exception" >&2
+    fi
+    return 1
+  done
+
+  return 0
+}
+
+retain_worker_startup_exception() {
+  local service="$1"
+
+  if [[ -z "$first_worker_startup_exception" ]]; then
+    first_worker_startup_exception="$(
+      docker compose logs \
+        --no-color \
+        --timestamps \
+        --tail="${POLYGLOT_STARTUP_EXCEPTION_LOG_LINES:-80}" \
+        "$service" 2>&1 || true
+    )"
+  fi
+  failure_context="worker startup for $service"
+  printf 'polyglot-validation: %s stopped during registration readiness\n' \
+    "$service" >&2
+  if [[ -n "$first_worker_startup_exception" ]]; then
+    printf '%s\n' "$first_worker_startup_exception" >&2
+  fi
+}
+
+run_registration_readiness_step() {
+  local name="proving every required worker registration on the stable server"
+  local timeout_seconds="${POLYGLOT_REGISTRATION_STEP_TIMEOUT_SECONDS:-150}"
+  local service
+  local container_id
+  local readiness_pid
+  local completed_pid
+  local status
+  local watcher_pid
+  local -a wait_pids=()
+  local -a watcher_pids=()
+  local -A watcher_services=()
+
+  printf '\n==> %s\n' "$name"
+  timeout "${timeout_seconds}s" \
+    docker compose run \
+      --rm \
+      --no-deps \
+      -e "POLYGLOT_REGISTRATION_TIMEOUT_SECONDS=${POLYGLOT_REGISTRATION_TIMEOUT_SECONDS:-90}" \
+      smoke \
+      python \
+      /app/scripts/polyglot_smoke.py \
+      --readiness-only &
+  readiness_pid=$!
+  wait_pids+=("$readiness_pid")
+
+  for service in "${worker_services[@]}"; do
+    container_id="$(docker compose ps --all -q "$service" 2>/dev/null || true)"
+    if [[ -z "$container_id" ]]; then
+      retain_worker_startup_exception "$service"
+      kill "$readiness_pid" 2>/dev/null || true
+      wait "$readiness_pid" 2>/dev/null || true
+      return 1
+    fi
+
+    docker wait "$container_id" >/dev/null &
+    watcher_pid=$!
+    watcher_pids+=("$watcher_pid")
+    wait_pids+=("$watcher_pid")
+    watcher_services["$watcher_pid"]="$service"
+  done
+
+  set +e
+  wait -n -p completed_pid "${wait_pids[@]}"
+  status=$?
+  set -e
+
+  if [[ "$completed_pid" != "$readiness_pid" ]]; then
+    retain_worker_startup_exception "${watcher_services[$completed_pid]}"
+    kill "$readiness_pid" 2>/dev/null || true
+    for watcher_pid in "${watcher_pids[@]}"; do
+      kill "$watcher_pid" 2>/dev/null || true
+    done
+    wait 2>/dev/null || true
+    return 1
+  fi
+
+  for watcher_pid in "${watcher_pids[@]}"; do
+    kill "$watcher_pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
+
+  if [[ "$status" -eq 0 ]]; then
+    capture_first_worker_startup_exception
+    return $?
+  fi
+
+  failure_context="$name"
+  if [[ "$status" -eq 124 ]]; then
+    printf 'polyglot-validation: %s timed out after %ss\n' "$name" "$timeout_seconds" >&2
+  else
+    printf 'polyglot-validation: %s exited with status %d\n' "$name" "$status" >&2
+  fi
+  return "$status"
+}
+
 assert_server_stable() {
   local context="$1"
   local current_container_id
@@ -252,6 +407,17 @@ capture_task_codec_probe \
   --entrypoint task-codec-rejection-probe \
   rust-workflow-worker
 
+task_codec_evidence_assignments="$(
+  POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE="$php_task_codec_rejection_evidence" \
+  POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE="$python_task_codec_rejection_evidence" \
+  POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE="$rust_task_codec_rejection_evidence" \
+    "$repo_root/scripts/resolve-current-artifacts.sh" --task-codec-evidence
+)"
+while IFS= read -r assignment; do
+  [[ -n "$assignment" ]] || continue
+  export "$assignment"
+done <<< "$task_codec_evidence_assignments"
+
 run_step \
   "starting the complete polyglot topology with one server bootstrap" \
   "${POLYGLOT_TOPOLOGY_TIMEOUT_SECONDS:-240}" \
@@ -264,17 +430,7 @@ run_step \
 
 assert_server_stable "topology readiness"
 
-run_step \
-  "proving every required worker registration on the stable server" \
-  "${POLYGLOT_REGISTRATION_STEP_TIMEOUT_SECONDS:-150}" \
-  docker compose run \
-    --rm \
-    --no-deps \
-    -e "POLYGLOT_REGISTRATION_TIMEOUT_SECONDS=${POLYGLOT_REGISTRATION_TIMEOUT_SECONDS:-90}" \
-    smoke \
-    python \
-    /app/scripts/polyglot_smoke.py \
-    --readiness-only
+run_registration_readiness_step
 
 assert_server_stable "worker registration"
 
@@ -284,9 +440,9 @@ run_step \
   docker compose run \
     --rm \
     --no-deps \
-    -e "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=$php_task_codec_rejection_evidence" \
-    -e "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=$python_task_codec_rejection_evidence" \
-    -e "POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE=$rust_task_codec_rejection_evidence" \
+    -e "POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE=$POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE" \
+    -e "POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE=$POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE" \
+    -e "POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE=$POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE" \
     smoke
 
 assert_server_stable "polyglot smoke"
