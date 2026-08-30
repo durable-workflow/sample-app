@@ -3,12 +3,12 @@
   "schemaVersion": 1,
   "source": "https://github.com/durable-workflow/sample-app/actions/workflows/smoke.yml",
   "artifacts": {
-    "cli": "2.0.0-rc.35",
-    "sdk-php": "2.0.0-rc.47",
-    "sdk-python": "2.0.0-rc.36",
-    "sdk-rust": "2.0.0-rc.34",
-    "server": "2.0.0-rc.50",
-    "waterline": "2.0.0-rc.32",
-    "workflow": "2.0.0-rc.46"
+    "cli": "2.0.0-rc.36",
+    "sdk-php": "2.0.0-rc.53",
+    "sdk-python": "2.0.0-rc.42",
+    "sdk-rust": "2.0.0-rc.38",
+    "server": "2.0.0-rc.59",
+    "waterline": "2.0.0-rc.33",
+    "workflow": "2.0.0-rc.52"
   }
 }
