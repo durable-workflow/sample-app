@@ -65,7 +65,7 @@ RUN set -eux; \
         --batch \
         --skip-column-names \
         --execute='SELECT COUNT(*) FROM migrations')"; \
-    test "$migration_count" = 49; \
+    test "$migration_count" = 50; \
     mariadb-admin \
         --user=root \
         --password="$MYSQL_ROOT_PASSWORD" \

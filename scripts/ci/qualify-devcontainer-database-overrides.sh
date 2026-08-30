@@ -36,7 +36,7 @@ verify_database_contract() {
         [ "$MYSQL_DATABASE" = codespaces_override ]
         [ "$MYSQL_USER" = codespaces_user ]
         [ "$MYSQL_PASSWORD" = codespaces_password ]
-        [ "$(query_database "SELECT COUNT(*) FROM migrations")" = 49 ]
+        [ "$(query_database "SELECT COUNT(*) FROM migrations")" = 50 ]
         [ "$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")" = 49 ]
 
         query_testing_database "DROP TABLE IF EXISTS codespaces_testing_probe"

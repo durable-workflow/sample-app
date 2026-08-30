@@ -1068,6 +1068,7 @@ BASH,
     {
         $script = $this->contents('scripts/ci/qualify-devcontainer-image.sh');
         $databaseOverrides = $this->contents('scripts/ci/qualify-devcontainer-database-overrides.sh');
+        $dockerfile = $this->contents('.devcontainer/docker/Dockerfile');
         $entrypoint = $this->contents('.devcontainer/docker/start-container');
         $identityWaiter = $this->contents('.devcontainer/docker/wait-for-identity-ready');
         $identityCompose = $this->contents('scripts/ci/devcontainer-identity.sh');
@@ -1094,6 +1095,8 @@ BASH,
         $this->assertStringContainsString('information_schema.tables', $script);
         $this->assertStringContainsString('expected_migration_count=50', $script);
         $this->assertStringContainsString('expected_table_count=49', $script);
+        $this->assertStringContainsString('test "$migration_count" = 50', $dockerfile);
+        $this->assertStringContainsString('[ "$(query_database "SELECT COUNT(*) FROM migrations")" = 50 ]', $databaseOverrides);
         preg_match_all('/^verify_database_schema$/m', $script, $schemaVerifications, PREG_OFFSET_CAPTURE);
         $this->assertCount(4, $schemaVerifications[0]);
         $this->assertLessThan(
