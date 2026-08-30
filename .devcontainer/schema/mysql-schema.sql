@@ -13,6 +13,7 @@ CREATE TABLE `activity_attempts` (
   `workflow_run_id` varchar(26) NOT NULL,
   `activity_execution_id` varchar(26) NOT NULL,
   `workflow_task_id` varchar(26) DEFAULT NULL,
+  `worker_attempt_id` varchar(255) DEFAULT NULL,
   `attempt_number` int(10) unsigned NOT NULL,
   `status` varchar(255) NOT NULL,
   `lease_owner` varchar(255) DEFAULT NULL,
@@ -1449,3 +1450,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (46,'2026_05_09_000
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (47,'2026_05_20_000100_add_keyword_list_to_workflow_search_attributes',1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (48,'2026_07_13_000100_add_output_payload_codec_to_workflow_runs',1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (49,'2026_07_14_000100_add_request_id_to_workflow_commands',1);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (50,'2026_08_27_000100_add_worker_attempt_id_to_activity_attempts',1);

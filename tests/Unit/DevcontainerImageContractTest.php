@@ -1092,7 +1092,7 @@ BASH,
         $this->assertStringContainsString('php artisan migrate:status --pending=1 --no-interaction', $script);
         $this->assertStringContainsString('SELECT COUNT(*) FROM migrations', $script);
         $this->assertStringContainsString('information_schema.tables', $script);
-        $this->assertStringContainsString('expected_migration_count=49', $script);
+        $this->assertStringContainsString('expected_migration_count=50', $script);
         $this->assertStringContainsString('expected_table_count=49', $script);
         preg_match_all('/^verify_database_schema$/m', $script, $schemaVerifications, PREG_OFFSET_CAPTURE);
         $this->assertCount(4, $schemaVerifications[0]);

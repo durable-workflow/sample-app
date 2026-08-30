@@ -147,7 +147,7 @@ verify_database_schema() {
                 --execute="$1"
         }
 
-        expected_migration_count=49
+        expected_migration_count=50
         expected_table_count=49
         migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
         table_count="$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"

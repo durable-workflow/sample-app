@@ -87,7 +87,7 @@ RUN set -eux; \
 FROM php:8.4-cli-bookworm
 
 ARG VCS_REF=unknown
-ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.35
+ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0-rc.36
 
 LABEL org.opencontainers.image.title="Durable Workflow Sample App development container" \
     org.opencontainers.image.description="PHP, Python, Rust, Docker, dw, Node, Composer, and Chromium environment for the Durable Workflow Sample App" \

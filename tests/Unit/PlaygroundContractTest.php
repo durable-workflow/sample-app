@@ -698,6 +698,11 @@ PYTHON;
 
     public function test_doctor_composer_probes_cannot_mutate_the_prepared_home(): void
     {
+        $artifacts = json_decode(
+            file_get_contents($this->path('polyglot/qualified-artifact-tuple.json')) ?: '',
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        )['artifacts'];
         $filesystem = new Filesystem;
         $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-doctor-'.bin2hex(random_bytes(8));
         $fakeBinaryDirectory = $temporaryDirectory.'/bin';
@@ -713,7 +718,7 @@ PYTHON;
         file_put_contents(
             $phpRuntime.'/vendor/durable-workflow/sdk/docs/quickstart-contract.json',
             json_encode([
-                'package' => ['published_version' => '2.0.0-rc.47'],
+                'package' => ['published_version' => $artifacts['sdk-php']],
             ], JSON_THROW_ON_ERROR),
         );
         file_put_contents($preparedSentinel, "prepared\n");
@@ -729,7 +734,7 @@ mkdir -p "$COMPOSER_CACHE_DIR/files"
 if [[ "$1" == "--version" ]]; then
     printf 'Composer version 2.10.2 2026-07-01 11:24:45\n'
 else
-    printf '{"versions":["2.0.0-rc.47"]}\n'
+    printf '{"versions":["%s"]}\n' "$FAKE_PHP_SDK_VERSION"
 fi
 BASH);
 
@@ -739,7 +744,7 @@ BASH);
 if [[ " $* " == *" --version "* ]]; then
     printf 'Python 3.11.0\n'
 elif [[ " $* " == *" importlib.metadata "* ]]; then
-    printf '2.0.0rc36\n'
+    printf '%s\n' "$FAKE_PYTHON_SDK_VERSION"
 fi
 BASH,
             'pip' => 'printf "pip 26.0\\n"',
@@ -775,25 +780,35 @@ from pathlib import Path
 
 playground = runpy.run_path(sys.argv[1])
 doctor = playground["doctor"]
+artifacts = json.loads(Path(sys.argv[3]).read_text())["artifacts"]
 doctor.__globals__["resolve_artifacts"] = lambda: {
-    "DURABLE_SERVER_IMAGE": "durableworkflow/server:2.0.0-rc.50",
-    "DURABLE_WORKFLOW_PHP_SDK_VERSION": "2.0.0-rc.47",
-    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": "2.0.0-rc.36",
-    "DURABLE_WORKFLOW_RUST_SDK_VERSION": "2.0.0-rc.34",
+    "DURABLE_SERVER_IMAGE": f"durableworkflow/server:{artifacts['server']}",
+    "DURABLE_WORKFLOW_PHP_SDK_VERSION": artifacts["sdk-php"],
+    "DURABLE_WORKFLOW_PYTHON_SDK_VERSION": artifacts["sdk-python"],
+    "DURABLE_WORKFLOW_RUST_SDK_VERSION": artifacts["sdk-rust"],
 }
 doctor.__globals__["php_runtime"] = lambda: Path(sys.argv[2])
 versions = doctor()
-assert versions["sdk_php_laravel"] == "2.0.0-rc.47", json.dumps(versions)
+assert versions["sdk_php_laravel"] == artifacts["sdk-php"], json.dumps(versions)
 PYTHON;
 
         try {
             $process = new Process(
-                ['python3', '-c', $harness, $this->path('scripts/playground'), $phpRuntime],
+                [
+                    'python3',
+                    '-c',
+                    $harness,
+                    $this->path('scripts/playground'),
+                    $phpRuntime,
+                    $this->path('polyglot/qualified-artifact-tuple.json'),
+                ],
                 env: [
                     ...getenv(),
                     'PATH' => $fakeBinaryDirectory.PATH_SEPARATOR.getenv('PATH'),
                     'COMPOSER_HOME' => $preparedComposerHome,
                     'FAKE_COMPOSER_STATE_LOG' => $composerStateLog,
+                    'FAKE_PHP_SDK_VERSION' => $artifacts['sdk-php'],
+                    'FAKE_PYTHON_SDK_VERSION' => str_replace('-rc.', 'rc', $artifacts['sdk-python']),
                 ],
             );
             $process->mustRun();
