@@ -1,5 +1,8 @@
 # Repository agent guidance
 
+Follow the [Durable Workflow organization-wide agent guide](https://github.com/durable-workflow/.github/blob/main/AGENTS.md).
+The instructions below are repository-specific additions.
+
 When a user asks to create and run a Durable Workflow workflow and activity,
 start with the repository playground instead of the conformance matrix.
 
