@@ -712,7 +712,3 @@ Maintainers tagging an upstream release should read
 [`docs/release-notes-feature-contract.md`](docs/release-notes-feature-contract.md)
 first; it names the bar a sample must meet to be cited in upstream
 release notes and the checklist that runs before a release tag lands.
-
-## Public Boundary Checks
-
-This is a public repository. Do not add private tracker names, workspace-only absolute paths, or loop/lane metadata to files or new commit metadata. Run `scripts/check-public-boundary.sh` before publishing changes; CI runs the same scan on pushes and pull requests.
