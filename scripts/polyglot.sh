@@ -38,7 +38,10 @@ printf '==> PolyglotWorkflow: building PHP %s, Python %s, and Rust %s workers\n'
 
 printf '==> PolyglotWorkflow: starting Durable Workflow Server %s and three runtime workers\n' \
   "$DURABLE_SERVER_IMAGE"
-"${compose[@]}" pull --policy missing bootstrap server mysql redis
+# Refresh the product image so the declared artifact tuple cannot resolve to a
+# stale local cache entry.
+"${compose[@]}" pull --policy always bootstrap server
+"${compose[@]}" pull --policy missing mysql redis
 "${compose[@]}" up \
   --detach \
   --no-build \

@@ -1,14 +1,14 @@
 {
   "schema": "durable-workflow.sample-app.polyglot-qualified-artifact-tuple",
   "schemaVersion": 1,
-  "source": "https://github.com/durable-workflow/sample-app/actions/workflows/smoke.yml",
+  "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
-    "cli": "2.0.0-rc.36",
-    "sdk-php": "2.0.0-rc.53",
-    "sdk-python": "2.0.0-rc.42",
-    "sdk-rust": "2.0.0-rc.38",
-    "server": "2.0.0-rc.59",
-    "waterline": "2.0.0-rc.33",
-    "workflow": "2.0.0-rc.52"
+    "cli": "2.0.0",
+    "sdk-php": "2.0.0",
+    "sdk-python": "2.0.0",
+    "sdk-rust": "2.0.0",
+    "server": "2.0.0",
+    "waterline": "2.0.0",
+    "workflow": "2.0.2"
   }
 }

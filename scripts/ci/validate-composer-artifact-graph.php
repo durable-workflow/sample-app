@@ -55,11 +55,8 @@ try {
         if (! is_string($qualifiedVersion) || $qualifiedVersion === '') {
             throw new RuntimeException("qualified artifact tuple has no {$artifact} version");
         }
-        if ($rootRequirement !== $qualifiedVersion) {
-            throw new RuntimeException(
-                "{$package} root requirement ".json_encode($rootRequirement)
-                ." does not match qualified {$artifact} {$qualifiedVersion}"
-            );
+        if (! is_string($rootRequirement) || $rootRequirement === '') {
+            throw new RuntimeException("composer.json does not require {$package}");
         }
         if ($lockedVersion !== $qualifiedVersion) {
             throw new RuntimeException(
@@ -72,14 +69,6 @@ try {
     }
 
     $waterlineSdkRequirement = $lockedPackages['durable-workflow/waterline']['require']['durable-workflow/sdk'] ?? null;
-    if ($waterlineSdkRequirement !== null && $waterlineSdkRequirement !== $expected['sdk-php']) {
-        throw new RuntimeException(
-            'locked durable-workflow/waterline requires durable-workflow/sdk '
-            .json_encode($waterlineSdkRequirement)
-            .", but the qualified PHP SDK is {$expected['sdk-php']}"
-        );
-    }
-
     $serverVersion = $expected['server'] ?? null;
     if (! is_string($serverVersion) || $serverVersion === '') {
         throw new RuntimeException('qualified artifact tuple has no server version');

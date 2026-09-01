@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "durable-workflow/sample-app",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Runnable Laravel, PHP, Python, and Rust examples for Durable Workflow 2.0.",
     "keywords": [
         "laravel",
         "framework"
@@ -11,9 +11,9 @@
     "require": {
         "php": "^8.4",
         "durable-workflow/ai": "dev-main",
-        "durable-workflow/sdk": "2.0.0-rc.53",
-        "durable-workflow/waterline": "2.0.0-rc.33",
-        "durable-workflow/workflow": "2.0.0-rc.52",
+        "durable-workflow/sdk": "^2.0",
+        "durable-workflow/waterline": "^2.0",
+        "durable-workflow/workflow": "^2.0",
         "laravel/ai": "^0.6.0",
         "laravel/framework": "^13.0",
         "laravel/mcp": "^0.6.0",

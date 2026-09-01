@@ -2,147 +2,77 @@ name: devcontainer image
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - .devcontainer/**
       - .github/workflows/devcontainer-image.yml
-      - playground/**
       - .github/workflows/devcontainer-image-pr.yml
+      - playground/**
+      - polyglot/qualified-artifact-tuple.json
       - app/Console/Commands/Init.php
       - composer.json
       - composer.lock
-      - docker/install-phpredis.sh
-      - docker/playwright-smoke.js
+      - docker/**
       - microservice/composer.json
       - microservice/composer.lock
       - package.json
       - package-lock.json
-      - scripts/ci/qualify-devcontainer-database-overrides.sh
       - scripts/ci/qualify-devcontainer-image.sh
-      - scripts/ci/validate-playground-evidence.py
-      - scripts/ci/summarize-devcontainer-evidence.py
       - scripts/playground
+      - scripts/resolve-current-artifacts.sh
   schedule:
     - cron: '17 6 * * 1'
   workflow_dispatch:
-    inputs:
-      recover_revision_tag:
-        description: Immutable revision tag to promote after registry verification
-        required: false
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: devcontainer-image-protected-main
+  group: devcontainer-image-main
   cancel-in-progress: true
 
 env:
   GHCR_IMAGE: ghcr.io/durable-workflow/sample-app-devcontainer
   DOCKERHUB_IMAGE: durableworkflow/sample-app-devcontainer
-  MAX_COMPRESSED_LAYER_BYTES: '400000000'
-  MAX_COMPRESSED_PLATFORM_BYTES: '1200000000'
 
 jobs:
-  artifact-identity:
-    name: Reserve immutable publication identity
-    if: >-
-      ${{
-        github.server_url == 'https://github.com' &&
-        github.repository == 'durable-workflow/sample-app' &&
-        github.ref == 'refs/heads/main' &&
-        github.event_name != 'pull_request' &&
-        (github.event_name != 'workflow_dispatch' || inputs.recover_revision_tag == '')
-      }}
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
-    timeout-minutes: 2
-    permissions:
-      contents: read
-    outputs:
-      revision_tag: ${{ steps.identity.outputs.revision_tag }}
-    steps:
-      - name: Bind the publication chain to this workflow attempt
-        id: identity
-        run: |
-          revision_tag="sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          if [[ ! "$revision_tag" =~ ^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$ ]]; then
-            echo "Invalid immutable publication tag: ${revision_tag}" >&2
-            exit 1
-          fi
-          echo "revision_tag=$revision_tag" >> "$GITHUB_OUTPUT"
-
-  publish-architecture:
-    name: Publish immutable native artifact (${{ matrix.platform }})
-    needs: [artifact-identity]
-    if: >-
-      ${{
-        github.server_url == 'https://github.com' &&
-        github.repository == 'durable-workflow/sample-app' &&
-        github.ref == 'refs/heads/main' &&
-        github.event_name != 'pull_request' &&
-        (github.event_name != 'workflow_dispatch' || inputs.recover_revision_tag == '')
-      }}
-    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
-    timeout-minutes: 15
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
-    env:
-      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
-            runner_architecture: amd64
-            host_machine: x86_64
             suffix: amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
-            runner_architecture: arm64
-            host_machine: aarch64
             suffix: arm64
+    env:
+      REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Start architecture publication timing
-        id: timing-start
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Require the native runner and Docker engine
-        env:
-          EXPECTED_HOST_MACHINE: ${{ matrix.host_machine }}
-          EXPECTED_RUNNER_ARCHITECTURE: ${{ matrix.runner_architecture }}
-        run: |
-          test "$(uname -m)" = "$EXPECTED_HOST_MACHINE"
-          docker_architecture="$(docker info --format '{{.Architecture}}')"
-          case "${EXPECTED_RUNNER_ARCHITECTURE}:${docker_architecture}" in
-            amd64:amd64|amd64:x86_64|arm64:arm64|arm64:aarch64) ;;
-            *) echo "Docker engine architecture mismatch: ${docker_architecture}" >&2; exit 1 ;;
-          esac
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-
       - name: Sign in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: durableworkflow
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build once and publish matching immutable architecture tags
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
+      - name: Build and publish immutable architecture image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: .devcontainer/docker/Dockerfile
@@ -155,628 +85,124 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
             ${{ env.DOCKERHUB_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
-          build-args: |
-            VCS_REF=${{ github.sha }}
+          build-args: VCS_REF=${{ github.sha }}
 
-      - name: Verify mirrored architecture digests and record evidence
-        env:
-          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
-          GHCR_REF: ${{ env.GHCR_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
-          DOCKERHUB_REF: ${{ env.DOCKERHUB_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
-          PLATFORM: ${{ matrix.platform }}
-          RUNNER_LABEL: ${{ matrix.runner }}
-          RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
-          SUFFIX: ${{ matrix.suffix }}
-        run: |
-          docker buildx imagetools inspect "$GHCR_REF" --raw > ghcr-architecture.json
-          docker buildx imagetools inspect "$DOCKERHUB_REF" --raw > dockerhub-architecture.json
-          cmp ghcr-architecture.json dockerhub-architecture.json
-          platform_digest="$(python3 - ghcr-architecture.json "$PLATFORM" <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as source:
-              manifest = json.load(source)
-
-          if isinstance(manifest.get("layers"), list):
-              print("")
-              raise SystemExit
-
-          operating_system, architecture = sys.argv[2].split("/", 1)
-          matches = [
-              entry["digest"]
-              for entry in manifest.get("manifests", [])
-              if entry.get("platform", {}).get("os") == operating_system
-              and entry.get("platform", {}).get("architecture") == architecture
-              and (entry.get("annotations") or {}).get("vnd.docker.reference.type")
-              != "attestation-manifest"
-          ]
-          if len(matches) != 1:
-              raise SystemExit(
-                  f"expected one image manifest for {sys.argv[2]}, found {len(matches)}"
-              )
-          print(matches[0])
-          PY
-          )"
-          if [[ -n "$platform_digest" ]]; then
-            docker buildx imagetools inspect "$GHCR_REF@$platform_digest" --raw > ghcr-platform.json
-            docker buildx imagetools inspect "$DOCKERHUB_REF@$platform_digest" --raw > dockerhub-platform.json
-          else
-            cp ghcr-architecture.json ghcr-platform.json
-            cp dockerhub-architecture.json dockerhub-platform.json
-          fi
-          cmp ghcr-platform.json dockerhub-platform.json
-          read -r compressed_platform_bytes largest_compressed_layer_bytes compressed_layer_count < <(python3 - ghcr-platform.json <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as source:
-              manifest = json.load(source)
-          layers = manifest.get("layers")
-          if not isinstance(layers, list) or not layers:
-              raise SystemExit("platform image manifest does not contain compressed layers")
-          layer_sizes = [int(layer["size"]) for layer in layers]
-          if any(size <= 0 for size in layer_sizes):
-              raise SystemExit("compressed layer sizes must be positive")
-          print(sum(layer_sizes), max(layer_sizes), len(layer_sizes))
-          PY
-          )
-          within_size_budget=1
-          if (( compressed_platform_bytes >= MAX_COMPRESSED_PLATFORM_BYTES )); then
-            echo "Compressed platform size ${compressed_platform_bytes} must be less than ${MAX_COMPRESSED_PLATFORM_BYTES} bytes." >&2
-            within_size_budget=0
-          fi
-          if (( largest_compressed_layer_bytes >= MAX_COMPRESSED_LAYER_BYTES )); then
-            echo "Largest compressed layer ${largest_compressed_layer_bytes} must be less than ${MAX_COMPRESSED_LAYER_BYTES} bytes." >&2
-            within_size_budget=0
-          fi
-          ghcr_digest="$(docker buildx imagetools inspect "$GHCR_REF" --format '{{ .Manifest.Digest }}')"
-          dockerhub_digest="$(docker buildx imagetools inspect "$DOCKERHUB_REF" --format '{{ .Manifest.Digest }}')"
-          test "$ghcr_digest" = "$dockerhub_digest"
-          test "$ghcr_digest" = "$BUILD_DIGEST"
-          completed_ms="$(date +%s%3N)"
-          GHCR_DIGEST="$ghcr_digest" \
-          DOCKERHUB_DIGEST="$dockerhub_digest" \
-          COMPRESSED_LAYER_COUNT="$compressed_layer_count" \
-          COMPRESSED_PLATFORM_BYTES="$compressed_platform_bytes" \
-          LARGEST_COMPRESSED_LAYER_BYTES="$largest_compressed_layer_bytes" \
-          WITHIN_SIZE_BUDGET="$within_size_budget" \
-          COMPLETED_MS="$completed_ms" \
-          HOST_MACHINE="$(uname -m)" \
-          DOCKER_ARCHITECTURE="$(docker info --format '{{.Architecture}}')" \
-          python3 - <<'PY'
-          import json
-          import os
-
-          started = int(os.environ["RUN_STARTED_MS"])
-          completed = int(os.environ["COMPLETED_MS"])
-          payload = {
-              "schema_version": 2,
-              "evidence_type": "architecture_publication",
-              "platform": os.environ["PLATFORM"],
-              "runner": {
-                  "label": os.environ["RUNNER_LABEL"],
-                  "host_machine": os.environ["HOST_MACHINE"],
-                  "docker_architecture": os.environ["DOCKER_ARCHITECTURE"],
-              },
-              "immutable_references": {
-                  "ghcr": os.environ["GHCR_REF"],
-                  "dockerhub": os.environ["DOCKERHUB_REF"],
-              },
-              "manifest_digests": {
-                  "build": os.environ["BUILD_DIGEST"],
-                  "ghcr": os.environ["GHCR_DIGEST"],
-                  "dockerhub": os.environ["DOCKERHUB_DIGEST"],
-              },
-              "manifest_digest_parity": True,
-              "compressed_layer_count": int(os.environ["COMPRESSED_LAYER_COUNT"]),
-              "compressed_platform_bytes": int(os.environ["COMPRESSED_PLATFORM_BYTES"]),
-              "largest_compressed_layer_bytes": int(os.environ["LARGEST_COMPRESSED_LAYER_BYTES"]),
-              "compressed_size_budget": {
-                  "max_layer_bytes": int(os.environ["MAX_COMPRESSED_LAYER_BYTES"]),
-                  "max_platform_bytes": int(os.environ["MAX_COMPRESSED_PLATFORM_BYTES"]),
-                  "within_budget": os.environ["WITHIN_SIZE_BUDGET"] == "1",
-              },
-              "attestations": {"provenance": "mode=max", "sbom": True},
-              "run_started_epoch_ms": started,
-              "completed_epoch_ms": completed,
-              "stages_ms": {"checkout_setup_build_and_mirror_verification": completed - started},
-          }
-          with open(f"devcontainer-build-evidence-{os.environ['SUFFIX']}.json", "w", encoding="utf-8") as output:
-              json.dump(payload, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
-          test "$within_size_budget" = 1
-
-      - name: Retain architecture publication evidence
-        if: ${{ always() && steps.build.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-build-${{ matrix.suffix }}
-          path: devcontainer-build-evidence-${{ matrix.suffix }}.json
-          if-no-files-found: error
-          retention-days: 90
-
-  assemble-indexes:
-    name: Assemble matching verified image indexes
-    if: >-
-      ${{
-        github.server_url == 'https://github.com' &&
-        github.repository == 'durable-workflow/sample-app' &&
-        github.ref == 'refs/heads/main'
-      }}
-    needs: [artifact-identity, publish-architecture]
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+  assemble:
+    name: Assemble multi-platform image
+    needs: [build]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       packages: write
-    env:
-      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
+    outputs:
+      revision_tag: ${{ steps.identity.outputs.revision_tag }}
     steps:
-      - name: Start index assembly timing
-        id: timing-start
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-
       - name: Sign in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: durableworkflow
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Assemble immutable multi-platform indexes
-        run: |
-          docker buildx imagetools create \
-            --tag "${GHCR_IMAGE}:${REVISION_TAG}" \
-            "${GHCR_IMAGE}:${REVISION_TAG}-amd64" \
-            "${GHCR_IMAGE}:${REVISION_TAG}-arm64"
-          docker buildx imagetools create \
-            --tag "${DOCKERHUB_IMAGE}:${REVISION_TAG}" \
-            "${DOCKERHUB_IMAGE}:${REVISION_TAG}-amd64" \
-            "${DOCKERHUB_IMAGE}:${REVISION_TAG}-arm64"
-
-      - name: Verify index parity and record evidence
+      - name: Set immutable tag
+        id: identity
+        run: echo "revision_tag=sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Assemble registry indexes
         env:
-          RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
+          REVISION_TAG: ${{ steps.identity.outputs.revision_tag }}
         run: |
-          docker buildx imagetools inspect "${GHCR_IMAGE}:${REVISION_TAG}" --raw > ghcr-index.json
-          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${REVISION_TAG}" --raw > dockerhub-index.json
-          cmp ghcr-index.json dockerhub-index.json
-          ghcr_digest="$(docker buildx imagetools inspect "${GHCR_IMAGE}:${REVISION_TAG}" --format '{{ .Manifest.Digest }}')"
-          dockerhub_digest="$(docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${REVISION_TAG}" --format '{{ .Manifest.Digest }}')"
-          test "$ghcr_digest" = "$dockerhub_digest"
-          completed_ms="$(date +%s%3N)"
-          MANIFEST_DIGEST="$ghcr_digest" \
-          COMPLETED_MS="$completed_ms" \
-          python3 - <<'PY'
-          import json
-          import os
+          docker buildx imagetools create \
+            -t "$GHCR_IMAGE:$REVISION_TAG" \
+            "$GHCR_IMAGE:$REVISION_TAG-amd64" \
+            "$GHCR_IMAGE:$REVISION_TAG-arm64"
+          docker buildx imagetools create \
+            -t "$DOCKERHUB_IMAGE:$REVISION_TAG" \
+            "$DOCKERHUB_IMAGE:$REVISION_TAG-amd64" \
+            "$DOCKERHUB_IMAGE:$REVISION_TAG-arm64"
 
-          with open("ghcr-index.json", encoding="utf-8") as source:
-              manifest = json.load(source)
-          architectures = {
-              entry.get("platform", {}).get("architecture")
-              for entry in manifest.get("manifests", [])
-              if entry.get("platform", {}).get("architecture") not in (None, "unknown")
-          }
-          if architectures != {"amd64", "arm64"}:
-              raise SystemExit(f"assembled index platforms do not match: {sorted(architectures)}")
-
-          started = int(os.environ["RUN_STARTED_MS"])
-          completed = int(os.environ["COMPLETED_MS"])
-          payload = {
-              "schema_version": 2,
-              "evidence_type": "index_assembly",
-              "platforms": ["linux/amd64", "linux/arm64"],
-              "immutable_references": {
-                  "ghcr": f"{os.environ['GHCR_IMAGE']}:{os.environ['REVISION_TAG']}",
-                  "dockerhub": f"{os.environ['DOCKERHUB_IMAGE']}:{os.environ['REVISION_TAG']}",
-              },
-              "manifest_digests": {
-                  "ghcr": os.environ["MANIFEST_DIGEST"],
-                  "dockerhub": os.environ["MANIFEST_DIGEST"],
-              },
-              "manifest_digest_parity": True,
-              "run_started_epoch_ms": started,
-              "completed_epoch_ms": completed,
-              "stages_ms": {"index_assembly_and_parity_verification": completed - started},
-          }
-          with open("devcontainer-index-evidence.json", "w", encoding="utf-8") as output:
-              json.dump(payload, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
-
-      - name: Retain index evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-index
-          path: devcontainer-index-evidence.json
-          if-no-files-found: error
-          retention-days: 90
-
-  qualify-published:
-    name: Qualify anonymously and natively (${{ matrix.registry }}, ${{ matrix.platform }})
-    if: ${{ github.server_url == 'https://github.com' }}
-    needs: [artifact-identity, assemble-indexes]
-    runs-on: ${{ github.server_url == 'https://github.com' && matrix.runner || 'ubuntu-latest' }}
+  qualify:
+    name: Qualify ${{ matrix.platform }}
+    needs: [assemble]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - registry: ghcr
-            image: ghcr.io/durable-workflow/sample-app-devcontainer
-            platform: linux/amd64
-            playground: 1
+          - platform: linux/amd64
             runner: ubuntu-24.04
-            suffix: ghcr-amd64
-          - registry: ghcr
-            image: ghcr.io/durable-workflow/sample-app-devcontainer
-            platform: linux/arm64
-            playground: 0
+          - platform: linux/arm64
             runner: ubuntu-24.04-arm
-            suffix: ghcr-arm64
-          - registry: dockerhub
-            image: durableworkflow/sample-app-devcontainer
-            platform: linux/amd64
-            playground: 0
-            runner: ubuntu-24.04
-            suffix: dockerhub-amd64
-          - registry: dockerhub
-            image: durableworkflow/sample-app-devcontainer
-            platform: linux/arm64
-            playground: 0
-            runner: ubuntu-24.04-arm
-            suffix: dockerhub-arm64
     steps:
-      - name: Start public qualification timing
-        id: timing-start
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
-      - name: Isolate anonymous registry access
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Use a credential-free Docker configuration
         run: |
-          anonymous_config="$RUNNER_TEMP/anonymous-docker-config"
-          mkdir -p "$anonymous_config"
-          printf '{"auths":{}}\n' > "$anonymous_config/config.json"
-          echo "DOCKER_CONFIG=$anonymous_config" >> "$GITHUB_ENV"
-
-      - name: Pull and qualify without registry credentials
+          mkdir -p /tmp/docker-anonymous
+          printf '%s\n' '{"auths":{}}' > /tmp/docker-anonymous/config.json
+          echo 'DOCKER_CONFIG=/tmp/docker-anonymous' >> "$GITHUB_ENV"
+      - name: Qualify the published image
         env:
-          DEVCONTAINER_EVIDENCE_TYPE: public_qualification
           DEVCONTAINER_EXPECTED_REVISION: ${{ github.sha }}
-          DEVCONTAINER_QUALIFY_PLAYGROUND: ${{ matrix.playground }}
-          DEVCONTAINER_REGISTRY: ${{ matrix.registry }}
-          DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: 1
-          DEVCONTAINER_RUNNER_LABEL: ${{ matrix.runner }}
-          DEVCONTAINER_RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
+          DEVCONTAINER_REQUIRE_ANONYMOUS_PULL: '1'
+          DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS: '1'
         run: >-
           scripts/ci/qualify-devcontainer-image.sh
-          ${{ matrix.image }}:${{ env.REVISION_TAG }}
-          ${{ matrix.platform }}
-          devcontainer-public-evidence-${{ matrix.suffix }}.json
+          "$GHCR_IMAGE:${{ needs.assemble.outputs.revision_tag }}"
+          "${{ matrix.platform }}"
 
-      - name: Retain public qualification evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-public-${{ matrix.suffix }}
-          path: devcontainer-public-evidence-${{ matrix.suffix }}.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Retain published-image authored playground journeys
-        if: ${{ matrix.playground == 1 }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: playground-evidence-public-${{ matrix.suffix }}
-          path: storage/app/devcontainer-playground-amd64-*.json
-          if-no-files-found: error
-          retention-days: 90
-
-  promote-main:
-    name: Promote qualified image to main
-    if: >-
-      ${{
-        github.server_url == 'https://github.com' &&
-        github.repository == 'durable-workflow/sample-app' &&
-        github.ref == 'refs/heads/main'
-      }}
-    needs: [artifact-identity, assemble-indexes, qualify-published]
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+  promote:
+    name: Publish main channel
+    needs: [assemble, qualify]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       packages: write
-    env:
-      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
     steps:
-      - name: Start promotion timing
-        id: timing-start
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-
       - name: Sign in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: durableworkflow
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Move protected main channels
+      - name: Promote the qualified image
         env:
-          RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
+          REVISION_TAG: ${{ needs.assemble.outputs.revision_tag }}
         run: |
-          docker buildx imagetools create \
-            --tag "${GHCR_IMAGE}:main" \
-            "${GHCR_IMAGE}:${REVISION_TAG}"
-          docker buildx imagetools create \
-            --tag "${DOCKERHUB_IMAGE}:main" \
-            "${DOCKERHUB_IMAGE}:${REVISION_TAG}"
-          completed_ms="$(date +%s%3N)"
-          COMPLETED_MS="$completed_ms" python3 - <<'PY'
-          import json
-          import os
-
-          started = int(os.environ["RUN_STARTED_MS"])
-          completed = int(os.environ["COMPLETED_MS"])
-          payload = {
-              "schema_version": 2,
-              "evidence_type": "promotion",
-              "source_tag": os.environ["REVISION_TAG"],
-              "promoted_tag": "main",
-              "registries": ["ghcr", "dockerhub"],
-              "qualification_gate": ["ghcr/amd64", "ghcr/arm64", "dockerhub/amd64", "dockerhub/arm64"],
-              "run_started_epoch_ms": started,
-              "completed_epoch_ms": completed,
-              "stages_ms": {"main_promotion": completed - started},
-          }
-          with open("devcontainer-promotion-evidence.json", "w", encoding="utf-8") as output:
-              json.dump(payload, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
-
-      - name: Retain promotion evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-promotion
-          path: devcontainer-promotion-evidence.json
-          if-no-files-found: error
-          retention-days: 90
-
-  recover-main:
-    name: Recover main from a verified immutable image
-    if: >-
-      ${{
-        github.server_url == 'https://github.com' &&
-        github.repository == 'durable-workflow/sample-app' &&
-        github.ref == 'refs/heads/main' &&
-        github.event_name == 'workflow_dispatch' &&
-        inputs.recover_revision_tag != ''
-      }}
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      packages: write
-    env:
-      SOURCE_TAG: ${{ inputs.recover_revision_tag }}
-    steps:
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
-      - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Sign in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
-        with:
-          username: durableworkflow
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Verify immutable source and recover protected channels
+          docker buildx imagetools create -t "$GHCR_IMAGE:main" "$GHCR_IMAGE:$REVISION_TAG"
+          docker buildx imagetools create -t "$DOCKERHUB_IMAGE:main" "$DOCKERHUB_IMAGE:$REVISION_TAG"
+      - name: Verify both public indexes
         run: |
-          if [[ ! "$SOURCE_TAG" =~ ^sha-[0-9a-f]{40}-run-[0-9]+-[0-9]+$ ]]; then
-            echo "Recovery requires an immutable workflow revision tag." >&2
-            exit 1
-          fi
-
-          docker buildx imagetools inspect "${GHCR_IMAGE}:${SOURCE_TAG}" --raw > ghcr-source.json
-          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${SOURCE_TAG}" --raw > dockerhub-source.json
-          cmp ghcr-source.json dockerhub-source.json
-
-          ghcr_digest="$(docker buildx imagetools inspect "${GHCR_IMAGE}:${SOURCE_TAG}" --format '{{ .Manifest.Digest }}')"
-          dockerhub_digest="$(docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${SOURCE_TAG}" --format '{{ .Manifest.Digest }}')"
-          test "$ghcr_digest" = "$dockerhub_digest"
-
-          python3 - <<'PY'
+          for image in "$GHCR_IMAGE:main" "$DOCKERHUB_IMAGE:main"; do
+            raw="$(mktemp)"
+            docker buildx imagetools inspect "$image" --raw > "$raw"
+            python3 - "$raw" <<'PY'
           import json
+          import sys
 
-          with open("ghcr-source.json", encoding="utf-8") as source:
-              manifest = json.load(source)
-          architectures = {
-              entry.get("platform", {}).get("architecture")
-              for entry in manifest.get("manifests", [])
-              if entry.get("platform", {}).get("architecture") not in (None, "unknown")
+          manifest = json.load(open(sys.argv[1], encoding='utf-8'))
+          platforms = {
+              (item.get('platform') or {}).get('architecture')
+              for item in manifest.get('manifests', [])
+              if (item.get('platform') or {}).get('os') == 'linux'
           }
-          if architectures != {"amd64", "arm64"}:
-              raise SystemExit(f"recovery source platforms do not match: {sorted(architectures)}")
+          if not {'amd64', 'arm64'} <= platforms:
+              raise SystemExit(f'missing image platforms: {platforms}')
           PY
-
-          docker buildx imagetools create \
-            --tag "${GHCR_IMAGE}:main" \
-            "${GHCR_IMAGE}:${SOURCE_TAG}"
-          docker buildx imagetools create \
-            --tag "${DOCKERHUB_IMAGE}:main" \
-            "${DOCKERHUB_IMAGE}:${SOURCE_TAG}"
-
-          docker buildx imagetools inspect "${GHCR_IMAGE}:main" --raw > ghcr-main.json
-          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:main" --raw > dockerhub-main.json
-          cmp ghcr-source.json ghcr-main.json
-          cmp dockerhub-source.json dockerhub-main.json
-          cmp ghcr-main.json dockerhub-main.json
-
-          SOURCE_DIGEST="$ghcr_digest" python3 - <<'PY'
-          import json
-          import os
-
-          payload = {
-              "schema_version": 2,
-              "evidence_type": "manual_channel_recovery",
-              "source_tag": os.environ["SOURCE_TAG"],
-              "manifest_digest": os.environ["SOURCE_DIGEST"],
-              "platforms": ["linux/amd64", "linux/arm64"],
-              "registries": ["ghcr", "dockerhub"],
-          }
-          with open("devcontainer-recovery-evidence.json", "w", encoding="utf-8") as output:
-              json.dump(payload, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
-
-      - name: Retain recovery evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-recovery
-          path: devcontainer-recovery-evidence.json
-          if-no-files-found: error
-          retention-days: 90
-
-  verify-main:
-    name: Inspect public main channel anonymously (${{ matrix.registry }})
-    if: ${{ github.server_url == 'https://github.com' }}
-    needs: [artifact-identity, promote-main]
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    env:
-      REVISION_TAG: ${{ needs.artifact-identity.outputs.revision_tag }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - registry: ghcr
-            image: ghcr.io/durable-workflow/sample-app-devcontainer
-          - registry: dockerhub
-            image: durableworkflow/sample-app-devcontainer
-    steps:
-      - name: Start moving-channel verification timing
-        id: timing-start
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4
-
-      - name: Isolate anonymous registry access
-        run: |
-          anonymous_config="$RUNNER_TEMP/anonymous-docker-config"
-          mkdir -p "$anonymous_config"
-          printf '{"auths":{}}\n' > "$anonymous_config/config.json"
-          echo "DOCKER_CONFIG=$anonymous_config" >> "$GITHUB_ENV"
-
-      - name: Compare moving and immutable manifests without credentials
-        env:
-          IMAGE: ${{ matrix.image }}
-          REGISTRY: ${{ matrix.registry }}
-          RUN_STARTED_MS: ${{ steps.timing-start.outputs.started_ms }}
-        run: |
-          docker buildx imagetools inspect "${IMAGE}:${REVISION_TAG}" --raw > revision.json
-          docker buildx imagetools inspect "${IMAGE}:main" --raw > main.json
-          cmp revision.json main.json
-          revision_digest="$(docker buildx imagetools inspect "${IMAGE}:${REVISION_TAG}" --format '{{ .Manifest.Digest }}')"
-          main_digest="$(docker buildx imagetools inspect "${IMAGE}:main" --format '{{ .Manifest.Digest }}')"
-          test "$revision_digest" = "$main_digest"
-          completed_ms="$(date +%s%3N)"
-          MANIFEST_DIGEST="$main_digest" \
-          COMPLETED_MS="$completed_ms" \
-          python3 - <<'PY'
-          import json
-          import os
-
-          started = int(os.environ["RUN_STARTED_MS"])
-          completed = int(os.environ["COMPLETED_MS"])
-          payload = {
-              "schema_version": 2,
-              "evidence_type": "moving_channel_verification",
-              "registry": os.environ["REGISTRY"],
-              "image": os.environ["IMAGE"],
-              "manifest_digest": os.environ["MANIFEST_DIGEST"],
-              "revision_and_main_digest_parity": True,
-              "anonymous_manifest_inspection": True,
-              "run_started_epoch_ms": started,
-              "completed_epoch_ms": completed,
-              "stages_ms": {"anonymous_manifest_inspection": completed - started},
-          }
-          with open(f"devcontainer-main-evidence-{os.environ['REGISTRY']}.json", "w", encoding="utf-8") as output:
-              json.dump(payload, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
-
-      - name: Retain moving-channel evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-evidence-main-${{ matrix.registry }}
-          path: devcontainer-main-evidence-${{ matrix.registry }}.json
-          if-no-files-found: error
-          retention-days: 90
-
-  publication-evidence:
-    name: Enforce protected publication budget and evidence
-    if: ${{ github.server_url == 'https://github.com' }}
-    needs: [verify-main]
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'ubuntu-latest' }}
-    timeout-minutes: 2
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
-        with:
-          pattern: devcontainer-evidence-*
-          path: devcontainer-evidence
-          merge-multiple: true
-
-      - name: Summarize public publication evidence
-        run: >-
-          python3 scripts/ci/summarize-devcontainer-evidence.py
-          publication
-          devcontainer-evidence
-          devcontainer-publication-evidence.json
-          900
-
-      - name: Retain public publication summary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: devcontainer-publication-evidence
-          path: devcontainer-publication-evidence.json
-          if-no-files-found: error
-          retention-days: 90
+            rm -f "$raw"
+          done

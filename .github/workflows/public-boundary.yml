@@ -10,7 +10,6 @@ permissions:
 jobs:
   scan:
     name: Scan public boundary
-    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
 
     steps:
