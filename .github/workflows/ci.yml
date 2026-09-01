@@ -197,4 +197,6 @@ jobs:
       - name: Require microservice tests
         run: test "${{ needs.microservice-test.result }}" = success
       - name: Require action policy
-        run: test "${{ needs.action-policy.result }}" = success
+        env:
+          ACTION_POLICY_RESULT: ${{ needs.action-policy.result }}
+        run: test "$ACTION_POLICY_RESULT" = success
