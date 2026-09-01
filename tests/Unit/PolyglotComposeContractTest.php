@@ -120,11 +120,13 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString('python-activity-worker', $script);
         $this->assertStringContainsString('rust-activity-worker', $script);
         $this->assertStringContainsString('pull --policy always bootstrap server', $script);
+        $this->assertStringContainsString('down --volumes --remove-orphans', $script);
         $this->assertStringContainsString('run --rm --no-deps demo', $script);
         $this->assertStringNotContainsString('docs-page-release-audit', $script);
 
         $commands = array_column($steps, 'run');
         $this->assertContains('scripts/polyglot.sh', $commands);
+        $this->assertContains('scripts/polyglot.sh down', $commands);
         $this->assertArrayNotHasKey('strategy', $workflow['jobs']['smoke']);
     }
 

@@ -40,11 +40,7 @@ The isolated `sample-app-polyglot-demo` Compose project remains available for
 inspection. Stop it with:
 
 ```bash
-docker compose \
-  --project-directory polyglot \
-  -f polyglot/docker-compose.yml \
-  -p sample-app-polyglot-demo \
-  down --volumes --remove-orphans
+scripts/polyglot.sh down
 ```
 
 See [polyglot/README.md](polyglot/README.md) for the worker layout and the

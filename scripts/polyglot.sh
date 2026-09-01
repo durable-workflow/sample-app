@@ -26,6 +26,19 @@ export COMPOSE_PROJECT_NAME="$project_name"
 
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$compose_file")
 
+case "${1:-}" in
+  '') ;;
+  down)
+    printf '==> PolyglotWorkflow: removing Compose project %s\n' "$COMPOSE_PROJECT_NAME"
+    "${compose[@]}" down --volumes --remove-orphans
+    exit 0
+    ;;
+  *)
+    printf 'Usage: %s [down]\n' "${0##*/}" >&2
+    exit 2
+    ;;
+esac
+
 printf '==> PolyglotWorkflow: building PHP %s, Python %s, and Rust %s workers\n' \
   "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
   "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" \
@@ -56,5 +69,5 @@ printf '%s\n' '==> PolyglotWorkflow: running one PHP -> Python -> Rust workflow 
 "${compose[@]}" run --rm --no-deps demo
 
 printf 'PolyglotWorkflow stack remains available in Compose project %s.\n' "$COMPOSE_PROJECT_NAME"
-printf 'Stop it with: POLYGLOT_COMPOSE_PROJECT_NAME=%s docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans\n' \
+printf 'Stop it with: POLYGLOT_COMPOSE_PROJECT_NAME=%s scripts/polyglot.sh down\n' \
   "$COMPOSE_PROJECT_NAME"

@@ -32,8 +32,4 @@ jobs:
           logs --no-color --timestamps
       - name: Tear down stack
         if: always()
-        run: >-
-          docker compose --project-directory polyglot
-          -f polyglot/docker-compose.yml
-          -p "$POLYGLOT_COMPOSE_PROJECT_NAME"
-          down --volumes --remove-orphans
+        run: scripts/polyglot.sh down
