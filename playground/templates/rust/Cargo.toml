@@ -6,6 +6,6 @@ publish = false
 rust-version = "1.86"
 
 [dependencies]
-durable-workflow = ">=2.0.0-rc.1, <2.1.0"
+durable-workflow = "2.0"
 serde_json = "=1.0.150"
 tokio = { version = "=1.47.1", features = ["macros", "rt-multi-thread", "signal", "time"] }

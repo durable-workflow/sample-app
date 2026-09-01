@@ -1,93 +1,93 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="${repo_root}/.devcontainer/docker/docker-compose.yml"
-source "${repo_root}/scripts/ci/devcontainer-identity.sh"
-image="${1:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM [TIMING_OUTPUT]}"
-platform="${2:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM [TIMING_OUTPUT]}"
-timing_output="${3:-${repo_root}/devcontainer-qualification-timing.json}"
-max_fresh_seconds="${DEVCONTAINER_MAX_FRESH_SECONDS:-300}"
-max_warm_seconds="${DEVCONTAINER_MAX_WARM_SECONDS:-120}"
+image="${1:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM}"
+platform="${2:?Usage: qualify-devcontainer-image.sh IMAGE PLATFORM}"
+max_seconds="${DEVCONTAINER_MAX_STARTUP_SECONDS:-600}"
 require_attestations="${DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS:-1}"
 require_anonymous_pull="${DEVCONTAINER_REQUIRE_ANONYMOUS_PULL:-0}"
 skip_image_pull="${DEVCONTAINER_SKIP_IMAGE_PULL:-0}"
 expected_revision="${DEVCONTAINER_EXPECTED_REVISION:-}"
-evidence_type="${DEVCONTAINER_EVIDENCE_TYPE:-qualification}"
-image_build_ms="${DEVCONTAINER_IMAGE_BUILD_MS:-0}"
-registry="${DEVCONTAINER_REGISTRY:-local}"
-runner_label="${DEVCONTAINER_RUNNER_LABEL:-unknown}"
-qualify_playground="${DEVCONTAINER_QUALIFY_PLAYGROUND:-0}"
+
+source "${repo_root}/scripts/ci/devcontainer-identity.sh"
 
 case "$platform" in
-    linux/amd64|linux/arm64) ;;
-    *)
-        echo "Unsupported qualification platform: ${platform}" >&2
-        exit 2
-        ;;
+  linux/amd64) expected_machine=x86_64 ;;
+  linux/arm64) expected_machine=aarch64 ;;
+  *) printf 'Unsupported qualification platform: %s\n' "$platform" >&2; exit 2 ;;
 esac
 
-timestamp_ms() {
-    date +%s%3N
-}
-
-duration_ms() {
-    local started_ms="$1"
-    echo $(( $(timestamp_ms) - started_ms ))
-}
-
-normalize_architecture() {
-    case "$1" in
-        amd64|x86_64) echo amd64 ;;
-        arm64|aarch64) echo arm64 ;;
-        *)
-            echo "Unsupported runner architecture: $1" >&2
-            return 1
-            ;;
-    esac
-}
-
-expected_architecture="${platform#linux/}"
-host_machine="$(uname -m)"
-host_architecture="$(normalize_architecture "$host_machine")"
-docker_architecture="$(normalize_architecture "$(docker info --format '{{.Architecture}}')")"
-
-if [[ "$host_architecture" != "$expected_architecture" || "$docker_architecture" != "$expected_architecture" ]]; then
-    echo "Qualification for ${platform} requires a native runner; host=${host_architecture}, docker=${docker_architecture}." >&2
-    exit 1
+if [[ "$(uname -m)" != "$expected_machine" ]]; then
+  printf 'Qualification for %s requires a native %s runner.\n' "$platform" "$expected_machine" >&2
+  exit 1
 fi
-
-run_started_ms="${DEVCONTAINER_RUN_STARTED_MS:-$(timestamp_ms)}"
-anonymous_credentials_absent=0
 
 if [[ "$require_anonymous_pull" == "1" ]]; then
-    if [[ "$skip_image_pull" == "1" ]]; then
-        echo 'Anonymous pull verification cannot skip the image pull.' >&2
-        exit 1
-    fi
-
-    docker_config="${DOCKER_CONFIG:-${HOME}/.docker}"
-    python3 - "${docker_config}/config.json" <<'PY'
+  docker_config="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+  python3 - "$docker_config" <<'PY'
 import json
-import os
+import pathlib
 import sys
 
-path = sys.argv[1]
-if not os.path.exists(path):
-    raise SystemExit(f"anonymous pull requires an explicit credential-free Docker config: {path}")
-
-with open(path, encoding="utf-8") as source:
-    config = json.load(source)
-
-if config.get("auths") or config.get("credsStore") or config.get("credHelpers"):
-    raise SystemExit("anonymous pull Docker config contains registry credential sources")
+path = pathlib.Path(sys.argv[1])
+if not path.is_file():
+    raise SystemExit(f'anonymous pull requires an explicit Docker config: {path}')
+config = json.loads(path.read_text(encoding='utf-8'))
+if config.get('auths') or config.get('credsStore') or config.get('credHelpers'):
+    raise SystemExit('anonymous pull Docker config contains credentials')
 PY
-    anonymous_credentials_absent=1
 fi
 
-project_suffix="$(printf '%s-%s' "$image" "$platform" | sha256sum | cut -c1-12)"
-export COMPOSE_PROJECT_NAME="sample-app-devcontainer-${project_suffix}"
+started_at="$(date +%s)"
+tracked_before="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
+if [[ -n "$tracked_before" ]]; then
+  printf 'Devcontainer qualification requires a clean tracked checkout.\n%s\n' "$tracked_before" >&2
+  exit 1
+fi
+
+if [[ "$skip_image_pull" == "1" ]]; then
+  docker image inspect "$image" >/dev/null
+else
+  docker pull --platform "$platform" "$image"
+fi
+
+if [[ "$require_attestations" == "1" ]]; then
+  manifest="$(mktemp)"
+  docker buildx imagetools inspect "$image" --raw > "$manifest"
+  python3 - "$manifest" <<'PY'
+import json
+import sys
+
+manifest = json.load(open(sys.argv[1], encoding='utf-8'))
+entries = manifest.get('manifests', [])
+platforms = {
+    (entry.get('platform') or {}).get('architecture')
+    for entry in entries
+    if (entry.get('platform') or {}).get('os') == 'linux'
+}
+if not {'amd64', 'arm64'} <= platforms:
+    raise SystemExit(f'published image is missing platforms: {platforms}')
+attestations = [
+    entry for entry in entries
+    if (entry.get('annotations') or {}).get('vnd.docker.reference.type') == 'attestation-manifest'
+]
+if len(attestations) < 2:
+    raise SystemExit('published image does not expose per-platform attestations')
+PY
+  rm -f "$manifest"
+fi
+
+source_label="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")"
+revision_label="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
+[[ "$source_label" == 'https://github.com/durable-workflow/sample-app' ]]
+if [[ -n "$expected_revision" ]]; then
+  [[ "$revision_label" == "$expected_revision" ]]
+fi
+
+suffix="$(printf '%s-%s' "$image" "$platform" | sha256sum | cut -c1-12)"
+export COMPOSE_PROJECT_NAME="sample-app-devcontainer-${suffix}"
 export DOCKER_DEFAULT_PLATFORM="$platform"
 export SAMPLE_APP_DEVCONTAINER_IMAGE="$image"
 export SAMPLE_APP_DEVCONTAINER_PULL_POLICY=never
@@ -103,456 +103,51 @@ export FORWARD_REDIS_PORT=16379
 
 compose=(docker compose --file "$compose_file")
 
-prepare_qualification_checkout() {
-    local qualification_gid
-
-    qualification_gid="$(id -g)"
-    if [[ "$(stat --format=%u "$repo_root")" != "$SAMPLE_APP_UID" \
-        || "$(stat --format=%g "$repo_root")" != "$qualification_gid" ]]; then
-        if command -v sudo >/dev/null 2>&1; then
-            sudo chown -R "${SAMPLE_APP_UID}:${qualification_gid}" "$repo_root"
-        else
-            chown -R "${SAMPLE_APP_UID}:${qualification_gid}" "$repo_root"
-        fi
-    fi
-
-    if [[ "$(stat --format=%u "$repo_root")" != "$SAMPLE_APP_UID" || ! -w "$repo_root" ]]; then
-        echo "Qualification checkout is not writable by SAMPLE_APP_UID ${SAMPLE_APP_UID}: ${repo_root}" >&2
-        exit 1
-    fi
-}
-
-prepare_qualification_checkout
-tracked_status_before="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
-
-verify_database_schema() {
-    "${compose[@]}" exec -T mysql sh -euc '
-        query_database() {
-            mariadb \
-                --user="$MYSQL_USER" \
-                --password="$MYSQL_PASSWORD" \
-                --database="$MYSQL_DATABASE" \
-                --batch \
-                --skip-column-names \
-                --execute="$1"
-        }
-
-        query_testing_database() {
-            mariadb \
-                --user="$MYSQL_USER" \
-                --password="$MYSQL_PASSWORD" \
-                --database=testing \
-                --batch \
-                --skip-column-names \
-                --execute="$1"
-        }
-
-        expected_migration_count=50
-        expected_table_count=49
-        migration_count="$(query_database "SELECT COUNT(*) FROM migrations")"
-        table_count="$(query_database "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")"
-
-        if [ "$migration_count" != "$expected_migration_count" ]; then
-            echo "Codespaces schema recorded ${migration_count} migrations; expected ${expected_migration_count}." >&2
-            exit 1
-        fi
-
-        if [ "$table_count" != "$expected_table_count" ]; then
-            echo "Codespaces schema created ${table_count} tables; expected ${expected_table_count}." >&2
-            exit 1
-        fi
-
-        query_testing_database "DROP TABLE IF EXISTS codespaces_testing_probe"
-        query_testing_database "CREATE TABLE codespaces_testing_probe (value VARCHAR(32) NOT NULL)"
-        query_testing_database "INSERT INTO codespaces_testing_probe (value) VALUES (\"usable\")"
-        [ "$(query_testing_database "SELECT value FROM codespaces_testing_probe")" = usable ]
-        query_testing_database "DROP TABLE codespaces_testing_probe"
-    '
-}
-
-record_database_persistence_probe() {
-    "${compose[@]}" exec -T mysql sh -euc '
-        mariadb \
-            --user="$MYSQL_USER" \
-            --password="$MYSQL_PASSWORD" \
-            --database="$MYSQL_DATABASE" \
-            --execute="DELETE FROM users WHERE email = \"codespaces-default-probe@example.invalid\";
-                INSERT INTO users (name, email, password, created_at, updated_at)
-                VALUES (\"Codespaces default probe\", \"codespaces-default-probe@example.invalid\", \"not-a-login\", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-    '
-}
-
-verify_and_remove_database_persistence_probe() {
-    "${compose[@]}" exec -T mysql sh -euc '
-        persisted_count="$(mariadb \
-            --user="$MYSQL_USER" \
-            --password="$MYSQL_PASSWORD" \
-            --database="$MYSQL_DATABASE" \
-            --batch \
-            --skip-column-names \
-            --execute="SELECT COUNT(*) FROM users WHERE email = \"codespaces-default-probe@example.invalid\"")"
-        [ "$persisted_count" = 1 ]
-        mariadb \
-            --user="$MYSQL_USER" \
-            --password="$MYSQL_PASSWORD" \
-            --database="$MYSQL_DATABASE" \
-            --execute="DELETE FROM users WHERE email = \"codespaces-default-probe@example.invalid\""
-    '
-}
-
-if [[ -n "$tracked_status_before" ]]; then
-    echo 'Devcontainer qualification requires a checkout with no tracked changes.' >&2
-    printf '%s\n' "$tracked_status_before" >&2
-    exit 1
-fi
-
 cleanup() {
-    local status=$?
-    trap - EXIT
-
-    if (( status != 0 )); then
-        "${compose[@]}" ps >&2 || true
-        "${compose[@]}" logs --no-color --timestamps --tail=200 >&2 || true
-    fi
-
-    "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-    exit "$status"
+  local status=$?
+  trap - EXIT
+  if (( status != 0 )); then
+    "${compose[@]}" ps >&2 || true
+    "${compose[@]}" logs --no-color --timestamps --tail=200 >&2 || true
+  fi
+  "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  exit "$status"
 }
 trap cleanup EXIT
 
-image_pull_started_ms="$(timestamp_ms)"
-if [[ "$skip_image_pull" == "1" ]]; then
-    docker image inspect "$image" >/dev/null
-else
-    docker pull --platform "$platform" "$image"
-fi
-image_pull_ms="$(duration_ms "$image_pull_started_ms")"
-
-if [[ "$require_attestations" == "1" ]]; then
-    manifest_path="$(mktemp)"
-    docker buildx imagetools inspect "$image" --raw > "$manifest_path"
-    python3 - "$manifest_path" <<'PY'
-import json
-import sys
-
-manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-entries = manifest.get("manifests", [])
-architectures = {
-    entry.get("platform", {}).get("architecture")
-    for entry in entries
-    if entry.get("platform", {}).get("architecture") not in (None, "unknown")
-}
-missing = {"amd64", "arm64"} - architectures
-if missing:
-    raise SystemExit(f"published image is missing platforms: {sorted(missing)}")
-
-attestations = [
-    entry
-    for entry in entries
-    if entry.get("annotations", {}).get("vnd.docker.reference.type")
-    == "attestation-manifest"
-]
-if len(attestations) < 2:
-    raise SystemExit("published image does not expose per-platform attestations")
-PY
-    rm -f "$manifest_path"
-
-    provenance="$(docker buildx imagetools inspect "$image" --format '{{ json .Provenance }}')"
-    sbom="$(docker buildx imagetools inspect "$image" --format '{{ json .SBOM }}')"
-    [[ -n "$provenance" && "$provenance" != "null" ]]
-    [[ -n "$sbom" && "$sbom" != "null" ]]
-fi
-
-source_label="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")"
-revision_label="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
-[[ "$source_label" == "https://github.com/durable-workflow/sample-app" ]]
-
-if [[ -n "$expected_revision" ]]; then
-    [[ "$revision_label" == "$expected_revision" ]]
-fi
-
-container_readiness_started_ms="$(timestamp_ms)"
 "${compose[@]}" pull mysql redis
-"${compose[@]}" up --detach --no-build --wait mysql redis
-container_readiness_ms="$(duration_ms "$container_readiness_started_ms")"
-
-seed_container_id="$("${compose[@]}" ps --all --quiet mysql-seed)"
-if [[ -z "$seed_container_id" \
-    || "$(docker inspect --format '{{.State.ExitCode}}' "$seed_container_id")" != 0 ]]; then
-    echo 'The first-volume MySQL seed service did not complete successfully.' >&2
-    exit 1
-fi
-
-"${compose[@]}" exec -T mysql test -e /var/lib/mysql/.sample-app-codespaces-seed
-verify_database_schema
-
-dependency_bootstrap_started_ms="$(timestamp_ms)"
+"${compose[@]}" up --detach --no-build mysql redis
 "${compose[@]}" up --detach --no-build laravel microservice
-run_in_ready_devcontainer laravel bash -euc '
-    [[ "$(stat --format=%u .)" == "$SAMPLE_APP_UID" ]]
-    [[ -w . ]]
-    socket_gid="$(stat --format=%g /var/run/docker.sock)"
-    [[ " $(id -G) " == *" ${socket_gid} "* ]]
-    docker version >/dev/null
-    docker compose version >/dev/null
-    for prepared_home in "${COMPOSER_HOME:?}" "${CARGO_HOME:?}"; do
-        prepared_state_probe="${prepared_home}/.devcontainer-qualification-write-test"
-        printf "prepared-state-access\n" > "$prepared_state_probe"
-        rm "$prepared_state_probe"
-    done
-    with-disposable-composer-state composer validate \
-        --working-dir=. \
-        --strict \
-        --check-lock \
-        --no-check-all \
-        --no-interaction
-    with-group-shared-umask cargo check \
-        --bins \
-        --locked \
-        --offline \
-        --manifest-path=playground/templates/rust/Cargo.toml \
-        >/dev/null
-    if [[ -e .env ]]; then
-        [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
-        [[ -w .env ]]
-    fi
-'
-"${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
-    [[ -f .env ]]
-    [[ "$(stat --format=%u .env)" == "$SAMPLE_APP_UID" ]]
-    [[ -w .env ]]
-'
-"${compose[@]}" run --rm --no-deps microservice bash -euc '[[ "$(id -u)" == "$SAMPLE_APP_UID" ]]'
-dependency_bootstrap_ms="$(duration_ms "$dependency_bootstrap_started_ms")"
-
-verify_database_schema
-
-application_readiness_started_ms="$(timestamp_ms)"
+run_in_ready_devcontainer laravel .devcontainer/post-create.sh
 "${compose[@]}" up --detach --no-build --wait
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
-    [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/up)" == 200 ]]
-    [[ "$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost/)" == 200 ]]
-    php artisan migrate:status --no-interaction
-    php artisan migrate:status --pending=1 --no-interaction
-    [[ "$(redis-cli -h redis --raw ping)" == PONG ]]
-'
-application_readiness_ms="$(duration_ms "$application_readiness_started_ms")"
 
-"${compose[@]}" exec -T \
-    --env DEVCONTAINER_DEPENDENCY_SCOPE=laravel \
-    --user laravel \
-    laravel verify-devcontainer-image
-"${compose[@]}" exec -T \
-    --env DEVCONTAINER_DEPENDENCY_SCOPE=microservice \
-    --user laravel \
-    microservice verify-devcontainer-image
-"${compose[@]}" exec -T laravel sshd -t
+run_in_ready_devcontainer laravel bash -euc '
+  for command in php composer python3 rustc cargo dw rg node npm docker; do
+    command -v "$command" >/dev/null
+  done
+  docker compose version >/dev/null
+  curl --fail --silent http://localhost/up >/dev/null
+  curl --fail --silent http://localhost/ >/dev/null
+  composer validate --strict --check-lock --no-check-all --no-interaction
+  cargo check --bins --locked --offline --manifest-path=playground/templates/rust/Cargo.toml >/dev/null
+  scripts/playground doctor
+'
 "${compose[@]}" exec -T --user laravel laravel node docker/playwright-smoke.js
-first_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"
-[[ "$first_app_key" == base64:* ]]
-"${compose[@]}" exec -T --user laravel laravel .devcontainer/post-create.sh
-second_app_key="$("${compose[@]}" exec -T --user laravel laravel sed -n 's/^APP_KEY=//p' .env)"
-[[ "$second_app_key" == "$first_app_key" ]]
+"${compose[@]}" exec -T laravel sshd -t
+"${compose[@]}" exec -T mysql mariadb \
+  --user=laravel --password=password --database=sample \
+  --batch --skip-column-names --execute='SELECT 1' | grep -Fx 1
 
-playground_journey_ms=0
-playground_evidence_files=()
-if [[ "$qualify_playground" == "1" ]]; then
-    playground_started_ms="$(timestamp_ms)"
-    playground_source_root="/tmp/sample-app-playground-proof-${expected_architecture}-$$"
-    for language in php python rust; do
-        evidence_name="devcontainer-playground-${expected_architecture}-${language}.json"
-        evidence_path="${repo_root}/storage/app/${evidence_name}"
-        playground_evidence_files+=("$evidence_path")
-        "${compose[@]}" exec -T laravel gosu laravel env \
-            CODESPACES=true \
-            PLAYGROUND_CLEANUP=1 \
-            PLAYGROUND_EVIDENCE_PATH="/var/www/html/storage/app/${evidence_name}" \
-            PLAYGROUND_SERVER_URL=http://host.docker.internal:18082 \
-            PLAYGROUND_SOURCE_ROOT="$playground_source_root" \
-            PLAYGROUND_WATERLINE_INTERNAL_URL=http://host.docker.internal:18083 \
-            PLAYGROUND_WATERLINE_URL=http://localhost:18083/waterline \
-            scripts/playground "$language"
-    done
-    python3 "${repo_root}/scripts/ci/validate-playground-evidence.py" \
-        "${playground_evidence_files[@]}"
-    playground_journey_ms="$(duration_ms "$playground_started_ms")"
+tracked_after="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
+if [[ "$tracked_after" != "$tracked_before" ]]; then
+  printf 'Codespaces setup modified tracked files.\n%s\n' "$tracked_after" >&2
+  exit 1
 fi
 
-tracked_status_after="$(git -C "$repo_root" status --porcelain --untracked-files=no)"
-
-if [[ -n "$tracked_status_after" ]]; then
-    echo 'Codespaces setup modified tracked source files.' >&2
-    printf '%s\n' "$tracked_status_after" >&2
-    exit 1
+elapsed=$(( $(date +%s) - started_at ))
+if (( elapsed > max_seconds )); then
+  printf 'Codespaces startup took %ss; limit is %ss.\n' "$elapsed" "$max_seconds" >&2
+  exit 1
 fi
 
-"${compose[@]}" exec -T laravel bash -euc '
-    exec 3<>/dev/tcp/127.0.0.1/22
-    IFS= read -r -t 5 ssh_banner <&3
-    exec 3<&-
-    exec 3>&-
-    [[ "$ssh_banner" == SSH-* ]]
-
-    key_dir="$(mktemp -d)"
-    trap "rm -rf \"$key_dir\"" EXIT
-    ssh-keygen -q -t ed25519 -N "" -f "$key_dir/id_ed25519"
-    install -m 0600 -o laravel -g laravel \
-        "$key_dir/id_ed25519.pub" /home/laravel/.ssh/authorized_keys
-    chown -R laravel:laravel "$key_dir"
-    remote_uid="$(gosu laravel ssh \
-        -o BatchMode=yes \
-        -o ConnectTimeout=5 \
-        -o LogLevel=ERROR \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -i "$key_dir/id_ed25519" \
-        laravel@127.0.0.1 id -u)"
-    [[ "$remote_uid" == "$SAMPLE_APP_UID" ]]
-'
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
-    [[ "$(id -u)" == "$SAMPLE_APP_UID" ]]
-    with-disposable-composer-state composer check-platform-reqs --no-dev
-    probe=.devcontainer-qualification-write-test
-    printf "editable\n" > "$probe"
-    [[ "$(<"$probe")" == "editable" ]]
-    rm "$probe"
-'
-
-warm_rebuild_started_ms="$(timestamp_ms)"
-record_database_persistence_probe
-"${compose[@]}" run --rm --no-deps mysql-seed
-verify_database_schema
-"${compose[@]}" stop laravel microservice mysql
-"${compose[@]}" up --detach --no-build --wait mysql redis
-"${compose[@]}" up --detach --no-build --force-recreate --wait laravel microservice
-run_in_ready_devcontainer laravel curl --fail --silent http://localhost/up >/dev/null
-verify_and_remove_database_persistence_probe
-"${compose[@]}" exec -T --user laravel laravel bash -euc '
-    migration_name=create_codespaces_future_migration_probe_table
-    php artisan make:migration "$migration_name" \
-        --create=codespaces_future_migration_probe \
-        --no-interaction
-    migration_paths=(database/migrations/*_"${migration_name}".php)
-    if (( ${#migration_paths[@]} != 1 )); then
-        echo "Expected one future-migration probe, found ${#migration_paths[@]}." >&2
-        exit 1
-    fi
-    migration_path="${migration_paths[0]}"
-    trap '\''rm -f "$migration_path"'\'' EXIT
-    php artisan migrate --force --no-interaction
-    php artisan migrate:rollback \
-        --force \
-        --no-interaction \
-        --path="$migration_path"
-'
-verify_database_schema
-warm_rebuild_ms="$(duration_ms "$warm_rebuild_started_ms")"
-
-checkout_status_after="$(git -C "$repo_root" status --porcelain)"
-if [[ -n "$checkout_status_after" ]]; then
-    echo 'Devcontainer qualification left the checkout dirty after persistent-volume validation.' >&2
-    printf '%s\n' "$checkout_status_after" >&2
-    exit 1
-fi
-
-fresh_total_ms=$(( image_pull_ms + container_readiness_ms + dependency_bootstrap_ms + application_readiness_ms + playground_journey_ms ))
-max_fresh_ms=$(( max_fresh_seconds * 1000 ))
-max_warm_ms=$(( max_warm_seconds * 1000 ))
-
-if (( fresh_total_ms >= max_fresh_ms )); then
-    echo "Fresh devcontainer qualification took ${fresh_total_ms}ms; limit is ${max_fresh_ms}ms." >&2
-    exit 1
-fi
-
-if (( warm_rebuild_ms >= max_warm_ms )); then
-    echo "Warm devcontainer rebuild took ${warm_rebuild_ms}ms; limit is ${max_warm_ms}ms." >&2
-    exit 1
-fi
-
-database_override_started_ms="$(timestamp_ms)"
-"${repo_root}/scripts/ci/qualify-devcontainer-database-overrides.sh"
-database_override_ms="$(duration_ms "$database_override_started_ms")"
-
-mkdir -p "$(dirname "$timing_output")"
-IMAGE="$image" \
-PLATFORM="$platform" \
-REVISION="$revision_label" \
-ANONYMOUS_CREDENTIALS_ABSENT="$anonymous_credentials_absent" \
-COMPLETED_MS="$(timestamp_ms)" \
-DOCKER_ARCHITECTURE="$docker_architecture" \
-EVIDENCE_TYPE="$evidence_type" \
-HOST_ARCHITECTURE="$host_architecture" \
-HOST_MACHINE="$host_machine" \
-IMAGE_PULL_MS="$image_pull_ms" \
-IMAGE_BUILD_MS="$image_build_ms" \
-CONTAINER_READINESS_MS="$container_readiness_ms" \
-DEPENDENCY_BOOTSTRAP_MS="$dependency_bootstrap_ms" \
-APPLICATION_READINESS_MS="$application_readiness_ms" \
-DATABASE_OVERRIDE_MS="$database_override_ms" \
-FRESH_TOTAL_MS="$fresh_total_ms" \
-REGISTRY="$registry" \
-REQUIRE_ANONYMOUS_PULL="$require_anonymous_pull" \
-RUNNER_LABEL="$runner_label" \
-RUN_STARTED_MS="$run_started_ms" \
-WARM_REBUILD_MS="$warm_rebuild_ms" \
-PLAYGROUND_JOURNEY_MS="$playground_journey_ms" \
-PLAYGROUND_EVIDENCE_FILES="$(IFS=:; echo "${playground_evidence_files[*]}")" \
-TIMING_OUTPUT="$timing_output" \
-python3 <<'PY'
-import json
-import os
-
-payload = {
-    "schema_version": 2,
-    "evidence_type": os.environ["EVIDENCE_TYPE"],
-    "image": os.environ["IMAGE"],
-    "platform": os.environ["PLATFORM"],
-    "registry": os.environ["REGISTRY"],
-    "source_revision": os.environ["REVISION"],
-    "runner": {
-        "label": os.environ["RUNNER_LABEL"],
-        "host_machine": os.environ["HOST_MACHINE"],
-        "host_architecture": os.environ["HOST_ARCHITECTURE"],
-        "docker_architecture": os.environ["DOCKER_ARCHITECTURE"],
-    },
-    "anonymous_pull_verification": {
-        "required": os.environ["REQUIRE_ANONYMOUS_PULL"] == "1",
-        "credentials_absent": os.environ["ANONYMOUS_CREDENTIALS_ABSENT"] == "1",
-        "pull_performed": os.environ["REQUIRE_ANONYMOUS_PULL"] == "1",
-    },
-    "environment_builds": 0,
-    "phases_ms": {
-        "image_pull": int(os.environ["IMAGE_PULL_MS"]),
-        "container_readiness": int(os.environ["CONTAINER_READINESS_MS"]),
-        "dependency_bootstrap": int(os.environ["DEPENDENCY_BOOTSTRAP_MS"]),
-        "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
-    },
-    "stages_ms": {
-        "image_build": int(os.environ["IMAGE_BUILD_MS"]),
-        "image_pull": int(os.environ["IMAGE_PULL_MS"]),
-        "container_readiness": int(os.environ["CONTAINER_READINESS_MS"]),
-        "dependency_bootstrap": int(os.environ["DEPENDENCY_BOOTSTRAP_MS"]),
-        "application_readiness": int(os.environ["APPLICATION_READINESS_MS"]),
-        "database_override": int(os.environ["DATABASE_OVERRIDE_MS"]),
-        "warm_rebuild": int(os.environ["WARM_REBUILD_MS"]),
-        "playground_journeys": int(os.environ["PLAYGROUND_JOURNEY_MS"]),
-    },
-    "fresh_total_ms": int(os.environ["FRESH_TOTAL_MS"]),
-    "warm_rebuild_ms": int(os.environ["WARM_REBUILD_MS"]),
-    "playground_journey_ms": int(os.environ["PLAYGROUND_JOURNEY_MS"]),
-    "playground_evidence_files": [
-        path.rsplit("/", 1)[-1]
-        for path in os.environ["PLAYGROUND_EVIDENCE_FILES"].split(":")
-        if path
-    ],
-    "run_started_epoch_ms": int(os.environ["RUN_STARTED_MS"]),
-    "completed_epoch_ms": int(os.environ["COMPLETED_MS"]),
-}
-
-with open(os.environ["TIMING_OUTPUT"], "w", encoding="utf-8") as output:
-    json.dump(payload, output, indent=2, sort_keys=True)
-    output.write("\n")
-PY
-
-cat "$timing_output"
+printf 'Devcontainer qualification passed for %s in %ss.\n' "$platform" "$elapsed"

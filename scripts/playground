@@ -313,7 +313,6 @@ def effective_scenario(
 
 def resolve_artifacts() -> dict[str, str]:
     env = clean_environment()
-    env.setdefault("DURABLE_WORKFLOW_ARTIFACT_SOURCE", "pinned")
     output = command_output(
         [str(REPO_ROOT / "scripts" / "resolve-current-artifacts.sh")], env=env
     )

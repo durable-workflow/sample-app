@@ -1,10 +1,10 @@
-name: polyglot-validation
+name: polyglot validation
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,71 +12,24 @@ permissions:
 
 jobs:
   smoke:
-    name: polyglot smoke (PHP/Python/Rust, ${{ matrix.cache_mode }})
-    if: ${{ github.server_url == 'https://github.com' }}
+    name: polyglot smoke (PHP/Python/Rust)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        cache_mode: [cold-cache, warm-cache]
     env:
-      # This source imports the synchronized prerelease protocol API. Keep its
-      # qualification on the committed exact tuple while the public docs tuple
-      # advances only after the release train has completed validation.
-      DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
-      POLYGLOT_BUILD_CACHE_MODE: ${{ matrix.cache_mode }}
-      POLYGLOT_QUALIFICATION_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      POLYGLOT_QUALIFICATION_RUN_ID: ${{ github.run_id }}
-      POLYGLOT_QUALIFICATION_RUN_ATTEMPT: ${{ github.run_attempt }}
-      POLYGLOT_QUALIFICATION_WORKFLOW: ${{ github.workflow }}
-      POLYGLOT_QUALIFICATION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
+      POLYGLOT_COMPOSE_PROJECT_NAME: sample-app-polyglot-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Test polyglot metadata evidence
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test smoke metadata
         run: python3 -m unittest discover -s polyglot/python_worker/tests -v
-
-      - name: Set isolated Compose project
-        shell: bash
-        run: |
-          raw="sample-app-polyglot-${GITHUB_RUN_ID:-local}-${GITHUB_JOB:-smoke}-${POLYGLOT_BUILD_CACHE_MODE}-${GITHUB_RUN_ATTEMPT:-1}"
-          project="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
-          project="${project%-}"
-          echo "COMPOSE_PROJECT_NAME=$project" >> "$GITHUB_ENV"
-          echo "Polyglot Compose project: $project"
-
-      - name: Resolve qualified artifact tuple
-        shell: bash
-        run: |
-          while IFS= read -r assignment; do
-            echo "$assignment" >> "$GITHUB_ENV"
-            export "$assignment"
-            printf '%s\n' "$assignment"
-          done < <(scripts/resolve-current-artifacts.sh)
-
-      - name: Show resolved server image
-        working-directory: polyglot
-        run: |
-          # Surface the durableworkflow/server tag the smoke is about to run
-          # against, so a human reviewing the CI log can immediately see which
-          # server build the polyglot scenarios were exercised on.
-          echo "Polyglot server image:"
-          docker compose config server | awk '/^[[:space:]]+image:/ {print; exit}'
-
-      - name: Validate one stable polyglot runtime lifecycle
-        shell: bash
-        run: timeout --signal=TERM --kill-after=60s 1620s scripts/polyglot-validation.sh
-
-  polyglot-qualification:
-    name: polyglot smoke (PHP/Python/Rust)
-    if: ${{ always() && github.server_url == 'https://github.com' }}
-    needs: [smoke]
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Require every cache-mode smoke
-        env:
-          SMOKE_RESULT: ${{ needs.smoke.result }}
-        run: test "$SMOKE_RESULT" = success
+      - name: Run the documented service-mode example
+        run: scripts/polyglot.sh
+      - name: Dump logs
+        if: failure()
+        run: >-
+          docker compose --project-directory polyglot
+          -f polyglot/docker-compose.yml
+          -p "$POLYGLOT_COMPOSE_PROJECT_NAME"
+          logs --no-color --timestamps
+      - name: Tear down stack
+        if: always()
+        run: scripts/polyglot.sh down

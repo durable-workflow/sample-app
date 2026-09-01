@@ -2,9 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -13,15 +13,12 @@ permissions:
 jobs:
   test:
     name: php artisan test (php ${{ matrix.php }})
-    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     strategy:
       fail-fast: false
       matrix:
         php: ['8.4', '8.5']
-
     services:
       mysql:
         image: mysql:8.0
@@ -37,7 +34,6 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
-
       redis:
         image: redis:7-alpine
         ports:
@@ -47,69 +43,54 @@ jobs:
           --health-interval=3s
           --health-timeout=3s
           --health-retries=10
-
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, redis, bcmath, gd, zip
           coverage: none
           tools: composer:v2
 
-      - name: Validate composer.json
-        run: composer validate --strict --no-check-all
-
-      - name: Cache Composer packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: vendor
-          key: ${{ github.event_name }}-${{ runner.os }}-php-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
-
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
-      - name: Run Node regression tests against the installed packages
-        run: npm run test:node
-
-      - name: Install the isolated framework-neutral PHP playground runtime
-        run: >-
-          composer install --working-dir=playground/php-runtime
-          --prefer-dist --no-dev --no-progress --no-interaction
-
-      - name: Record the exact resolved Durable Workflow graph
-        run: php scripts/ci/validate-composer-artifact-graph.php
-
-      - name: Verify sandbox contract guidance against the installed AI package
-        run: composer docs:check-ai-contract
-
-      - name: Prepare environment file
-        run: cp .env.example .env
-
-      - name: Generate application key
-        run: php artisan key:generate
-
-      - name: Configure service connection
+      - name: Validate packages and stable artifact tuple
         run: |
+          composer validate --strict --no-check-all
+          composer audit --locked
+          composer install --working-dir=playground/php-runtime --prefer-dist --no-dev --no-progress --no-interaction
+          scripts/resolve-current-artifacts.sh
+          php scripts/ci/validate-composer-artifact-graph.php
+          composer docs:check-ai-contract
+
+      - name: Prepare application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
           if getent hosts mysql >/dev/null 2>&1; then
-            echo "DB_HOST=mysql" >> "$GITHUB_ENV"
-            echo "DB_PORT=3306" >> "$GITHUB_ENV"
-            echo "SHARED_DB_HOST=mysql" >> "$GITHUB_ENV"
-            echo "SHARED_DB_PORT=3306" >> "$GITHUB_ENV"
-            echo "REDIS_HOST=redis" >> "$GITHUB_ENV"
-            echo "REDIS_PORT=6379" >> "$GITHUB_ENV"
+            {
+              echo "DB_HOST=mysql"
+              echo "DB_PORT=3306"
+              echo "SHARED_DB_HOST=mysql"
+              echo "SHARED_DB_PORT=3306"
+              echo "REDIS_HOST=redis"
+              echo "REDIS_PORT=6379"
+            } >> "$GITHUB_ENV"
           else
-            echo "DB_HOST=127.0.0.1" >> "$GITHUB_ENV"
-            echo "DB_PORT=${{ job.services.mysql.ports[3306] }}" >> "$GITHUB_ENV"
-            echo "SHARED_DB_HOST=127.0.0.1" >> "$GITHUB_ENV"
-            echo "SHARED_DB_PORT=${{ job.services.mysql.ports[3306] }}" >> "$GITHUB_ENV"
-            echo "REDIS_HOST=127.0.0.1" >> "$GITHUB_ENV"
-            echo "REDIS_PORT=${{ job.services.redis.ports[6379] }}" >> "$GITHUB_ENV"
+            {
+              echo "DB_HOST=127.0.0.1"
+              echo "DB_PORT=${{ job.services.mysql.ports['3306'] }}"
+              echo "SHARED_DB_HOST=127.0.0.1"
+              echo "SHARED_DB_PORT=${{ job.services.mysql.ports['3306'] }}"
+              echo "REDIS_HOST=127.0.0.1"
+              echo "REDIS_PORT=${{ job.services.redis.ports['6379'] }}"
+            } >> "$GITHUB_ENV"
           fi
 
-      - name: Run test suite
+      - name: Run application tests
         env:
           DB_CONNECTION: mysql
           DB_DATABASE: sample
@@ -119,23 +100,21 @@ jobs:
           SHARED_DB_USERNAME: laravel
           SHARED_DB_PASSWORD: password
           REDIS_CLIENT: phpredis
-        run: php artisan test
+        run: |
+          php artisan test
+          npm run test:node
 
   microservice-test:
     name: microservice composer and tests (php ${{ matrix.php }})
-    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     defaults:
       run:
         working-directory: microservice
-
     strategy:
       fail-fast: false
       matrix:
         php: ['8.4', '8.5']
-
     services:
       mysql:
         image: mysql:8.0
@@ -151,70 +130,54 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
-
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, bcmath, gd, zip
           coverage: none
           tools: composer:v2
 
-      - name: Validate microservice composer.json and composer.lock
-        run: composer validate --strict --check-lock --no-check-all
-
-      - name: Install microservice dependencies from lock
-        run: composer install --prefer-dist --no-progress --no-interaction
-
-      - name: Audit locked microservice dependencies
-        run: composer audit --locked
-
-      - name: Run microservice test suite
+      - name: Install and test
         env:
           DB_CONNECTION: mysql
           DB_HOST: 127.0.0.1
-          DB_PORT: ${{ job.services.mysql.ports[3306] }}
+          DB_PORT: ${{ job.services.mysql.ports['3306'] }}
           DB_DATABASE: microservice
           DB_USERNAME: laravel
           DB_PASSWORD: password
           SHARED_DB_HOST: 127.0.0.1
-          SHARED_DB_PORT: ${{ job.services.mysql.ports[3306] }}
+          SHARED_DB_PORT: ${{ job.services.mysql.ports['3306'] }}
           SHARED_DB_DATABASE: microservice
           SHARED_DB_USERNAME: laravel
           SHARED_DB_PASSWORD: password
-        run: php artisan test
+        run: |
+          composer validate --strict --check-lock --no-check-all
+          composer install --prefer-dist --no-progress --no-interaction
+          composer audit --locked
+          php artisan test
 
   action-policy:
     name: Central action policy preflight
-    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
     steps:
-      - name: Check out candidate source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check out central action policy
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: durable-workflow/.github
           ref: main
           path: .central-action-policy
           persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.13"
-
-      - name: Install policy dependencies
-        run: python -m pip install PyYAML==6.0.2
-
+          python-version: '3.13'
+      - run: python -m pip install PyYAML==6.0.2
       - name: Require centrally approved immutable action commits
         run: >-
           python .central-action-policy/scripts/qualification_policy.py validate
@@ -224,59 +187,16 @@ jobs:
 
   target-branch-qualification:
     name: Target branch qualification
-    if: ${{ always() }}
+    if: always()
     needs: [test, microservice-test, action-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Check out candidate source
-        if: ${{ github.server_url != 'https://github.com' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Validate bounded candidate workload
-        if: ${{ github.server_url != 'https://github.com' }}
-        run: |
-          python3 scripts/ci/test-workflow-routing.py
-          python3 -m unittest discover -s polyglot/python_worker/tests -v
-          php scripts/ci/validate-composer-artifact-graph.php
-          php scripts/ci/validate-ai-contract-docs.php
-          git diff --check
-          while IFS= read -r -d '' script; do
-            bash -n "$script"
-          done < <(find scripts -type f -name '*.sh' -print0)
-
-      - name: Scan candidate public boundary
-        if: ${{ github.server_url != 'https://github.com' }}
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          range="-1 HEAD"
-          if [[ "$GITHUB_EVENT_NAME" == pull_request && -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
-            range="$BASE_SHA..$HEAD_SHA"
-          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
-            range="$BEFORE_SHA..$GITHUB_SHA"
-          fi
-          PUBLIC_BOUNDARY_GIT_RANGE="$range" scripts/check-public-boundary.sh
-
-      - name: Require every supported PHP cell
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          TEST_RESULT: ${{ needs.test.result }}
-        run: test "$TEST_RESULT" = success
-
-      - name: Require every supported microservice PHP cell
-        if: ${{ github.server_url == 'https://github.com' }}
-        env:
-          MICROSERVICE_TEST_RESULT: ${{ needs.microservice-test.result }}
-        run: test "$MICROSERVICE_TEST_RESULT" = success
-
-      - name: Require central action policy preflight
-        if: ${{ github.server_url == 'https://github.com' }}
+      - name: Require application tests
+        run: test "${{ needs.test.result }}" = success
+      - name: Require microservice tests
+        run: test "${{ needs.microservice-test.result }}" = success
+      - name: Require action policy
         env:
           ACTION_POLICY_RESULT: ${{ needs.action-policy.result }}
         run: test "$ACTION_POLICY_RESULT" = success

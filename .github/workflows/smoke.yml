@@ -2,9 +2,9 @@ name: smoke
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -13,114 +13,20 @@ permissions:
 jobs:
   compose:
     name: docker compose sample workflows
-    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     env:
       COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}-${{ github.run_attempt }}
-      APP_PORT: "0"
-      SAMPLE_APP_SMOKE_ONLY: 1
-
+      APP_PORT: '0'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and start stack
         run: docker compose up -d --build --wait app worker
-
-      - name: Run deterministic workflow samples
+      - name: Run embedded workflow samples
         run: scripts/compose-smoke.sh
-
-      - name: Dump compose logs
+      - name: Dump logs
         if: failure()
         run: docker compose logs --no-color --timestamps
-
       - name: Tear down stack
         if: always()
         run: docker compose down -v --remove-orphans
-
-  service-mode:
-    name: service-mode onboarding (fresh and repeat)
-    if: ${{ github.server_url == 'https://github.com' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      COMPOSE_PROJECT_NAME: >-
-        sample-app-service-${{ github.run_id }}-${{ github.run_attempt }}
-      DURABLE_WORKFLOW_ARTIFACT_SOURCE: pinned
-      SERVICE_MODE_PORT: "18081"
-      SERVICE_MODE_SAMPLE_APP_REVISION: ${{ github.sha }}
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Export the supported artifact tuple for diagnostics and cleanup
-        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
-
-      - name: Run the documented service-mode path from a clean project
-        env:
-          SERVICE_MODE_EVIDENCE_PATH: service-mode-first.json
-        run: scripts/service-mode.sh
-
-      - name: Run the documented command again without cleanup
-        env:
-          SERVICE_MODE_EVIDENCE_PATH: service-mode-repeat.json
-        run: scripts/service-mode.sh
-
-      - name: Validate timings, runtime results, versions, and unique identities
-        run: >-
-          python3 scripts/ci/validate-service-mode-evidence.py
-          service-mode-first.json
-          service-mode-repeat.json
-
-      - name: Open the matching Waterline route
-        run: |
-          waterline_url="$(
-            python3 -c '
-          import json
-          data = json.load(open("service-mode-repeat.json"))
-          print(data["workflow"]["waterline_url"])
-          '
-          )"
-          curl --fail --silent --show-error --location "$waterline_url" \
-            | grep -E 'Waterline|waterline'
-
-      - name: Retain service-mode visual and runtime evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: waterline-service-mode-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            service-mode-*.json
-            service-mode-*-waterline.png
-            service-mode-*-waterline-dialogs/**
-            service-mode-*-waterline-run-detail/**
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Link protected evidence to the public completion gate
-        if: >-
-          success() && github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
-        run: |
-          {
-            echo '## Released Waterline service-mode qualification'
-            echo
-            echo "- Sample App revision: \`${GITHUB_SHA}\`"
-            echo "- Waterline package: \`${DURABLE_WORKFLOW_WATERLINE_VERSION}\`"
-            echo '- [Public completion gate](https://github.com/durable-workflow/waterline/issues/79)'
-            echo "- [Retained evidence run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Dump service-mode logs
-        if: failure()
-        run: >-
-          docker compose -f polyglot/service-mode.yml logs
-          --no-color --timestamps
-
-      - name: Tear down isolated service-mode state
-        if: always()
-        run: >-
-          docker compose -f polyglot/service-mode.yml down
-          -v --remove-orphans

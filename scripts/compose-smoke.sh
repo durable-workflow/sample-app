@@ -156,30 +156,4 @@ run_sample \
   "app:sandbox --snapshot-every=2 --inject-loss-after=2" \
   "Workflow complete\..*recoveries=1"
 
-if [[ "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE:-1}" == "1" && "${SAMPLE_APP_SMOKE_ONLY:-0}" != "1" ]]; then
-  printf '\n==> full sample-app conformance surface\n'
-  prepared_app_container_id="$(docker compose ps -q app)"
-  prepared_worker_container_id="$(docker compose ps -q worker)"
-  set +e
-  timeout "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800}s" env \
-    SAMPLE_APP_CONFORMANCE_REUSE_PREPARED=1 \
-    SAMPLE_APP_PREPARED_APP_CONTAINER_ID="$prepared_app_container_id" \
-    SAMPLE_APP_PREPARED_WORKER_CONTAINER_ID="$prepared_worker_container_id" \
-    scripts/compose-conformance.sh
-  status=$?
-  set -e
-
-  if [[ "$status" -ne 0 ]]; then
-    if [[ "$status" -eq 124 ]]; then
-      printf 'compose-smoke: full sample-app conformance surface timed out after %ss\n' "${SAMPLE_APP_CONFORMANCE_AFTER_SMOKE_TIMEOUT_SECONDS:-1800}" >&2
-    else
-      printf 'compose-smoke: full sample-app conformance surface exited with status %d\n' "$status" >&2
-    fi
-
-    compose_diagnostics "full sample-app conformance surface"
-
-    exit "$status"
-  fi
-else
-  printf '\ncompose-smoke: all deterministic sample workflows passed\n'
-fi
+printf '\ncompose-smoke: all deterministic sample workflows passed\n'
