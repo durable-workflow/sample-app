@@ -439,6 +439,30 @@ assert [worker["worker_id"] for worker in roster["workers"]] == [
     "stale-worker",
     "current-worker",
 ]
+
+clock = {"now": 0}
+def failed_roster(command, *, env, timeout=30):
+    raise PlaygroundError("dw worker:list failed with exit status 8: compatible client required")
+
+globals["json_command"] = failed_roster
+globals["time"].monotonic = lambda: clock["now"]
+globals["time"].sleep = lambda seconds: clock.update(now=61)
+try:
+    wait_for_registration(
+        "shared-queue",
+        "current-worker",
+        "authored-workflow",
+        "authored-activity",
+        "https://runtime.example/namespaces/example",
+        "example",
+        "client-secret",
+        FakeWorker(),
+    )
+except PlaygroundError as error:
+    assert "compatible client required" in str(error)
+else:
+    raise AssertionError("The final readiness error discarded the roster diagnostic")
+
 print("invocation-registration-proof=ready")
 PYTHON;
 
@@ -452,6 +476,60 @@ PYTHON;
 
         $this->assertStringContainsString(
             'invocation-registration-proof=ready',
+            $process->getOutput(),
+        );
+    }
+
+    public function test_managed_readiness_preserves_the_cli_failure_diagnostic(): void
+    {
+        $harness = <<<'PYTHON'
+import runpy
+import subprocess
+import sys
+
+playground = runpy.run_path(sys.argv[1])
+json_command = playground["json_command"]
+PlaygroundError = playground["PlaygroundError"]
+globals = json_command.__globals__
+
+def fail(command, *, env=None, cwd=None, capture=False, timeout=None):
+    raise subprocess.CalledProcessError(
+        8,
+        command,
+        output='{"error":"client_version_unsupported"}',
+        stderr="The installed client is outside the server-advertised supported range.",
+    )
+
+globals["run"] = fail
+
+try:
+    json_command(
+        ["dw", "worker:list", "--task-queue=managed queue", "--json"],
+        env={},
+    )
+except PlaygroundError as error:
+    message = str(error)
+    assert "dw 'worker:list'" not in message
+    assert "dw worker:list '--task-queue=managed queue' --json" in message
+    assert "exit status 8" in message
+    assert "client_version_unsupported" in message
+    assert "outside the server-advertised supported range" in message
+else:
+    raise AssertionError("A failed roster command did not raise PlaygroundError")
+
+print("managed-readiness-diagnostic=preserved")
+PYTHON;
+
+        $process = new Process([
+            'python3',
+            '-c',
+            $harness,
+            $this->path('scripts/playground'),
+        ]);
+        $process->mustRun();
+
+        $this->assertStringContainsString(
+            'managed-readiness-diagnostic=preserved',
             $process->getOutput(),
         );
     }
