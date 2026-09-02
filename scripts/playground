@@ -782,7 +782,21 @@ def dw_environment(
 def json_command(
     command: list[str], *, env: dict[str, str], timeout: float = 30
 ) -> dict[str, Any]:
-    result = run(command, env=env, capture=True, timeout=timeout)
+    try:
+        result = run(command, env=env, capture=True, timeout=timeout)
+    except subprocess.CalledProcessError as error:
+        details = []
+        for output in (error.stderr, error.stdout):
+            detail = (output or "").strip()
+            if detail and detail not in details:
+                details.append(detail)
+        message = (
+            f"{shlex.join(command)} failed with exit status {error.returncode}"
+        )
+        if details:
+            message = f"{message}:\n" + "\n".join(details)
+        raise PlaygroundError(message) from error
+
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError as error:
