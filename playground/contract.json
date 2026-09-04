@@ -52,7 +52,7 @@
       "managed": {
         "selected_waterline_run": {
           "requirement": "omitted",
-          "reason": "managed-runtime-waterline-not-provisioned"
+          "reason": "managed-waterline-not-validated-by-sdk-playground"
         }
       }
     }
