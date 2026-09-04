@@ -45,7 +45,7 @@ final class PlaygroundContractTest extends TestCase
         $this->assertSame(
             [
                 'requirement' => 'omitted',
-                'reason' => 'managed-runtime-waterline-not-provisioned',
+                'reason' => 'managed-waterline-not-validated-by-sdk-playground',
             ],
             $contract['proof']['runtime']['managed']['selected_waterline_run'] ?? null,
         );
@@ -655,7 +655,7 @@ for language in ("php", "python", "rust"):
     assert payload["workflow"]["worker_id"] == active["worker_id"]
     assert payload["waterline"] == {
         "status": "omitted",
-        "reason": "managed-runtime-waterline-not-provisioned",
+        "reason": "managed-waterline-not-validated-by-sdk-playground",
     }
     summaries.append(payload["language"])
     evidence_paths.append(evidence_path)
