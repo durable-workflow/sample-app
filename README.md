@@ -9,6 +9,8 @@ Runnable examples for Durable Workflow 2.0. Start a PHP-authored workflow
 that calls Python and Rust activities through a standalone Server, build a
 workflow with any first-party SDK, or run the workflow engine inside Laravel.
 
+Already have a Cloud namespace? Start with [PHP on Cloud](#php-on-cloud).
+
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/durable-workflow/sample-app?quickstart=1)
 
 ## Choose a path
@@ -61,6 +63,12 @@ isolated local Server and Waterline, waits for the worker registration, starts
 the workflow, verifies its result and history, and prints the matching
 Waterline run URL. Existing authored files are preserved.
 
+The generated workflow and activity are yours to edit. `.playground/` and the
+default evidence files are ignored by Git; the evidence is a run report, not
+application source. To keep authored code in your project, choose a directory
+with `--source`, review the generated files, and commit only your source, not
+credentials or run reports. Existing files are preserved on subsequent runs.
+
 Create a caller-owned project elsewhere with `--source`:
 
 ```bash
@@ -82,24 +90,38 @@ scripts/playground down rust
 
 ### Managed runtime
 
+#### PHP on Cloud
+
 The same authored project can run against Durable Workflow Cloud or another
-existing runtime. Supply role-specific credentials without putting them in
-source control:
+existing runtime, without starting a local Server or Waterline. Use the exact
+runtime URL and namespace shown by Cloud; do not append `/api`. Supply the
+runtime worker and client SDK credentials, not a Cloud control-plane API key:
 
 ```bash
 export DURABLE_WORKFLOW_WORKER_TOKEN='<worker credential>'
 export DURABLE_WORKFLOW_CLIENT_TOKEN='<client credential>'
 
-scripts/playground rust \
+scripts/playground php \
   --runtime managed \
   --runtime-url 'https://runtime.example/namespaces/example' \
   --namespace 'example' \
-  --task-queue 'my-rust-worker'
+  --task-queue 'my-php-worker'
 ```
 
 The worker receives only the worker credential, and the client receives only
 the client credential. The runner prints the workflow type, activity type,
 task queue, worker command, start command, and expected result before it runs.
+Expect `Worker ready: target=managed`, followed by `Completed php workflow`
+and the result containing `workflow_runtime: php` and `activity_runtime: php`.
+Use `python` or `rust` in place of `php` for the other SDKs.
+
+This PHP path is **service mode using the Laravel bridge**, not the embedded
+workflow engine. Laravel provides configuration, dependency injection, PSR
+logging, and the SDK test fake. The SDK worker polls Cloud; Laravel's embedded
+queue worker is not its executor. The generated `bootstrap.php` and activity
+use Laravel, while the core PHP SDK also supports framework-free processes.
+For those, use `scripts/playground scaffold php --standalone --source <dir>`
+to inspect the installed SDK's own worker/client examples.
 
 ## Embedded Laravel
 
