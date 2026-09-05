@@ -724,6 +724,10 @@ PYTHON;
             $this->assertStringContainsString('managed-harness=["php", "python", "rust"]', $output);
             $this->assertSame(3, substr_count($output, 'Worker ready: target=managed'));
             $this->assertSame(3, substr_count($output, '"runtime_target":"managed"'));
+            foreach (['php', 'python', 'rust'] as $language) {
+                $this->assertStringContainsString("Editable {$language} source: {$temporaryDirectory}/{$language}", $output);
+                $this->assertStringContainsString("Generated run evidence: {$temporaryDirectory}/{$language}.json", $output);
+            }
             $this->assertStringNotContainsString('worker-secret', $output);
             $this->assertStringNotContainsString('client-secret', $output);
         } finally {

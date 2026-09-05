@@ -16,6 +16,8 @@ start with the repository playground instead of the conformance matrix.
   `--runtime-url`, `--namespace`, and `--task-queue`; provide its separate
   worker and client role credentials through the named process environment
   variables described by `scripts/playground <language> --help`.
+- The [PHP on Cloud example](README.md#php-on-cloud) shows the complete
+  managed invocation and explains the Laravel bridge versus embedded runtime.
 - Treat the printed effective contract and `Worker ready` checkpoint as the
   source of truth for workflow type, activity type, task queue, worker command,
   start command, and expected result. Do not repeat scenario identities in an

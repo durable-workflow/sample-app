@@ -955,6 +955,13 @@ def journey(
     if effective_task_queue:
         scenario["task_queue"] = effective_task_queue
     created = scaffold(language, source_dir, scenario=scenario)
+    print(f"Editable {language} source: {source_dir}", flush=True)
+    print(f"Generated run evidence: {evidence_path}", flush=True)
+    print(
+        "Edit the generated source for your application. The default .playground/ "
+        "directory is Git-ignored; use --source for your project directory.",
+        flush=True,
+    )
     project = os.environ.get("PLAYGROUND_COMPOSE_PROJECT", "sample-app-playground")
     task_queue = str(scenario["task_queue"])
     worker_id = f"sample-app-playground-{language}-worker-{suffix}"
