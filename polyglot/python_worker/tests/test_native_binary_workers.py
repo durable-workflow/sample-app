@@ -8,6 +8,7 @@ import types
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 
 class _Definitions:
@@ -33,6 +34,15 @@ durable_workflow.serializer = object
 durable_workflow.workflow = _Definitions
 durable_workflow_errors = types.ModuleType("durable_workflow.errors")
 durable_workflow_errors.ActivityFailed = Exception
+
+
+class ServerError(Exception):
+    def __init__(self, status: int, body: object) -> None:
+        self.status = status
+        self.body = body
+
+
+durable_workflow_errors.ServerError = ServerError
 sys.modules["durable_workflow"] = durable_workflow
 sys.modules["durable_workflow.errors"] = durable_workflow_errors
 
@@ -195,6 +205,63 @@ class NativeBinaryWorkerTest(unittest.TestCase):
             activities.echo_native_binary_value(
                 {"binary_base64": self.payload["binary_base64"]}
             )
+
+
+class TypedErrorPollCapacityTest(unittest.IsolatedAsyncioTestCase):
+    def refusal(self, **overrides: Any) -> dict[str, Any]:
+        return {
+            "reason": "long_poll_capacity_exhausted",
+            "retryable": True,
+            "retry_after_seconds": 2,
+            **overrides,
+        }
+
+    async def test_capacity_refusal_waits_then_handles_the_next_task(self) -> None:
+        task = {"task_id": "accepted-after-wait"}
+        client = types.SimpleNamespace(
+            register_worker=AsyncMock(return_value={}),
+            poll_activity_task=AsyncMock(side_effect=[
+                ServerError(429, self.refusal()), task, asyncio.CancelledError(),
+            ]),
+        )
+        with (
+            patch.object(activities, "heartbeat_typed_error_worker", AsyncMock()),
+            patch.object(activities, "handle_typed_error_task", AsyncMock()) as handler,
+            patch.object(activities.asyncio, "sleep", AsyncMock()) as sleep,
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await activities.run_typed_error_worker(client, "typed-error-worker")
+
+        sleep.assert_awaited_once_with(2)
+        handler.assert_awaited_once_with(client, "typed-error-worker", task)
+        self.assertEqual(3, client.poll_activity_task.await_count)
+
+    async def test_unrelated_or_malformed_refusals_are_not_hidden(self) -> None:
+        cases = [
+            ServerError(401, self.refusal()),
+            ServerError(500, self.refusal()),
+            ServerError(429, self.refusal(reason="namespace_quota_exhausted")),
+            ServerError(429, self.refusal(retryable=False)),
+            ServerError(429, self.refusal(retry_after_seconds=None)),
+            ServerError(429, self.refusal(retry_after_seconds=True)),
+            ServerError(429, self.refusal(retry_after_seconds=-1)),
+            ServerError(429, self.refusal(retry_after_seconds=0)),
+            ServerError(429, "invalid response"),
+        ]
+        for error in cases:
+            with self.subTest(status=error.status, body=error.body):
+                client = types.SimpleNamespace(
+                    register_worker=AsyncMock(return_value={}),
+                    poll_activity_task=AsyncMock(side_effect=error),
+                )
+                with (
+                    patch.object(activities, "heartbeat_typed_error_worker", AsyncMock()),
+                    patch.object(activities.asyncio, "sleep", AsyncMock()) as sleep,
+                ):
+                    with self.assertRaises(ServerError) as raised:
+                        await activities.run_typed_error_worker(client, "typed-error-worker")
+                self.assertIs(error, raised.exception)
+                sleep.assert_not_awaited()
 
 
 class TypedErrorTaskCodecBoundaryTest(unittest.IsolatedAsyncioTestCase):

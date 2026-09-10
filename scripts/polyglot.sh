@@ -28,13 +28,17 @@ compose=(docker compose --project-directory "$repo_root/polyglot" -f "$compose_f
 
 case "${1:-}" in
   '') ;;
+  logs)
+    "${compose[@]}" logs --no-color --timestamps
+    exit 0
+    ;;
   down)
     printf '==> PolyglotWorkflow: removing Compose project %s\n' "$COMPOSE_PROJECT_NAME"
     "${compose[@]}" down --volumes --remove-orphans
     exit 0
     ;;
   *)
-    printf 'Usage: %s [down]\n' "${0##*/}" >&2
+    printf 'Usage: %s [logs|down]\n' "${0##*/}" >&2
     exit 2
     ;;
 esac

@@ -25,11 +25,7 @@ jobs:
         run: scripts/polyglot.sh
       - name: Dump logs
         if: failure()
-        run: >-
-          docker compose --project-directory polyglot
-          -f polyglot/docker-compose.yml
-          -p "$POLYGLOT_COMPOSE_PROJECT_NAME"
-          logs --no-color --timestamps
+        run: scripts/polyglot.sh logs
       - name: Tear down stack
         if: always()
         run: scripts/polyglot.sh down
