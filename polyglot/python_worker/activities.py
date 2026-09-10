@@ -18,6 +18,7 @@ import traceback
 from typing import Any
 
 from durable_workflow import Client, TransportRetryPolicy, Worker, activity, serializer
+from durable_workflow.errors import ServerError
 
 TASK_QUEUE = os.environ.get("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python")
 POLL_TIMEOUT_SECONDS = float(os.environ.get("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "90"))
@@ -166,11 +167,26 @@ async def run_typed_error_worker(client: Client, worker_id: str) -> None:
 
     try:
         while True:
-            task = await client.poll_activity_task(
-                worker_id=worker_id,
-                task_queue=TASK_QUEUE,
-                timeout=POLL_TIMEOUT_SECONDS,
-            )
+            try:
+                task = await client.poll_activity_task(
+                    worker_id=worker_id,
+                    task_queue=TASK_QUEUE,
+                    timeout=POLL_TIMEOUT_SECONDS,
+                )
+            except ServerError as exc:
+                body = exc.body if isinstance(exc.body, dict) else {}
+                delay = body.get("retry_after_seconds")
+                if (
+                    exc.status != 429
+                    or body.get("reason") != "long_poll_capacity_exhausted"
+                    or body.get("retryable") is not True
+                    or type(delay) is not int
+                    or delay <= 0
+                ):
+                    raise
+                LOG.info("typed-error poll wait capacity exhausted; retrying in %ss", delay)
+                await asyncio.sleep(delay)
+                continue
             if task is None:
                 continue
 
