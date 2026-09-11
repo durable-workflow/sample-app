@@ -4,11 +4,11 @@
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
     "cli": "2.0.0",
-    "sdk-php": "2.0.0",
+    "sdk-php": "2.0.10",
     "sdk-python": "2.0.0",
     "sdk-rust": "2.0.1",
     "server": "2.3.10",
     "waterline": "2.0.0",
-    "workflow": "2.0.12"
+    "workflow": "2.0.13"
   }
 }
