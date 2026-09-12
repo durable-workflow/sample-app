@@ -919,16 +919,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.0.13",
+            "version": "2.0.14",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "3fff6e737a92854a48b28dede8f7654f198cf7a5"
+                "reference": "259c32b86d132bdbac683e3bbc1de44251d45c5d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/3fff6e737a92854a48b28dede8f7654f198cf7a5",
-                "reference": "3fff6e737a92854a48b28dede8f7654f198cf7a5",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/259c32b86d132bdbac683e3bbc1de44251d45c5d",
+                "reference": "259c32b86d132bdbac683e3bbc1de44251d45c5d",
                 "shasum": ""
             },
             "require": {
@@ -961,7 +961,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.0.13",
+                    "product-train": "2.0.14",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -988,9 +988,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.0.13"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.0.14"
             },
-            "time": "2026-09-11T19:03:42+00:00"
+            "time": "2026-09-12T09:18:29+00:00"
         },
         {
             "name": "egulias/email-validator",
