@@ -720,16 +720,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.10",
+            "version": "2.0.11",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "19b2695d0bbfb37f0dd1ac54632bd5b1d5023b67"
+                "reference": "967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/19b2695d0bbfb37f0dd1ac54632bd5b1d5023b67",
-                "reference": "19b2695d0bbfb37f0dd1ac54632bd5b1d5023b67",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3",
+                "reference": "967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3",
                 "shasum": ""
             },
             "require": {
@@ -770,7 +770,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.10",
+                    "product-train": "2.0.11",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -836,7 +836,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-09-11T15:26:39+00:00"
+            "time": "2026-09-21T16:35:08+00:00"
         },
         {
             "name": "durable-workflow/waterline",
