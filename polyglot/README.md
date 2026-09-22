@@ -89,9 +89,8 @@ build, point the resolver at another tuple or override one version explicitly:
 ```bash
 DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json \
   scripts/polyglot.sh
-
-SAMPLE_APP_RUST_SDK_VERSION=2.0.1 scripts/polyglot.sh
 ```
 
-Overrides must be stable 2.x versions. The resolver prints every effective
-artifact before Compose starts.
+Set `SAMPLE_APP_RUST_SDK_VERSION` to override the Rust crate. Overrides must
+be stable 2.x versions. The resolver prints every effective artifact before
+Compose starts.

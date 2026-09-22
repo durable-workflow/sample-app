@@ -268,9 +268,9 @@ dependencies = [
 
 [[package]]
 name = "durable-workflow"
-version = "2.0.1"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "667c48e7a79c8a2891b25990d481b4af6907fced01d573658b491fa48cbe0aec"
+checksum = "398d34d577b38559d1bb73653506b19d3741216f7bd1655bcc98441acc4e37d6"
 dependencies = [
  "apache-avro",
  "base64",
@@ -290,6 +290,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "yoke-derive",
 ]
 
 [[package]]
