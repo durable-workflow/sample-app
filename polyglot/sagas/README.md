@@ -1,4 +1,4 @@
-# Rust saga compensation across SDKs
+# Cross-SDK saga compensation and restart
 
 This experiment runs Rust, PHP and Python workflows that reserve two steps,
 encounter an intentional activity failure, then compensate in reverse order.
@@ -54,39 +54,49 @@ The client reports each completed direction and ends with `5/5 Rust-involving
 saga compensation directions completed`. A missing handler, mismatched activity
 type, absent planned failure, or out-of-order compensation fails the run.
 
-To check Rust cold replay with each compensation runtime, leave the disposable
-stack up. Run the Rust worker and the PHP and Python workers above. For each of
-`rust`, `php`, and `python`, start one workflow in another terminal:
+To check cold replay before compensation, leave the disposable stack and all
+three workers up. Run each of these five directions in turn:
+
+| Workflow runtime | Compensation runtime | Start/verify flags | Worker to restart |
+| --- | --- | --- | --- |
+| Rust | Rust | `--workflow-runtime rust --compensation-runtime rust` | Rust |
+| Rust | PHP | `--workflow-runtime rust --compensation-runtime php` | Rust |
+| Rust | Python | `--workflow-runtime rust --compensation-runtime python` | Rust |
+| PHP | Rust | `--workflow-runtime php` | PHP |
+| Python | Rust | `--workflow-runtime python` | Python |
+
+For each row, start one workflow with its flags:
 
 ```sh
-python polyglot/sagas/restart_client.py start --compensation-runtime php
+python polyglot/sagas/restart_client.py start --workflow-runtime php
 ```
 
-After it prints `restart_boundary`, stop the Rust worker and wait for that
-process to exit. While it is stopped, deliver the signal using the printed ID:
+After it prints `restart_boundary`, stop the selected parent worker and wait
+for that process to exit. While it is stopped, deliver the signal using the
+printed ID and the same flags:
 
 ```sh
-python polyglot/sagas/restart_client.py signal <workflow-id>
+python polyglot/sagas/restart_client.py signal <workflow-id> --workflow-runtime php
 ```
 
-Start a new Rust worker process, keeping the PHP and Python workers running,
-then verify the resumed run with the same compensation runtime:
+Start a new process for that parent worker, keeping the other workers running,
+then verify the resumed run with the same flags:
 
 ```sh
-python polyglot/sagas/restart_client.py verify <workflow-id> --compensation-runtime php
+python polyglot/sagas/restart_client.py verify <workflow-id> --workflow-runtime php
 ```
 
 The boundary is a persisted signal wait after the first reserve; verification
 requires exactly one wait and signal, no duplicated reserve, and reverse-order
-compensation by the selected runtime. Record both Rust worker process identities
-and the signal/verify order for each run. These checks cover Rust workflows
-restarted before Rust, PHP, or Python compensation, not process loss during an
-activity or PHP/Python-parent restarts.
+compensation by the selected runtime. PHP and Python use a signal-derived
+`ConditionWaitOpened`; Rust records `SignalWaitOpened`. Record both parent
+worker process identities and the signal/verify order for each run. These
+checks do not cover process loss during an activity.
 
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
-five outcomes and any failure on the owning GitHub issue. This example does
-not qualify duplicate delivery or compensation failure; those require separate
-tests.
+five completed directions, five restart outcomes and any failure on the owning
+GitHub issue. This example does not qualify duplicate delivery or compensation
+failure; those require separate tests.
 
 Stop the workers, then remove only this local stack and its volumes:
 
