@@ -39,6 +39,8 @@ async fn main() -> Result<()> {
             format!("sample-app.saga.rust.compensate-{language}"),
             move |context, input| async move {
                 let marker = input.get(0).cloned().unwrap_or_else(|| json!(null));
+                let restart_check =
+                    input.get(1).and_then(|value| value.as_str()) == Some("restart-check");
                 let mut saga = context.saga();
                 let outcome = async {
                     for step in ["first", "second"] {
@@ -49,6 +51,11 @@ async fn main() -> Result<()> {
                             format!("sample-app.saga.{language}.undo-{step}"),
                             json!([marker]),
                         )?;
+                        if restart_check && step == "first" {
+                            context
+                                .wait_signal("sample-app.saga.restart-continue")
+                                .await?;
+                        }
                     }
                     context
                         .activity_with_options(
