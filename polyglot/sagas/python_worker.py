@@ -20,6 +20,8 @@ async def undo_first(marker: str) -> dict[str, str]:
 
 @activity.defn(name="sample-app.saga.python.undo-second")
 async def undo_second(marker: str) -> dict[str, str]:
+    if marker.startswith("saga-fail-compensation-"):
+        raise RuntimeError("planned undo-second compensation failure")
     return {"step": "second", "marker": marker, "runtime": "python"}
 
 
@@ -32,7 +34,7 @@ class PythonSagaWorkflow:
                 yield context.schedule_activity(
                     f"sample-app.saga.reserve-{step}", [marker]
                 )
-                saga.add_compensation(f"sample-app.saga.rust.undo-{step}", [marker])
+                saga.add_compensation(f"sample-app.saga.rust.undo-{step}", [marker], retry_policy={"max_attempts": 1})
 
             yield context.schedule_activity(
                 "sample-app.saga.decline", [], retry_policy={"max_attempts": 1}
@@ -62,10 +64,10 @@ class PythonSagaRestartWorkflow:
         saga = context.saga()
         try:
             yield context.schedule_activity("sample-app.saga.reserve-first", [marker])
-            saga.add_compensation("sample-app.saga.rust.undo-first", [marker])
+            saga.add_compensation("sample-app.saga.rust.undo-first", [marker], retry_policy={"max_attempts": 1})
             yield context.wait_condition(lambda: self.released, key="saga-restart-continue")
             yield context.schedule_activity("sample-app.saga.reserve-second", [marker])
-            saga.add_compensation("sample-app.saga.rust.undo-second", [marker])
+            saga.add_compensation("sample-app.saga.rust.undo-second", [marker], retry_policy={"max_attempts": 1})
             yield context.schedule_activity(
                 "sample-app.saga.decline", [], retry_policy={"max_attempts": 1}
             )

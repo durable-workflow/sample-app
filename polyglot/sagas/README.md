@@ -54,6 +54,18 @@ The client reports each completed direction and ends with `5/5 Rust-involving
 saga compensation directions completed`. A missing handler, mismatched activity
 type, absent planned failure, or out-of-order compensation fails the run.
 
+With the same disposable stack and workers, exercise a terminal compensation
+failure in all five directions:
+
+```sh
+python polyglot/sagas/client.py --compensation-failure
+```
+
+This input makes `undo-second` fail on its first attempt. The client requires
+the typed `SagaCompensationFailed` terminal event, both recorded activity
+failures, and no scheduled `undo-first`. The ordinary client command above
+still checks that both compensations complete in reverse order.
+
 To check cold replay before compensation, leave the disposable stack and all
 three workers up. Run each of these five directions in turn:
 
@@ -94,9 +106,11 @@ worker process identities and the signal/verify order for each run. These
 checks do not cover process loss during an activity.
 
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
-five completed directions, five restart outcomes and any failure on the owning
-GitHub issue. This example does not qualify duplicate delivery or compensation
-failure; those require separate tests.
+five completed directions, five terminal-compensation-failure directions,
+five restart outcomes and any unexpected failure on the owning GitHub issue.
+The failure case proves persisted failure identity and stop-at-first-failure;
+it does not prove external side-effect recovery, duplicate delivery, or worker
+loss during compensation.
 
 Stop the workers, then remove only this local stack and its volumes:
 
