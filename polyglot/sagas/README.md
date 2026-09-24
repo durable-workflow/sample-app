@@ -54,11 +54,12 @@ The client reports each completed direction and ends with `5/5 Rust-involving
 saga compensation directions completed`. A missing handler, mismatched activity
 type, absent planned failure, or out-of-order compensation fails the run.
 
-To check Rust cold replay after a worker restart, leave the disposable stack up
-and run only the Rust worker. In another terminal, with the same client environment:
+To check Rust cold replay with each compensation runtime, leave the disposable
+stack up. Run the Rust worker and the PHP and Python workers above. For each of
+`rust`, `php`, and `python`, start one workflow in another terminal:
 
 ```sh
-python polyglot/sagas/restart_client.py start
+python polyglot/sagas/restart_client.py start --compensation-runtime php
 ```
 
 After it prints `restart_boundary`, stop the Rust worker and wait for that
@@ -68,17 +69,19 @@ process to exit. While it is stopped, deliver the signal using the printed ID:
 python polyglot/sagas/restart_client.py signal <workflow-id>
 ```
 
-Start a new Rust worker process, then verify the resumed run:
+Start a new Rust worker process, keeping the PHP and Python workers running,
+then verify the resumed run with the same compensation runtime:
 
 ```sh
-python polyglot/sagas/restart_client.py verify <workflow-id>
+python polyglot/sagas/restart_client.py verify <workflow-id> --compensation-runtime php
 ```
 
 The boundary is a persisted signal wait after the first reserve; verification
 requires exactly one wait and signal, no duplicated reserve, and reverse-order
-compensation. Record both worker process identities and the signal/verify order
-with the run. This checks one Rust-to-Rust restart direction, not a process loss
-during a local side effect or every cross-language direction.
+compensation by the selected runtime. Record both Rust worker process identities
+and the signal/verify order for each run. These checks cover Rust workflows
+restarted before Rust, PHP, or Python compensation, not process loss during an
+activity or PHP/Python-parent restarts.
 
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
 five outcomes and any failure on the owning GitHub issue. This example does
