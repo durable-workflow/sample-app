@@ -53,10 +53,37 @@ python polyglot/sagas/client.py
 The client reports each completed direction and ends with `5/5 Rust-involving
 saga compensation directions completed`. A missing handler, mismatched activity
 type, absent planned failure, or out-of-order compensation fails the run.
+
+To check Rust cold replay after a worker restart, leave the disposable stack up
+and run only the Rust worker. In another terminal, with the same client environment:
+
+```sh
+python polyglot/sagas/restart_client.py start
+```
+
+After it prints `restart_boundary`, stop the Rust worker and wait for that
+process to exit. While it is stopped, deliver the signal using the printed ID:
+
+```sh
+python polyglot/sagas/restart_client.py signal <workflow-id>
+```
+
+Start a new Rust worker process, then verify the resumed run:
+
+```sh
+python polyglot/sagas/restart_client.py verify <workflow-id>
+```
+
+The boundary is a persisted signal wait after the first reserve; verification
+requires exactly one wait and signal, no duplicated reserve, and reverse-order
+compensation. Record both worker process identities and the signal/verify order
+with the run. This checks one Rust-to-Rust restart direction, not a process loss
+during a local side effect or every cross-language direction.
+
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
 five outcomes and any failure on the owning GitHub issue. This example does
-not qualify worker restart, duplicate delivery, or compensation failure; those
-require separate tests.
+not qualify duplicate delivery or compensation failure; those require separate
+tests.
 
 Stop the workers, then remove only this local stack and its volumes:
 
