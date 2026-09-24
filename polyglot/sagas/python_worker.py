@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from durable_workflow import Client, Worker, activity
+from durable_workflow import ActivityFailed, Client, Worker, activity, workflow
 
 
 def required(name: str) -> str:
@@ -23,6 +23,32 @@ async def undo_second(marker: str) -> dict[str, str]:
     return {"step": "second", "marker": marker, "runtime": "python"}
 
 
+@workflow.defn(name="sample-app.saga.python.compensate-rust")
+class PythonSagaWorkflow:
+    def run(self, context, marker: str):
+        saga = context.saga()
+        try:
+            for step in ("first", "second"):
+                yield context.schedule_activity(
+                    f"sample-app.saga.reserve-{step}", [marker]
+                )
+                saga.add_compensation(f"sample-app.saga.rust.undo-{step}", [marker])
+
+            yield context.schedule_activity(
+                "sample-app.saga.decline", [], retry_policy={"max_attempts": 1}
+            )
+            return {"unexpected_success": True}
+        except ActivityFailed as failure:
+            yield from saga.compensate(failure)
+            return {
+                "status": "compensated",
+                "workflow_runtime": "python",
+                "compensation_runtime": "rust",
+                "marker": marker,
+                "initiating_failure": str(failure),
+            }
+
+
 async def main() -> None:
     async with Client(
         required("DURABLE_WORKFLOW_RUNTIME_URL"),
@@ -33,7 +59,7 @@ async def main() -> None:
             client,
             task_queue=required("DURABLE_WORKFLOW_TASK_QUEUE"),
             worker_id=f"sample-saga-python-{os.getpid()}",
-            workflows=[],
+            workflows=[PythonSagaWorkflow],
             activities=[undo_first, undo_second],
         )
         await worker.run()
