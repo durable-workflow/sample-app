@@ -45,7 +45,7 @@ async def main() -> None:
             try:
                 result = await handle.result(timeout=90.0, poll_interval=0.5)
             except WorkflowFailed as failure:
-                if not args.compensation_failure or "SagaCompensation" not in (failure.exception_class or ""):
+                if not args.compensation_failure:
                     raise
                 result = {"exception_class": failure.exception_class, "message": str(failure)}
             else:
@@ -100,6 +100,28 @@ async def main() -> None:
             terminal_event = "WorkflowFailed" if args.compensation_failure else "WorkflowCompleted"
             if events[-1]["event_type"] != terminal_event:
                 raise RuntimeError(f"{workflow_runtime}/{compensation_runtime}: unexpected terminal event {events[-1]!r}")
+            if args.compensation_failure:
+                terminal = events[-1]["payload"]
+                exception = terminal.get("exception") or {}
+                properties = exception.get("properties") or {}
+                initiating = exception.get("initiating_failure") or {}
+                compensation = exception.get("compensation_failure") or {}
+                initiating_detail = (
+                    properties.get("initiating_failure_message")
+                    or initiating.get("message")
+                    or terminal.get("message", "")
+                )
+                compensation_detail = (
+                    properties.get("compensation_activity_type")
+                    or compensation.get("activity_type")
+                    or terminal.get("message", "")
+                )
+                if (
+                    "SagaCompensationFailed" not in terminal.get("exception_type", "")
+                    or ("planned saga failure" not in initiating_detail and expected[2] not in initiating_detail)
+                    or expected[3] not in compensation_detail
+                ):
+                    raise RuntimeError(f"{workflow_runtime}/{compensation_runtime}: initiating or compensation failure was lost")
 
             print(json.dumps({
                 "workflow_id": workflow_id,
