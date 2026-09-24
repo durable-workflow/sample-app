@@ -64,6 +64,7 @@ async fn main() -> Result<()> {
                 match saga.finish(outcome).await {
                     Err(Error::ActivityFailed(failure)) => Ok(json!({
                         "status": "compensated",
+                        "workflow_runtime": "rust",
                         "compensation_runtime": language,
                         "marker": marker,
                         "initiating_failure": failure.reason,

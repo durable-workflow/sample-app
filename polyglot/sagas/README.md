@@ -1,11 +1,12 @@
 # Rust saga compensation across SDKs
 
-This experiment runs a Rust workflow that reserves two steps, encounters an
-intentional activity failure, then compensates in reverse order. The three
-cases execute the compensations in Rust, PHP, and Python respectively. It
-checks the completed result and persisted activity order, not external
-business side effects. This complements the published Server saga runner,
-which currently executes PHP/Python scenarios but no Rust handler.
+This experiment runs Rust, PHP and Python workflows that reserve two steps,
+encounter an intentional activity failure, then compensate in reverse order.
+It covers Rust workflows with Rust, PHP and Python compensation, plus PHP and
+Python workflows with Rust compensation. It checks the completed result and
+persisted activity order, not external business side effects. This complements
+the published Server saga runner, which currently executes PHP/Python scenarios
+but no Rust handler.
 
 Run inside the prepared Sample App development environment. Use only a
 disposable local Server, never a customer namespace. The first playground
@@ -49,13 +50,13 @@ Then run the client from a fourth terminal:
 python polyglot/sagas/client.py
 ```
 
-The client reports each completed direction and ends with `3/3 Rust saga
-compensation runtimes completed`. A missing handler, mismatched activity
+The client reports each completed direction and ends with `5/5 Rust-involving
+saga compensation directions completed`. A missing handler, mismatched activity
 type, absent planned failure, or out-of-order compensation fails the run.
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
-three outcomes and any failure on the owning GitHub issue. This example does
-not qualify worker restart, duplicate delivery, compensation failure, or a
-PHP/Python workflow with Rust compensation; those require separate tests.
+five outcomes and any failure on the owning GitHub issue. This example does
+not qualify worker restart, duplicate delivery, or compensation failure; those
+require separate tests.
 
 Stop the workers, then remove only this local stack and its volumes:
 

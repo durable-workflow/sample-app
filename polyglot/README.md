@@ -50,7 +50,7 @@ different isolated project name.
 | `python_worker/` | Python SDK workers and runtime checks |
 | `rust_worker/` | Rust SDK workflow and activity worker |
 | [`child-workflows/`](child-workflows/README.md) | Runnable PHP/Python/Rust parent-child matrix using the local playground runtime |
-| [`sagas/`](sagas/README.md) | Rust saga with reverse-order compensation activities in Rust, PHP, and Python |
+| [`sagas/`](sagas/README.md) | Five Rust-involving workflow/compensation directions across PHP, Python, and Rust |
 | `python_workflow/` | Python-authored workflow examples |
 | `laravel/` | Waterline image used to inspect standalone runs |
 | `docker-compose.yml` | Complete service-mode topology |
