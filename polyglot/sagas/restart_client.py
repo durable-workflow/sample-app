@@ -11,7 +11,6 @@ from durable_workflow import Client
 
 
 SIGNAL = "sample-app.saga.restart-continue"
-WORKFLOW = "sample-app.saga.rust.compensate-rust"
 
 
 def required(name: str) -> str:
@@ -34,17 +33,19 @@ async def wait_for_restart_boundary(handle) -> None:
         if first_reserved and wait_open:
             return
         await asyncio.sleep(0.5)
-    raise TimeoutError("The Rust workflow did not reach its persisted restart boundary.")
+    raise TimeoutError("The workflow did not reach its persisted restart boundary.")
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Verify Rust saga compensation after a worker restart.")
     parser.add_argument("phase", choices=("start", "signal", "verify"))
     parser.add_argument("workflow_id", nargs="?")
+    parser.add_argument("--compensation-runtime", choices=("rust", "php", "python"), default="rust")
     args = parser.parse_args()
     if args.phase != "start" and not args.workflow_id:
         parser.error("signal and verify require the workflow ID printed by start")
     queue = required("DURABLE_WORKFLOW_TASK_QUEUE")
+    workflow_type = f"sample-app.saga.rust.compensate-{args.compensation_runtime}"
 
     async with Client(
         required("DURABLE_WORKFLOW_RUNTIME_URL"),
@@ -52,15 +53,16 @@ async def main() -> None:
         control_token=required("DURABLE_WORKFLOW_CLIENT_TOKEN"),
     ) as client:
         if args.phase == "start":
-            workflow_id = f"saga-rust-restart-{uuid.uuid4().hex[:12]}"
+            workflow_id = f"saga-rust-{args.compensation_runtime}-restart-{uuid.uuid4().hex[:12]}"
             handle = await client.start_workflow(
-                workflow_type=WORKFLOW,
+                workflow_type=workflow_type,
                 workflow_id=workflow_id,
                 task_queue=queue,
                 input=[workflow_id, "restart-check"],
             )
             await wait_for_restart_boundary(handle)
-            print(json.dumps({"phase": "restart_boundary", "workflow_id": workflow_id, "run_id": handle.run_id}))
+            print(json.dumps({"phase": "restart_boundary", "workflow_id": workflow_id,
+                              "run_id": handle.run_id, "compensation_runtime": args.compensation_runtime}))
             return
 
         workflow_id = args.workflow_id
@@ -71,13 +73,13 @@ async def main() -> None:
 
         execution = await client.describe_workflow(workflow_id)
         handle = client.get_workflow_handle(
-            workflow_id, run_id=execution.run_id, workflow_type=WORKFLOW
+            workflow_id, run_id=execution.run_id, workflow_type=workflow_type
         )
         result = await handle.result(timeout=90.0, poll_interval=0.5)
         expected_result = {
             "status": "compensated",
             "workflow_runtime": "rust",
-            "compensation_runtime": "rust",
+            "compensation_runtime": args.compensation_runtime,
             "marker": workflow_id,
         }
         if not isinstance(result, dict) or any(result.get(key) != value for key, value in expected_result.items()):
@@ -94,8 +96,8 @@ async def main() -> None:
             "sample-app.saga.reserve-first",
             "sample-app.saga.reserve-second",
             "sample-app.saga.decline",
-            "sample-app.saga.rust.undo-second",
-            "sample-app.saga.rust.undo-first",
+            f"sample-app.saga.{args.compensation_runtime}.undo-second",
+            f"sample-app.saga.{args.compensation_runtime}.undo-first",
         ]
         if scheduled != expected:
             raise RuntimeError(f"Unexpected persisted activity order: {scheduled!r}")
@@ -118,6 +120,7 @@ async def main() -> None:
         if events[-1]["event_type"] != "WorkflowCompleted":
             raise RuntimeError("The workflow did not complete after compensation.")
         print(json.dumps({"phase": "verified", "workflow_id": workflow_id, "run_id": handle.run_id,
+                          "compensation_runtime": args.compensation_runtime,
                           "scheduled_activities": scheduled, "result": result}, sort_keys=True))
 
 
