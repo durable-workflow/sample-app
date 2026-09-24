@@ -49,6 +49,38 @@ class PythonSagaWorkflow:
             }
 
 
+@workflow.defn(name="sample-app.saga.python.restart-compensate-rust")
+class PythonSagaRestartWorkflow:
+    def __init__(self) -> None:
+        self.released = False
+
+    @workflow.signal("sample-app.saga.restart-continue")
+    def resume(self) -> None:
+        self.released = True
+
+    def run(self, context, marker: str):
+        saga = context.saga()
+        try:
+            yield context.schedule_activity("sample-app.saga.reserve-first", [marker])
+            saga.add_compensation("sample-app.saga.rust.undo-first", [marker])
+            yield context.wait_condition(lambda: self.released, key="saga-restart-continue")
+            yield context.schedule_activity("sample-app.saga.reserve-second", [marker])
+            saga.add_compensation("sample-app.saga.rust.undo-second", [marker])
+            yield context.schedule_activity(
+                "sample-app.saga.decline", [], retry_policy={"max_attempts": 1}
+            )
+            return {"unexpected_success": True}
+        except ActivityFailed as failure:
+            yield from saga.compensate(failure)
+            return {
+                "status": "compensated",
+                "workflow_runtime": "python",
+                "compensation_runtime": "rust",
+                "marker": marker,
+                "initiating_failure": str(failure),
+            }
+
+
 async def main() -> None:
     async with Client(
         required("DURABLE_WORKFLOW_RUNTIME_URL"),
@@ -59,7 +91,7 @@ async def main() -> None:
             client,
             task_queue=required("DURABLE_WORKFLOW_TASK_QUEUE"),
             worker_id=f"sample-saga-python-{os.getpid()}",
-            workflows=[PythonSagaWorkflow],
+            workflows=[PythonSagaWorkflow, PythonSagaRestartWorkflow],
             activities=[undo_first, undo_second],
         )
         await worker.run()

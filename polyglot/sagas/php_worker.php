@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/../../vendor/autoload.php';
 
 use DurableWorkflow\Attribute\Activity;
+use DurableWorkflow\Attribute\Signal;
 use DurableWorkflow\Attribute\Workflow;
 use DurableWorkflow\Client;
 use DurableWorkflow\Exception\ActivityFailed;
@@ -67,6 +68,45 @@ final class PhpSagaWorkflow
     }
 }
 
+final class PhpSagaRestartWorkflow
+{
+    #[Workflow('sample-app.saga.php.restart-compensate-rust')]
+    public function run(WorkflowContext $context, string $marker): array
+    {
+        $saga = $context->saga();
+
+        try {
+            $context->activity('sample-app.saga.reserve-first', [$marker]);
+            $saga->addCompensation('sample-app.saga.rust.undo-first', [$marker]);
+            $context->waitCondition(
+                fn (): bool => $context->signals('sample-app.saga.restart-continue') !== [],
+                key: 'saga-restart-continue',
+            );
+            $context->activity('sample-app.saga.reserve-second', [$marker]);
+            $saga->addCompensation('sample-app.saga.rust.undo-second', [$marker]);
+            $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
+
+            return ['unexpected_success' => true];
+        } catch (ActivityFailed $failure) {
+            $saga->compensate($failure);
+
+            return [
+                'status' => 'compensated',
+                'workflow_runtime' => 'php',
+                'compensation_runtime' => 'rust',
+                'marker' => $marker,
+                'initiating_failure' => $failure->getMessage(),
+            ];
+        }
+    }
+
+    #[Signal('sample-app.saga.restart-continue')]
+    public function resume(): void
+    {
+        // The committed signal is read from history by the wait predicate.
+    }
+}
+
 $client = new Client(
     required('DURABLE_WORKFLOW_RUNTIME_URL'),
     namespace: required('DURABLE_WORKFLOW_NAMESPACE'),
@@ -74,5 +114,5 @@ $client = new Client(
 );
 
 Worker::create($client, required('DURABLE_WORKFLOW_TASK_QUEUE'))
-    ->register(PhpSagaCompensations::class, PhpSagaWorkflow::class)
+    ->register(PhpSagaCompensations::class, PhpSagaWorkflow::class, PhpSagaRestartWorkflow::class)
     ->run();
