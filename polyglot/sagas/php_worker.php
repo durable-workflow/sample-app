@@ -34,6 +34,10 @@ final class PhpSagaCompensations
     #[Activity('sample-app.saga.php.undo-second')]
     public function undoSecond(ActivityContext $context, string $marker): array
     {
+        if (str_starts_with($marker, 'saga-fail-compensation-')) {
+            throw new RuntimeException('planned undo-second compensation failure');
+        }
+
         return ['step' => 'second', 'marker' => $marker, 'runtime' => 'php'];
     }
 }
@@ -48,7 +52,7 @@ final class PhpSagaWorkflow
         try {
             foreach (['first', 'second'] as $step) {
                 $context->activity("sample-app.saga.reserve-{$step}", [$marker]);
-                $saga->addCompensation("sample-app.saga.rust.undo-{$step}", [$marker]);
+                $saga->addCompensation("sample-app.saga.rust.undo-{$step}", [$marker], ['retry_policy' => ['max_attempts' => 1]]);
             }
 
             $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
@@ -77,13 +81,13 @@ final class PhpSagaRestartWorkflow
 
         try {
             $context->activity('sample-app.saga.reserve-first', [$marker]);
-            $saga->addCompensation('sample-app.saga.rust.undo-first', [$marker]);
+            $saga->addCompensation('sample-app.saga.rust.undo-first', [$marker], ['retry_policy' => ['max_attempts' => 1]]);
             $context->waitCondition(
                 fn (): bool => $context->signals('sample-app.saga.restart-continue') !== [],
                 key: 'saga-restart-continue',
             );
             $context->activity('sample-app.saga.reserve-second', [$marker]);
-            $saga->addCompensation('sample-app.saga.rust.undo-second', [$marker]);
+            $saga->addCompensation('sample-app.saga.rust.undo-second', [$marker], ['retry_policy' => ['max_attempts' => 1]]);
             $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
 
             return ['unexpected_success' => true];

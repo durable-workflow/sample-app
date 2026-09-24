@@ -27,6 +27,12 @@ async fn main() -> Result<()> {
             Ok(json!({"step": step, "marker": args.get(0)}))
         });
         worker.register_activity(format!("sample-app.saga.rust.undo-{step}"), move |_ctx, args| async move {
+            if step == "second"
+                && args.get(0).and_then(|value| value.as_str())
+                    .is_some_and(|marker| marker.starts_with("saga-fail-compensation-"))
+            {
+                return Err(Error::WorkerLoop("planned undo-second compensation failure".to_string()));
+            }
             Ok(json!({"step": step, "marker": args.get(0), "runtime": "rust"}))
         });
     }
@@ -47,8 +53,9 @@ async fn main() -> Result<()> {
                         context
                             .activity(format!("sample-app.saga.reserve-{step}"), json!([marker]))
                             .await?;
-                        saga.add_compensation(
+                        saga.add_compensation_with_options(
                             format!("sample-app.saga.{language}.undo-{step}"),
+                            ActivityOptions::new().retry_policy(ActivityRetryPolicy::new(1)),
                             json!([marker]),
                         )?;
                         if restart_check && step == "first" {
