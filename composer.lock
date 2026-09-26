@@ -720,16 +720,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.0.11",
+            "version": "2.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3"
+                "reference": "84c7b5142629dd2b724f886bfcfc515c90edf288"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3",
-                "reference": "967fcbfdb8f1a88b61e8d2d18a28a2ae9e332fc3",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/84c7b5142629dd2b724f886bfcfc515c90edf288",
+                "reference": "84c7b5142629dd2b724f886bfcfc515c90edf288",
                 "shasum": ""
             },
             "require": {
@@ -770,7 +770,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.0.11",
+                    "product-train": "2.1.4",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -798,7 +798,7 @@
                         "deprecatePatch"
                     ],
                     "worker-protocol-version": "1.19",
-                    "supported-server-versions": "2.1.0",
+                    "supported-server-versions": "2.4.0",
                     "version-marker-history-event": "VersionMarkerRecorded",
                     "message-streams-minimum-worker-protocol-version": "1.15",
                     "durable-selection-minimum-worker-protocol-version": "1.19"
@@ -836,7 +836,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-09-21T16:35:08+00:00"
+            "time": "2026-09-26T18:10:18+00:00"
         },
         {
             "name": "durable-workflow/waterline",
@@ -922,16 +922,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.2.8",
+            "version": "2.2.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "69cb752a818d082903bd24ec3c86735c1a1cfa1e"
+                "reference": "2271f04e7ce5c6885d826adee0224f1ebb1d2970"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/69cb752a818d082903bd24ec3c86735c1a1cfa1e",
-                "reference": "69cb752a818d082903bd24ec3c86735c1a1cfa1e",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/2271f04e7ce5c6885d826adee0224f1ebb1d2970",
+                "reference": "2271f04e7ce5c6885d826adee0224f1ebb1d2970",
                 "shasum": ""
             },
             "require": {
@@ -964,7 +964,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.2.8",
+                    "product-train": "2.2.9",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -991,9 +991,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.2.8"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.2.9"
             },
-            "time": "2026-09-26T16:32:39+00:00"
+            "time": "2026-09-26T19:23:23+00:00"
         },
         {
             "name": "egulias/email-validator",
