@@ -51,6 +51,7 @@ different isolated project name.
 | `rust_worker/` | Rust SDK workflow and activity worker |
 | [`child-workflows/`](child-workflows/README.md) | Runnable PHP/Python/Rust parent-child matrix using the local playground runtime |
 | [`sagas/`](sagas/README.md) | Five Rust-involving workflow/compensation directions across PHP, Python, and Rust |
+| [`schedules/`](schedules/README.md) | Python-created automatic schedule dispatched to a Rust workflow worker |
 | `python_workflow/` | Python-authored workflow examples |
 | `laravel/` | Waterline image used to inspect standalone runs |
 | `docker-compose.yml` | Complete service-mode topology |
