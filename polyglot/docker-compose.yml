@@ -158,6 +158,18 @@ services:
       server:
         condition: service_healthy
 
+  # Opt-in queue consumer for durable workflow timers in the Rust timer example.
+  timer-queue:
+    profiles: ["timer-rust"]
+    image: *durable-server-image
+    command: ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--max-time=3600"]
+    environment:
+      <<: *server-env
+      DW_SERVER_PROCESS_CLASS: worker_node
+    depends_on:
+      server:
+        condition: service_healthy
+
   python-workflow-worker:
     build:
       context: ./python_workflow
