@@ -5,6 +5,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, Value, Worker};
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
+const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
+const RUST_TIMER_DELAY_SECONDS: u64 = 30;
 const RUST_TO_PYTHON_WORKFLOW: &str = "polyglot.rust-to-python.greeter";
 const RUST_TO_PHP_WORKFLOW: &str = "polyglot.rust-to-php.greeter";
 const RUST_TO_PYTHON_TYPES: &str = "polyglot.rust-to-python.type-roundtrip";
@@ -60,6 +62,17 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
             .activity("polyglot.rust.echo", json!([request.clone()]))
             .await?;
         Ok(workflow_observation("rust", "rust", request, echo))
+    });
+
+    worker.register_workflow(RUST_TIMER_WORKFLOW, |ctx, input| async move {
+        let request = first_argument(&input);
+        ctx.sleep(Duration::from_secs(RUST_TIMER_DELAY_SECONDS)).await?;
+        Ok(json!({
+            "workflow_runtime": "rust",
+            "request": request,
+            "timer_seconds": RUST_TIMER_DELAY_SECONDS,
+            "codec": avro_observation(),
+        }))
     });
 
     let rust_to_python_queue = python_queue.clone();
