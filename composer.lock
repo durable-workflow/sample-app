@@ -922,16 +922,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.2.9",
+            "version": "2.2.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "2271f04e7ce5c6885d826adee0224f1ebb1d2970"
+                "reference": "1b4e63a03aaab13f97eaf98fbd94e7a409cc4d5a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/2271f04e7ce5c6885d826adee0224f1ebb1d2970",
-                "reference": "2271f04e7ce5c6885d826adee0224f1ebb1d2970",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/1b4e63a03aaab13f97eaf98fbd94e7a409cc4d5a",
+                "reference": "1b4e63a03aaab13f97eaf98fbd94e7a409cc4d5a",
                 "shasum": ""
             },
             "require": {
@@ -964,7 +964,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.2.9",
+                    "product-train": "2.2.10",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -991,9 +991,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.2.9"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.2.10"
             },
-            "time": "2026-09-26T19:23:23+00:00"
+            "time": "2026-09-27T11:17:53+00:00"
         },
         {
             "name": "egulias/email-validator",
