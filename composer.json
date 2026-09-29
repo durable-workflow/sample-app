@@ -15,7 +15,7 @@
         "durable-workflow/waterline": "^2.0",
         "durable-workflow/workflow": "^2.0",
         "laravel/ai": "^0.6.0",
-        "laravel/framework": "^13.0",
+        "laravel/framework": "^13.30",
         "laravel/mcp": "^0.6.0",
         "laravel/tinker": "^3.0"
     },
