@@ -3,11 +3,11 @@
   "schemaVersion": 1,
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
-    "cli": "2.1.2",
+    "cli": "2.1.3",
     "sdk-php": "2.1.6",
     "sdk-python": "2.3.7",
     "sdk-rust": "2.1.2",
-    "server": "2.4.30",
+    "server": "2.4.31",
     "waterline": "2.0.8",
     "workflow": "2.2.21"
   }
