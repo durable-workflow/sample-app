@@ -3,12 +3,12 @@
   "schemaVersion": 1,
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
-    "cli": "2.0.0",
-    "sdk-php": "2.1.4",
-    "sdk-python": "2.0.0",
-    "sdk-rust": "2.1.1",
-    "server": "2.4.29",
+    "cli": "2.1.2",
+    "sdk-php": "2.1.6",
+    "sdk-python": "2.3.7",
+    "sdk-rust": "2.1.2",
+    "server": "2.4.30",
     "waterline": "2.0.7",
-    "workflow": "2.2.20"
+    "workflow": "2.2.21"
   }
 }
