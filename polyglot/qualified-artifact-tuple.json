@@ -9,6 +9,6 @@
     "sdk-rust": "2.1.2",
     "server": "2.4.33",
     "waterline": "2.0.9",
-    "workflow": "2.2.22"
+    "workflow": "2.3.0"
   }
 }
