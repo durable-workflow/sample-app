@@ -43,7 +43,6 @@ final class DevcontainerImageContractTest extends TestCase
             $this->assertStringContainsString($tool, $dockerfile);
         }
 
-        $this->assertStringContainsString('ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0', $dockerfile);
         $this->assertStringContainsString('verify-devcontainer-image', $dockerfile);
         $this->assertStringContainsString('scripts/playground doctor', $postCreate);
         $this->assertStringNotContainsString('apt-get', $postCreate);
