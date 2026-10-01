@@ -10,7 +10,9 @@ python -c 'import durable_workflow'
 python -m venv --help >/dev/null
 rust_version="$(rustc --version | sed -E 's/^rustc ([0-9]+\.[0-9]+).*/\1/')"
 [[ "$(printf '%s\n' 1.86 "$rust_version" | sort -V | head -n 1)" == "1.86" ]]
-[[ "$(dw --version)" == *"${DURABLE_WORKFLOW_CLI_VERSION}"* ]]
+cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"
+[[ -n "$cli_version" ]]
+[[ "$(dw --version | awk '$1 == "dw" { print $2 }')" == "$cli_version" ]]
 docker compose version >/dev/null
 
 for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis zip; do

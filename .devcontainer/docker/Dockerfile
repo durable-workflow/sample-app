@@ -87,7 +87,7 @@ RUN set -eux; \
 FROM php:8.4-cli-bookworm
 
 ARG VCS_REF=unknown
-ARG DURABLE_WORKFLOW_CLI_VERSION=2.0.0
+ARG DURABLE_WORKFLOW_CLI_VERSION
 
 LABEL org.opencontainers.image.title="Durable Workflow Sample App development container" \
     org.opencontainers.image.description="PHP, Python, Rust, Docker, dw, Node, Composer, and Chromium environment for the Durable Workflow Sample App" \
@@ -225,19 +225,22 @@ RUN set -eux; \
     sshd -t; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 
+COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualified-artifact-tuple.json
+
 RUN set -eux; \
+    cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
+    test -n "$cli_version"; \
     curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
-    VERSION="$DURABLE_WORKFLOW_CLI_VERSION" \
+    VERSION="$cli_version" \
         DURABLE_WORKFLOW_INSTALL_DIR=/usr/local/bin \
         sh /tmp/dw-install.sh; \
     rm /tmp/dw-install.sh; \
     dw --version
 
 COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
-COPY polyglot/qualified-artifact-tuple.json /tmp/sample-app-qualified-artifact-tuple.json
 
 RUN set -eux; \
-    python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/tmp/sample-app-qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
+    python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
     python3 -m venv "$VIRTUAL_ENV"; \
     "$VIRTUAL_ENV/bin/pip" install \
@@ -248,7 +251,7 @@ RUN set -eux; \
         "durable-workflow==${python_distribution_version}"; \
     EXPECTED_PYTHON_SDK="$python_distribution_version" \
         "$VIRTUAL_ENV/bin/python" -c 'import durable_workflow, importlib.metadata as metadata, os; assert metadata.version("durable-workflow") == os.environ["EXPECTED_PYTHON_SDK"]'; \
-    rm /tmp/sample-app-python-playground-requirements.txt /tmp/sample-app-qualified-artifact-tuple.json; \
+    rm /tmp/sample-app-python-playground-requirements.txt; \
     chown -R laravel:laravel /opt/sample-app-playground; \
     chmod -R g=u /opt/sample-app-playground
 
@@ -316,6 +319,7 @@ RUN set -eux; \
             --no-progress \
             --no-scripts; \
         gosu laravel test -s "${dependency_dir}/vendor/autoload.php"; \
+        gosu laravel php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); require $argv[1]."/vendor/autoload.php"; $expected = $tuple["artifacts"]["workflow"]; $actual = Composer\InstalledVersions::getPrettyVersion("durable-workflow/workflow"); if ($actual !== $expected) { fwrite(STDERR, "Workflow version in {$argv[1]}: expected {$expected}, found {$actual}\n"); exit(1); } echo "Verified Workflow {$actual} in {$argv[1]}\n";' "$dependency_dir"; \
         chmod -R g=u "${dependency_dir}/vendor"; \
     done; \
     rm -rf /home/laravel/.composer/cache; \
