@@ -40,7 +40,7 @@ jobs:
     name: Build ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: read
       packages: write
@@ -51,9 +51,11 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-24.04
             suffix: amd64
+            timeout_minutes: 20
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             suffix: arm64
+            timeout_minutes: 30
     env:
       REVISION_TAG: sha-${{ github.sha }}-run-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
