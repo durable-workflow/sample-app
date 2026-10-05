@@ -922,16 +922,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.3.2",
+            "version": "2.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "d8594a67661f63f17d76cd5a1a1349c2d28f4a6d"
+                "reference": "e66d22482541ddcaa03964fe006538a7340083fe"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/d8594a67661f63f17d76cd5a1a1349c2d28f4a6d",
-                "reference": "d8594a67661f63f17d76cd5a1a1349c2d28f4a6d",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/e66d22482541ddcaa03964fe006538a7340083fe",
+                "reference": "e66d22482541ddcaa03964fe006538a7340083fe",
                 "shasum": ""
             },
             "require": {
@@ -964,7 +964,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.3.2",
+                    "product-train": "2.3.4",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -991,9 +991,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.3.2"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.3.4"
             },
-            "time": "2026-10-01T17:45:47+00:00"
+            "time": "2026-10-05T05:54:54+00:00"
         },
         {
             "name": "egulias/email-validator",
