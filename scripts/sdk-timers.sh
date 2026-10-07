@@ -14,14 +14,26 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_TIMERS_COMPOSE_PROJECT_NAME:-sample-app-sdk-timers-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export COMPOSE_PROFILES=timers
+export POLYGLOT_TIMER_COOPERATIVE=1
 export DURABLE_WORKFLOW_TIMER_ID="${COMPOSE_PROJECT_NAME}"
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml")
 workers=(php-same-workflow-worker python-workflow-worker rust-workflow-worker)
+if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
+  printf 'Choose a new isolated project. %s already has containers.\n' "$COMPOSE_PROJECT_NAME" >&2
+  exit 2
+fi
 
 cleanup() {
   local code=$?
-  if [[ "$code" != 0 ]]; then "${compose[@]}" logs --no-color --timestamps; fi
+  if [[ "$code" != 0 ]]; then "${compose[@]}" logs --no-color --timestamps || true; fi
   "${compose[@]}" down --volumes --remove-orphans || return 1
+  local suffix image
+  for suffix in php-sdk-worker python-workflow-worker rust-workflow-worker smoke; do
+    image="${COMPOSE_PROJECT_NAME}-${suffix}:latest"
+    if docker image inspect "$image" >/dev/null 2>&1; then
+      docker image rm --no-prune "$image" || return 1
+    fi
+  done
   return "$code"
 }
 trap cleanup EXIT
@@ -39,13 +51,21 @@ docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 client() {
   "${compose[@]}" run --rm --no-deps --user 1000:1000 \
     -e DURABLE_WORKFLOW_TIMER_ID -e DURABLE_WORKFLOW_WORKER_STOPPED_AT -e DURABLE_WORKFLOW_WORKER_RESTART_AT \
+    -e DURABLE_WORKFLOW_SERVER_STOPPED_AT -e DURABLE_WORKFLOW_SERVER_RESTART_AT \
+    -e DURABLE_WORKFLOW_TIMER_PENDING \
     smoke python /app/scripts/sdk_timers.py "$@"
 }
 
-client start completion
+start() {
+  DURABLE_WORKFLOW_TIMER_PENDING="$(client start "$1")"
+  export DURABLE_WORKFLOW_TIMER_PENDING
+  printf '%s\n' "$DURABLE_WORKFLOW_TIMER_PENDING"
+}
+
+start completion
 client verify completion
 
-client start worker-restart
+start worker-restart
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
 export DURABLE_WORKFLOW_WORKER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 client fired worker-restart
@@ -53,12 +73,14 @@ export DURABLE_WORKFLOW_WORKER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 "${compose[@]}" up -d --wait --no-build "${workers[@]}"
 client verify worker-restart
 
-client start server-restart
-"${compose[@]}" stop server timer-queue
+start server-restart
+"${compose[@]}" stop --timeout 2 timer-queue server
+export DURABLE_WORKFLOW_SERVER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 sleep 32
+export DURABLE_WORKFLOW_SERVER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
 client verify server-restart
 
-client start cancellation
+start cancellation
 client verify cancellation
 printf 'SDK timers pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

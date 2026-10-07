@@ -407,6 +407,9 @@ async def main() -> int:
         "POLYGLOT_PY_WORKER_ID",
         f"py-workflow-worker-{socket.gethostname()}",
     )
+    cooperative = os.environ.get("POLYGLOT_TIMER_COOPERATIVE") == "1"
+    if cooperative:
+        os.environ["DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION"] = "1.20"
 
     async with Client(
         server_url,
@@ -418,6 +421,7 @@ async def main() -> int:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE,
+            capabilities=["cooperative_cancellation"] if cooperative else [],
             workflows=[
                 PythonGreeterWorkflow,
                 PythonTimerWorkflow,

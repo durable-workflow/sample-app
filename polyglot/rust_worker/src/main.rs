@@ -50,6 +50,8 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
     let php_queue = env_value("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php");
     let mut worker = Worker::new(client, rust_queue.clone())
         .worker_id("rust-workflow-worker")
+        .recover_transient_outages(true)
+        .cooperative_cancellation(env_value("POLYGLOT_TIMER_COOPERATIVE", "0") == "1")
         .poll_timeout(Duration::from_secs(5));
 
     worker.register_activity("polyglot.rust.echo", |_ctx, args| async move {

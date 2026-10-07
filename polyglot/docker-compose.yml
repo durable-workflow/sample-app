@@ -172,6 +172,7 @@ services:
         condition: service_healthy
 
   python-workflow-worker:
+    init: true
     build:
       context: ./python_workflow
       args:
@@ -182,6 +183,7 @@ services:
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
       DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS: "5"
+      POLYGLOT_TIMER_COOPERATIVE: "${POLYGLOT_TIMER_COOPERATIVE:-0}"
       POLYGLOT_PY_TASK_QUEUE: polyglot-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
       POLYGLOT_TO_RUST_TASK_QUEUE: polyglot-to-rust
@@ -208,6 +210,7 @@ services:
         condition: service_healthy
 
   php-same-workflow-worker:
+    init: true
     build: *php-sdk-worker-build
     image: *php-sdk-worker-image
     environment:
@@ -215,6 +218,7 @@ services:
       DURABLE_WORKFLOW_AUTH_TOKEN: "test-token"
       DURABLE_WORKFLOW_NAMESPACE: default
       POLYGLOT_PHP_TASK_QUEUE: polyglot-php
+      POLYGLOT_TIMER_COOPERATIVE: "${POLYGLOT_TIMER_COOPERATIVE:-0}"
     depends_on:
       server:
         condition: service_healthy
@@ -301,6 +305,7 @@ services:
     command: ["php", "/app/worker.php", "--mode=activity", "--task-queue=polyglot-python-to-php", "--poll-timeout=5"]
 
   rust-workflow-worker:
+    init: true
     build:
       context: ./rust_worker
       args:
@@ -313,6 +318,7 @@ services:
       DURABLE_WORKFLOW_RUST_SDK_VERSION: *durable-rust-sdk-version
       APACHE_AVRO_RUST_VERSION: *durable-rust-avro-version
       POLYGLOT_RUST_MODE: workflow
+      POLYGLOT_TIMER_COOPERATIVE: "${POLYGLOT_TIMER_COOPERATIVE:-0}"
       POLYGLOT_RUST_TASK_QUEUE: polyglot-rust
       POLYGLOT_PHP2PY_TASK_QUEUE: polyglot-php-to-python
       POLYGLOT_PY2PHP_TASK_QUEUE: polyglot-python-to-php
@@ -387,6 +393,7 @@ services:
       retries: 30
 
   smoke:
+    init: true
     build:
       context: ./python_worker
       args:

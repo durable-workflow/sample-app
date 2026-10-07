@@ -31,10 +31,18 @@ observer and control client. PHP, Python and Rust author and execute their own
 timer workflows. Timers have no remote activity or cross-language timer-worker
 direction to multiply into a workflow/activity matrix.
 
+The timer runner enables each worker's cooperative cancellation capability and
+protocol 1.20 with `POLYGLOT_TIMER_COOPERATIVE=1`. Ordinary polyglot commands keep
+their existing capability selection. The long-running Rust workflow worker uses
+`recover_transient_outages(true)` to remain alive during the Server
+restart with capped retry backoff. Its startup and permanent errors still require
+operator attention or a process supervisor.
+
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
 UTC interval and twelve scenario outcomes in the owning GitHub issue. Its exit
-trap removes the isolated Compose stack and volumes on success or failure.
+trap removes the isolated Compose stack, volumes and task worker images on
+success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:
 
 ```bash

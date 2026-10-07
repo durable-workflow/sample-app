@@ -9,6 +9,7 @@ use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Exception\CodecException;
+use DurableWorkflow\Version;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
@@ -800,7 +801,13 @@ function runStandaloneWorker(): void
         throw new RuntimeException('Expected --mode=workflow, --mode=activity, --mode=query, or --mode=replay-fixtures.');
     }
 
-    $client = new Client($serverUrl, token: $token, namespace: $namespace);
+    $cooperative = getenv('POLYGLOT_TIMER_COOPERATIVE') === '1';
+    $client = new Client(
+        $serverUrl,
+        token: $token,
+        namespace: $namespace,
+        workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL,
+    );
     if ($mode === 'activity') {
         runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);
 
@@ -812,7 +819,7 @@ function runStandaloneWorker(): void
         return;
     }
 
-    $worker = new Worker($client, $taskQueue, $workerId);
+    $worker = new Worker($client, $taskQueue, $workerId, enableCooperativeCancellation: $cooperative);
     configureWorkflows($worker, $client->payloadCodec());
     fwrite(STDOUT, sprintf(
         "polyglot php worker registered: id=%s queue=%s types=[%s]\n",

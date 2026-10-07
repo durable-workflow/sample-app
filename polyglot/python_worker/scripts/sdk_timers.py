@@ -34,6 +34,22 @@ def emit(**record) -> None:
     print(json.dumps(record, sort_keys=True), flush=True)
 
 
+def original_pending(runtime: str, scenario: str) -> dict:
+    records = [json.loads(line) for line in required("DURABLE_WORKFLOW_TIMER_PENDING").splitlines()]
+    matches = [record for record in records if record.get("phase") == "pending"
+               and record.get("runtime") == runtime and record.get("scenario") == scenario]
+    if len(matches) != 1:
+        raise RuntimeError("Expected exactly one original pending observation for this cell.")
+    return matches[0]
+
+
+def check_original(runtime: str, scenario: str, execution, scheduled: dict) -> None:
+    original = original_pending(runtime, scenario)
+    if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]
+            or scheduled["payload"] != original["timer"]):
+        raise RuntimeError("Run identity or original scheduled timer changed after the interruption.")
+
+
 async def observe(client: Client, runtime: str, scenario: str):
     workflow_id = f"{required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{runtime}"
     handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{runtime}.timer")
@@ -120,6 +136,7 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
                 raise RuntimeError(f"Expected one {event_type}: {history!r}")
         if events(history, "TimerFired") or events(history, "WorkflowCompleted"):
             raise RuntimeError(f"Cancelled timer fired or workflow completed: {history!r}")
+        check_original(runtime, scenario, execution, scheduled[0])
         cancelled = events(history, "TimerCancelled")[0]["payload"]
         if cancelled["timer_id"] != scheduled[0]["payload"]["timer_id"]:
             raise RuntimeError("Cancelled timer identity differs from its scheduled identity.")
@@ -137,6 +154,7 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
                 raise RuntimeError(f"Expected one {event_type}: {history!r}")
         scheduled = events(history, "TimerScheduled")[0]
         fired_event = events(history, "TimerFired")[0]
+        check_original(runtime, scenario, execution, scheduled)
         if scheduled["payload"]["timer_id"] != fired_event["payload"]["timer_id"]:
             raise RuntimeError("Fired timer identity differs from its scheduled identity.")
         if timestamp(fired_event["payload"]["fired_at"]) < timestamp(scheduled["payload"]["fire_at"]):
@@ -149,8 +167,20 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
             restarted = timestamp(required("DURABLE_WORKFLOW_WORKER_RESTART_AT"))
             if not stopped <= timestamp(fired_event["payload"]["fired_at"]) < restarted:
                 raise RuntimeError("Timer did not fire while the SDK worker was absent.")
+        if scenario == "server-restart":
+            stopped = timestamp(required("DURABLE_WORKFLOW_SERVER_STOPPED_AT"))
+            restarted = timestamp(required("DURABLE_WORKFLOW_SERVER_RESTART_AT"))
+            due = timestamp(scheduled["payload"]["fire_at"])
+            if not stopped < due < restarted:
+                raise RuntimeError("Server downtime did not cross the original timer deadline.")
+            if timestamp(fired_event["payload"]["fired_at"]) < restarted:
+                raise RuntimeError("Timer fired before Server restart began.")
     emit(phase="verified", runtime=runtime, scenario=scenario, workflow_id=execution.workflow_id,
          run_id=execution.run_id, status=execution.status, result=result,
+         interruption={key: required(f"DURABLE_WORKFLOW_{key.upper()}")
+                       for key in ({"worker-restart": ("worker_stopped_at", "worker_restart_at"),
+                                    "server-restart": ("server_stopped_at", "server_restart_at")}
+                                   .get(scenario, ()))},
          history_events=[event["event_type"] for event in history["events"]],
          timer_events=[event for event in history["events"] if event["event_type"].startswith("Timer")])
 
