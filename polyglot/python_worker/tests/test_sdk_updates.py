@@ -18,7 +18,12 @@ serializer = types.SimpleNamespace(envelope=lambda value: {"decoded": value},
 SCRIPT = pathlib.Path(__file__).parents[1] / "scripts" / "sdk_updates.py"
 spec = importlib.util.spec_from_file_location("sdk_updates", SCRIPT)
 updates = importlib.util.module_from_spec(spec)
-with patch.dict(sys.modules, {"durable_workflow": types.SimpleNamespace(Client=object, serializer=serializer)}):
+class InvalidArgument(Exception):
+    pass
+
+
+with patch.dict(sys.modules, {"durable_workflow": types.SimpleNamespace(
+        Client=object, InvalidArgument=InvalidArgument, serializer=serializer)}):
     spec.loader.exec_module(updates)
 
 
@@ -87,6 +92,37 @@ class DurableUpdateObservationTest(unittest.TestCase):
                 history["events"][-1]["payload"]["result"] = serializer.envelope(result)
                 with self.assertRaises(RuntimeError):
                     self.verify(history)
+
+
+class ClientResultTest(unittest.IsolatedAsyncioTestCase):
+    async def test_client_decodes_the_envelope_field(self):
+        result = {"handler_runtime": "rust", "request": updates.request("python", "request")}
+        client = types.SimpleNamespace(update_workflow=AsyncMock(return_value={
+            "update_status": "completed", "result": result,
+            "result_envelope": serializer.envelope(result),
+        }))
+        with patch.object(updates, "emit") as emit:
+            await updates.call(client, "workflow", "request", "echo")
+        self.assertEqual(emit.call_args.kwargs["result"], result)
+
+    async def test_sdk_failure_requires_a_matching_durable_handler_failure(self):
+        request_id = "example-failure"
+        client = types.SimpleNamespace(update_workflow=AsyncMock(side_effect=InvalidArgument("failed")))
+        execution = types.SimpleNamespace(status="waiting")
+        history = {"events": [
+            {"event_type": "UpdateAccepted", "payload": {"update_id": "original",
+                "arguments": serializer.envelope([updates.request("python", request_id)])}},
+            {"event_type": "UpdateCompleted", "payload": {"update_id": "original",
+                "failure_id": "failure", "failure_message": "update-probe-failure"}},
+        ]}
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example"}):
+            with patch.object(updates, "observe", AsyncMock(return_value=(execution, history))):
+                with patch.object(updates, "emit") as emit:
+                    await updates.failure(client)
+                    self.assertEqual(emit.call_args.kwargs["update_id"], "original")
+                history["events"][-1]["payload"]["failure_message"] = "unrelated validation error"
+                with self.assertRaisesRegex(RuntimeError, "durable handler failure"):
+                    await updates.failure(client)
 
 
 class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):

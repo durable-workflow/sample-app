@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 
-from durable_workflow import Client, serializer
+from durable_workflow import Client, InvalidArgument, serializer
 
 RUNTIMES = ("php", "python", "rust")
 DIRECTIONS = tuple((caller, runtime) for caller in RUNTIMES for runtime in RUNTIMES)
@@ -118,7 +118,7 @@ async def call(client, target, request_id, name):
     if response.get("update_status") != "completed":
         raise RuntimeError(f"Update did not complete: {response!r}")
     emit(caller="python", request_id=request_id,
-         result=serializer.decode_envelope(response["result"], codec="avro"))
+         result=serializer.decode_envelope(response["result_envelope"], codec="avro"))
 
 
 async def matrix(client):
@@ -165,7 +165,7 @@ async def replacement(client):
     if update_id != original["update_id"] or execution.run_id != original["run_id"]:
         raise RuntimeError("Replacement changed the original accepted identity.")
     if any(response.get("update_id") != update_id or response.get("update_status") != "completed"
-           or not same_result(serializer.decode_envelope(response["result"], codec="avro"), expected)
+           or not same_result(serializer.decode_envelope(response["result_envelope"], codec="avro"), expected)
            for response in responses):
         raise RuntimeError("Duplicate request did not retain its original completion.")
     emit(scenario="replacement-and-duplicate", runtime="rust", update_id=update_id,
@@ -175,19 +175,24 @@ async def replacement(client):
 
 async def failure(client):
     request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-failure"
-    response = await client.update_workflow(workflow_id("rust"), "fail",
-                     args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+    try:
+        await client.update_workflow(workflow_id("rust"), "fail",
+                         args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+    except InvalidArgument as error:
+        sdk_error = {"type": type(error).__name__, "message": str(error)}
+    else:
+        raise RuntimeError("Expected the published Python SDK's exception for a failed update.")
     execution, history = await observe(client, "rust")
     update_id, related = update_events(history, request_id)
     failed = [event for event in related if event["event_type"] == "UpdateCompleted"
               and event["payload"].get("failure_id")]
-    if (response.get("update_status") != "failed" or response.get("update_id") != update_id
-            or len(failed) != 1 or "update-probe-failure" not in json.dumps(failed[0]["payload"])
+    if (len(failed) != 1 or "update-probe-failure" not in json.dumps(failed[0]["payload"])
             or sum(event["event_type"] == "UpdateCompleted" for event in related) != 1):
-        raise RuntimeError(f"Missing durable handler failure: {response!r}, {related!r}")
+        raise RuntimeError(f"Missing durable handler failure: {sdk_error!r}, {related!r}")
     if execution.status in ("failed", "terminated", "completed"):
         raise RuntimeError("An update failure unexpectedly terminated the workflow.")
-    emit(scenario="handler-failure", runtime="rust", update_id=update_id, events=related)
+    emit(scenario="handler-failure", runtime="rust", update_id=update_id,
+         sdk_error=sdk_error, events=related)
 
 
 async def finish(client):
