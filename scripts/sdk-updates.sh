@@ -54,7 +54,7 @@ client() {
   local caller=$1 target=$2 request_id=$3
   case "$caller" in
     php) "${compose[@]}" exec -T --user 1000:1000 php-same-workflow-worker \
-      php /app/update_client.php "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
+      php -d display_errors=stderr /app/update_client.php "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
     python) observer call "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
     rust) "${compose[@]}" exec -T --user 1000:1000 -e POLYGLOT_RUST_MODE=update-client \
       rust-workflow-worker polyglot-rust-worker "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
@@ -68,7 +68,10 @@ export DURABLE_WORKFLOW_UPDATE_RESULTS=''
 for direction in php:php php:python php:rust python:php python:python python:rust rust:php rust:python rust:rust; do
   caller=${direction%:*}
   target=${direction#*:}
-  result="$(client "$caller" "$target" "${COMPOSE_PROJECT_NAME}-${caller}-${target}")"
+  if ! result="$(client "$caller" "$target" "${COMPOSE_PROJECT_NAME}-${caller}-${target}")"; then
+    printf 'SDK client %s failed:\n%s\n' "$direction" "$result" >&2
+    exit 1
+  fi
   DURABLE_WORKFLOW_UPDATE_RESULTS+="${result}"$'\n'
 done
 observer matrix
