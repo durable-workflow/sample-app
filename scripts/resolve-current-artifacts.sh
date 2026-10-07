@@ -26,6 +26,7 @@ const path = process.argv[2];
 const expectedSchema = 'durable-workflow.sample-app.polyglot-qualified-artifact-tuple';
 const keys = ['server', 'cli', 'sdk-php', 'sdk-python', 'sdk-rust', 'workflow', 'waterline'];
 const stableV2 = /^2\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
+const stableRust = /^[23]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
 
 let tuple;
 try {
@@ -50,8 +51,9 @@ if (unknown.length > 0) {
 
 for (const key of keys) {
   const version = artifacts[key];
-  if (typeof version !== 'string' || !stableV2.test(version)) {
-    throw new Error(`${path} artifact ${key} must be a stable 2.x version`);
+  const supported = key === 'sdk-rust' ? stableRust : stableV2;
+  if (typeof version !== 'string' || !supported.test(version)) {
+    throw new Error(`${path} artifact ${key} must be a stable ${key === 'sdk-rust' ? '2.x or 3.x' : '2.x'} version`);
   }
   process.stdout.write(`${key}=${version}\n`);
 }
@@ -66,10 +68,16 @@ done < <(parse_tuple)
 stable_version() {
   local name="$1"
   local value="$2"
+  local supported_major=2
+  local supported_label=2.x
+  if [[ "$name" == SAMPLE_APP_RUST_SDK_VERSION ]]; then
+    supported_major='[23]'
+    supported_label='2.x or 3.x'
+  fi
 
-  if [[ ! "$value" =~ ^2\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
-    printf 'resolve-current-artifacts: %s must be a stable 2.x version; received %s\n' \
-      "$name" "$value" >&2
+  if [[ ! "$value" =~ ^${supported_major}\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
+    printf 'resolve-current-artifacts: %s must be a stable %s version; received %s\n' \
+      "$name" "$supported_label" "$value" >&2
     exit 1
   fi
 

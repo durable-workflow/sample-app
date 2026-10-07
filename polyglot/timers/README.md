@@ -1,4 +1,52 @@
-# Rust durable timer across a worker restart
+# Published SDK durable timers
+
+Run PHP, Python and Rust timer workflows against the published Server with:
+
+```bash
+scripts/playground doctor
+while IFS= read -r assignment; do export "$assignment"; done \
+  < <(scripts/resolve-current-artifacts.sh)
+SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
+```
+
+Use the prepared Sample App development container with Docker Compose. The
+checked-in artifact tuple selects exact published packages and images. The
+experiment builds workers from those packages, starts a disposable MySQL/Redis
+Server stack, and checks four scenarios for each workflow language:
+
+- Normal completion after the original 30-second deadline, with exactly one
+  scheduled timer, matching fire and completed result.
+- Worker `SIGKILL` while waiting, timer fire while all SDK workers are absent,
+  then cold replay in replacement processes without rescheduling or duplicate
+  completion.
+- Server and timer-queue restart across the deadline, preserving timer identity
+  and completing once from the original history.
+- Cooperative cancellation while waiting, duplicate requests preserving the
+  original request identity and cleanup deadline, one delivered cancellation
+  and cancelled timer, and no fire or completion after the timer's original
+  due time has passed.
+
+Every start also checks the public API's `waiting` status. The Python SDK is the
+observer and control client. PHP, Python and Rust author and execute their own
+timer workflows. Timers have no remote activity or cross-language timer-worker
+direction to multiply into a workflow/activity matrix.
+
+The runner prints the exact tuple, Server digest, timestamps, per-language
+results and persisted timer events. Record the command, Sample App commit,
+UTC interval and twelve scenario outcomes in the owning GitHub issue. Its exit
+trap removes the isolated Compose stack and volumes on success or failure.
+If interrupted externally, repeat the removal with the same project name:
+
+```bash
+COMPOSE_PROJECT_NAME=sample-app-sdk-timers COMPOSE_PROFILES=timers \
+  docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
+```
+
+This is focused SDK timer coverage. Concurrent distinct deadlines, nested
+cancellation scopes and timer-bearing application upgrades have separate
+qualification requirements.
+
+## Single Rust restart example
 
 This focused service-mode experiment runs a timer authored with the published
 Rust SDK against a published Server image. The Python SDK client observes one

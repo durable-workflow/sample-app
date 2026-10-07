@@ -22,6 +22,7 @@ if (! class_exists(Client::class)) {
 
 const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
+    'polyglot.php.timer',
     'polyglot.PolyglotWorkflow',
     'polyglot.php-to-python.greeter',
     'polyglot.php-to-python.type-roundtrip',
@@ -443,6 +444,12 @@ function signalQueryWorkflow(): Closure
 
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 {
+    $worker->registerWorkflow('polyglot.php.timer', static function (WorkflowContext $context, string $request): array {
+        $context->sleep(30);
+
+        return ['workflow_runtime' => 'php', 'request' => $request, 'timer_seconds' => 30];
+    });
+
     $workflowQueue = getenv('POLYGLOT_WORKFLOW_TASK_QUEUE') ?: 'polyglot-workflow';
     $pythonQueue = getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python';
     $rustQueue = getenv('POLYGLOT_TO_RUST_TASK_QUEUE') ?: 'polyglot-to-rust';

@@ -78,6 +78,13 @@ class PythonGreeterWorkflow:
         }
 
 
+@workflow.defn(name="polyglot.python.timer")
+class PythonTimerWorkflow:
+    def run(self, ctx, request):
+        yield ctx.sleep(30)
+        return {"workflow_runtime": "python", "request": request, "timer_seconds": 30}
+
+
 @workflow.defn(name="polyglot.python-to-php.greeter")
 class PythonToPhpGreeterWorkflow:
     def run(self, ctx, request):  # type: ignore[no-untyped-def]
@@ -413,6 +420,7 @@ async def main() -> int:
             task_queue=TASK_QUEUE,
             workflows=[
                 PythonGreeterWorkflow,
+                PythonTimerWorkflow,
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,
                 PythonToPhpBinaryTypeRoundtripWorkflow,

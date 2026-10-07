@@ -25,8 +25,8 @@ final class PolyglotComposeContractTest extends TestCase
             array_keys($tuple['artifacts']),
         );
 
-        foreach ($tuple['artifacts'] as $version) {
-            $this->assertMatchesRegularExpression('/^2\.\d+\.\d+$/', $version);
+        foreach ($tuple['artifacts'] as $artifact => $version) {
+            $this->assertMatchesRegularExpression($artifact === 'sdk-rust' ? '/^[23]\.\d+\.\d+$/' : '/^2\.\d+\.\d+$/', $version);
         }
 
         $assignments = $this->resolveArtifacts();
@@ -46,11 +46,11 @@ final class PolyglotComposeContractTest extends TestCase
     public function test_artifact_resolver_accepts_stable_overrides_and_rejects_prereleases(): void
     {
         $assignments = $this->resolveArtifacts([
-            'SAMPLE_APP_RUST_SDK_VERSION' => '2.3.4',
+            'SAMPLE_APP_RUST_SDK_VERSION' => '3.2.0',
             'SAMPLE_APP_PHP_SDK_PIN' => 'durable-workflow/sdk:2.4.5',
         ]);
 
-        $this->assertSame('2.3.4', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
+        $this->assertSame('3.2.0', $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
         $this->assertSame('2.4.5', $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION']);
         $this->assertSame('durable-workflow/sdk:2.4.5', $assignments['DURABLE_WORKFLOW_PHP_SDK_PIN']);
 
@@ -61,7 +61,7 @@ final class PolyglotComposeContractTest extends TestCase
         $process->run();
 
         $this->assertFalse($process->isSuccessful());
-        $this->assertStringContainsString('must be a stable 2.x version', $process->getErrorOutput());
+        $this->assertStringContainsString('must be a stable 2.x or 3.x version', $process->getErrorOutput());
     }
 
     public function test_polyglot_compose_uses_isolated_runtime_services_and_resolved_artifacts(): void

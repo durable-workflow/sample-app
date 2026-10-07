@@ -158,9 +158,10 @@ services:
       server:
         condition: service_healthy
 
-  # Opt-in queue consumer for durable workflow timers in the Rust timer example.
+  # Opt-in queue consumer for the SDK timer examples.
   timer-queue:
-    profiles: ["timer-rust"]
+    profiles: ["timer-rust", "timers"]
+    init: true
     image: *durable-server-image
     command: ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--max-time=3600"]
     environment:
