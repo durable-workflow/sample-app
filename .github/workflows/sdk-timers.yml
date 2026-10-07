@@ -1,0 +1,29 @@
+name: published SDK timers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-timers-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  timers:
+    name: SDK timers (PHP/Python/Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SDK_TIMERS_COMPOSE_PROJECT_NAME: sample-app-sdk-timers-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Run the documented timer experiment
+        run: scripts/sdk-timers.sh

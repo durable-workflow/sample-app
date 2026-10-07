@@ -78,6 +78,13 @@ class PythonGreeterWorkflow:
         }
 
 
+@workflow.defn(name="polyglot.python.timer")
+class PythonTimerWorkflow:
+    def run(self, ctx, request):
+        yield ctx.sleep(30)
+        return {"workflow_runtime": "python", "request": request, "timer_seconds": 30}
+
+
 @workflow.defn(name="polyglot.python-to-php.greeter")
 class PythonToPhpGreeterWorkflow:
     def run(self, ctx, request):  # type: ignore[no-untyped-def]
@@ -400,6 +407,9 @@ async def main() -> int:
         "POLYGLOT_PY_WORKER_ID",
         f"py-workflow-worker-{socket.gethostname()}",
     )
+    cooperative = os.environ.get("POLYGLOT_TIMER_COOPERATIVE") == "1"
+    if cooperative:
+        os.environ["DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION"] = "1.20"
 
     async with Client(
         server_url,
@@ -411,8 +421,10 @@ async def main() -> int:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE,
+            capabilities=["cooperative_cancellation"] if cooperative else [],
             workflows=[
                 PythonGreeterWorkflow,
+                PythonTimerWorkflow,
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,
                 PythonToPhpBinaryTypeRoundtripWorkflow,

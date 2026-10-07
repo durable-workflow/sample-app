@@ -9,6 +9,7 @@ use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Exception\CodecException;
+use DurableWorkflow\Version;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
@@ -22,6 +23,7 @@ if (! class_exists(Client::class)) {
 
 const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
+    'polyglot.php.timer',
     'polyglot.PolyglotWorkflow',
     'polyglot.php-to-python.greeter',
     'polyglot.php-to-python.type-roundtrip',
@@ -443,6 +445,12 @@ function signalQueryWorkflow(): Closure
 
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 {
+    $worker->registerWorkflow('polyglot.php.timer', static function (WorkflowContext $context, string $request): array {
+        $context->sleep(30);
+
+        return ['workflow_runtime' => 'php', 'request' => $request, 'timer_seconds' => 30];
+    });
+
     $workflowQueue = getenv('POLYGLOT_WORKFLOW_TASK_QUEUE') ?: 'polyglot-workflow';
     $pythonQueue = getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python';
     $rustQueue = getenv('POLYGLOT_TO_RUST_TASK_QUEUE') ?: 'polyglot-to-rust';
@@ -793,7 +801,13 @@ function runStandaloneWorker(): void
         throw new RuntimeException('Expected --mode=workflow, --mode=activity, --mode=query, or --mode=replay-fixtures.');
     }
 
-    $client = new Client($serverUrl, token: $token, namespace: $namespace);
+    $cooperative = getenv('POLYGLOT_TIMER_COOPERATIVE') === '1';
+    $client = new Client(
+        $serverUrl,
+        token: $token,
+        namespace: $namespace,
+        workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL,
+    );
     if ($mode === 'activity') {
         runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);
 
@@ -805,7 +819,7 @@ function runStandaloneWorker(): void
         return;
     }
 
-    $worker = new Worker($client, $taskQueue, $workerId);
+    $worker = new Worker($client, $taskQueue, $workerId, enableCooperativeCancellation: $cooperative);
     configureWorkflows($worker, $client->payloadCodec());
     fwrite(STDOUT, sprintf(
         "polyglot php worker registered: id=%s queue=%s types=[%s]\n",
