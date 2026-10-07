@@ -72,7 +72,7 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     while True:
         handle, execution, history = await observe(client, runtime, scenario)
         scheduled = events(history, "TimerScheduled")
-        if scheduled:
+        if scheduled and execution.status == "waiting":
             break
         if execution.status in ("failed", "cancelled", "terminated", "completed"):
             raise RuntimeError(f"{runtime} closed before scheduling its timer: {history!r}")

@@ -5,6 +5,7 @@ import importlib.util
 import sys
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -46,6 +47,21 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_matching_timer_and_one_result_pass(self):
         await self.verify(self.history)
+
+    async def test_pending_waits_for_status_after_timer_history_arrives(self):
+        client = types.SimpleNamespace(start_workflow=AsyncMock())
+        history = {"events": [event(
+            "TimerScheduled", timer_id="timer-1", delay_seconds=30,
+            fire_at=(datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat(),
+        )]}
+        snapshots = [types.SimpleNamespace(workflow_id="timer-completion-rust", run_id="run-1", status=status)
+                     for status in ("running", "waiting")]
+        observer = AsyncMock(side_effect=[(self.handle, execution, history) for execution in snapshots])
+        with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_ID": "timer"}), \
+                patch.object(timers, "observe", observer), patch.object(timers, "emit"), \
+                patch.object(timers.asyncio, "sleep", AsyncMock()):
+            await timers.pending(client, "rust", "completion")
+        self.assertEqual(observer.await_count, 2)
 
     async def test_duplicate_or_missing_durable_events_cannot_pass(self):
         for kind in ("TimerScheduled", "TimerFired", "WorkflowCompleted"):
