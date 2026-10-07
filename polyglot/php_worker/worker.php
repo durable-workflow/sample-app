@@ -451,7 +451,7 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
         return ['workflow_runtime' => 'php', 'request' => $request];
     });
-    $worker->declareSignal('polyglot.php.updates', 'updates-finish', static function (): void {});
+    $worker->declareSignal('polyglot.php.updates', 'updates-finish', static fn (): mixed => null);
     $worker->registerUpdate('polyglot.php.updates', 'echo', static function (QueryContext $context, array $request): array {
         return ['handler_runtime' => 'php', 'request' => $request];
     });

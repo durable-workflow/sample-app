@@ -3,14 +3,21 @@
 import copy
 import importlib.util
 import pathlib
+import sys
+import types
 import unittest
+from unittest.mock import patch
 
-from durable_workflow import serializer
+# Isolate history/identity checks from codec execution. The real published
+# experiment uses the installed SDK's official Avro serializer.
+serializer = types.SimpleNamespace(envelope=lambda value: {"decoded": value},
+                                   decode_envelope=lambda value, **_options: value["decoded"])
 
 SCRIPT = pathlib.Path(__file__).parents[1] / "scripts" / "sdk_updates.py"
 spec = importlib.util.spec_from_file_location("sdk_updates", SCRIPT)
 updates = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(updates)
+with patch.dict(sys.modules, {"durable_workflow": types.SimpleNamespace(Client=object, serializer=serializer)}):
+    spec.loader.exec_module(updates)
 
 
 class DurableUpdateObservationTest(unittest.TestCase):

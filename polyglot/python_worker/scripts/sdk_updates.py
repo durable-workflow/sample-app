@@ -43,7 +43,7 @@ def update_events(history, request_id):
     for event in history["events"]:
         if event["event_type"] != "UpdateAccepted":
             continue
-        args = serializer.decode_envelope(event["payload"]["arguments"])
+        args = serializer.decode_envelope(event["payload"]["arguments"], codec="avro")
         if args and isinstance(args[0], dict) and args[0].get("request_id") == request_id:
             accepted.append(event)
     if len(accepted) != 1:
@@ -62,7 +62,7 @@ def verify_completed(history, request_id, runtime, caller):
     if types.index("UpdateAccepted") >= types.index("UpdateCompleted"):
         raise RuntimeError("Update completion precedes acceptance.")
     expected = {"handler_runtime": runtime, "request": request(caller, request_id)}
-    result = serializer.decode_envelope(completed[0]["payload"]["result"])
+    result = serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro")
     if result != expected:
         raise RuntimeError(f"Persisted result changed: {result!r}")
     return update_id, related, expected
@@ -103,7 +103,7 @@ async def call(client, target, request_id, name):
     if response.get("update_status") != "completed":
         raise RuntimeError(f"Update did not complete: {response!r}")
     emit(caller="python", request_id=request_id,
-         result=serializer.decode_envelope(response["result"]))
+         result=serializer.decode_envelope(response["result"], codec="avro"))
 
 
 async def matrix(client):
@@ -150,7 +150,7 @@ async def replacement(client):
     if update_id != original["update_id"] or execution.run_id != original["run_id"]:
         raise RuntimeError("Replacement changed the original accepted identity.")
     if any(response.get("update_id") != update_id or response.get("update_status") != "completed"
-           or serializer.decode_envelope(response["result"]) != expected for response in responses):
+           or serializer.decode_envelope(response["result"], codec="avro") != expected for response in responses):
         raise RuntimeError("Duplicate request did not retain its original completion.")
     emit(scenario="replacement-and-duplicate", runtime="rust", update_id=update_id,
          run_id=execution.run_id, result=expected, events=related)
