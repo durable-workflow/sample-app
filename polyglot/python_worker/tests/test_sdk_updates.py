@@ -2,11 +2,13 @@
 
 import copy
 import importlib.util
+import json
+import os
 import pathlib
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 # Isolate history/identity checks from codec execution. The real published
 # experiment uses the installed SDK's official Avro serializer.
@@ -72,19 +74,43 @@ class DurableUpdateObservationTest(unittest.TestCase):
             self.verify(self.history)
 
     def test_wrong_handler_or_payload_is_rejected(self):
-        for replacement in ("php", {"request": "changed"}, {"count": "42"}):
+        for replacement in ("php", {"request": "changed"}, {"count": "42"}, {"count": 42.0}, {"enabled": 1}):
             with self.subTest(replacement=replacement):
                 history = copy.deepcopy(self.history)
                 result = copy.deepcopy(self.result)
                 if isinstance(replacement, str):
                     result["handler_runtime"] = replacement
-                elif "count" in replacement:
+                elif "count" in replacement or "enabled" in replacement:
                     result["request"]["nested"].update(replacement)
                 else:
                     result.update(replacement)
                 history["events"][-1]["payload"]["result"] = serializer.envelope(result)
                 with self.assertRaises(RuntimeError):
                     self.verify(history)
+
+
+class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_observer_reads_later_pages(self):
+        client = types.SimpleNamespace(
+            describe_workflow=AsyncMock(return_value=types.SimpleNamespace(workflow_id="example-rust", run_id="original")),
+            get_history=AsyncMock(side_effect=[
+                {"events": [{"event_type": "UpdateAccepted"}], "next_page_token": "page-2"},
+                {"events": [{"event_type": "UpdateCompleted"}], "next_page_token": None},
+            ]),
+        )
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example",
+                                     "DURABLE_WORKFLOW_UPDATE_RUNS": json.dumps({"runtime": "rust", "run_id": "original"})}):
+            _, history = await updates.observe(client, "rust")
+        self.assertEqual([event["event_type"] for event in history["events"]], ["UpdateAccepted", "UpdateCompleted"])
+        self.assertEqual(client.get_history.await_args.kwargs["next_page_token"], "page-2")
+
+    async def test_replacement_run_is_rejected(self):
+        client = types.SimpleNamespace(describe_workflow=AsyncMock(
+            return_value=types.SimpleNamespace(workflow_id="example-rust", run_id="replacement")))
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example",
+                                     "DURABLE_WORKFLOW_UPDATE_RUNS": json.dumps({"runtime": "rust", "run_id": "original"})}):
+            with self.assertRaisesRegex(RuntimeError, "original run"):
+                await updates.observe(client, "rust")
 
 
 if __name__ == "__main__":

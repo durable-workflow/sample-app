@@ -1,6 +1,6 @@
 # Published SDK workflow updates
 
-Run the five Rust-involving client/update-handler directions from the prepared
+Run all nine PHP/Python/Rust client/update-handler directions from the prepared
 Sample App development container:
 
 ```bash
@@ -12,10 +12,10 @@ SDK_UPDATES_COMPOSE_PROJECT_NAME=sample-app-sdk-updates scripts/sdk-updates.sh
 
 The checked-in tuple pins published Server, PHP/Python SDK packages and Rust
 crate versions. The command builds the existing workers, starts an isolated
-MySQL/Redis stack, and exercises PHP → Rust, Python → Rust, Rust → Rust,
-Rust → PHP and Rust → Python updates. These are client-to-handler directions,
-not workflow-to-activity directions. The remaining PHP/Python-only update cells
-belong to the Server's existing update experiment.
+MySQL/Redis stack, and exercises each of the three client languages against
+each of the three handler languages. These are client-to-handler directions.
+The Server's existing update experiment separately covers its embedded probe,
+PHP process boundary, Python SDK surface fixtures, validators and diagnostics.
 
 Each call checks the named handler's result through the real SDK client and
 persisted `UpdateAccepted`/`UpdateCompleted` history. It then kills the Rust

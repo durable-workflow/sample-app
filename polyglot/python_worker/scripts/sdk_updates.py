@@ -10,8 +10,7 @@ import os
 from durable_workflow import Client, serializer
 
 RUNTIMES = ("php", "python", "rust")
-DIRECTIONS = (("php", "rust"), ("python", "rust"), ("rust", "rust"),
-              ("rust", "php"), ("rust", "python"))
+DIRECTIONS = tuple((caller, runtime) for caller in RUNTIMES for runtime in RUNTIMES)
 
 
 def required(name):
@@ -36,6 +35,10 @@ def workflow_id(runtime):
 def request(caller, request_id):
     return {"caller": caller, "request_id": request_id, "value": "hello",
             "nested": {"enabled": True, "count": 42}}
+
+
+def same_result(actual, expected):
+    return json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
 
 
 def update_events(history, request_id):
@@ -63,7 +66,7 @@ def verify_completed(history, request_id, runtime, caller):
         raise RuntimeError("Update completion precedes acceptance.")
     expected = {"handler_runtime": runtime, "request": request(caller, request_id)}
     result = serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro")
-    if result != expected:
+    if not same_result(result, expected):
         raise RuntimeError(f"Persisted result changed: {result!r}")
     return update_id, related, expected
 
@@ -76,7 +79,19 @@ async def observe(client, runtime):
     original = next(record for record in originals if record["runtime"] == runtime)
     if execution.run_id != original["run_id"]:
         raise RuntimeError("Update experiment replaced its original run.")
-    return execution, await client.get_history(execution.workflow_id, execution.run_id)
+    history = {"events": []}
+    token = None
+    seen = set()
+    while True:
+        page = await client.get_history(execution.workflow_id, execution.run_id,
+                                        page_size=100, next_page_token=token)
+        history["events"].extend(page["events"])
+        token = page.get("next_page_token")
+        if not token:
+            return execution, history
+        if token in seen:
+            raise RuntimeError("History pagination repeated its token.")
+        seen.add(token)
 
 
 async def start(client):
@@ -109,7 +124,7 @@ async def call(client, target, request_id, name):
 async def matrix(client):
     results = records("DURABLE_WORKFLOW_UPDATE_RESULTS")
     if len(results) != len(DIRECTIONS):
-        raise RuntimeError("Not all five client/handler directions executed.")
+        raise RuntimeError("Not all nine client/handler directions executed.")
     for caller, runtime in DIRECTIONS:
         request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-{caller}-{runtime}"
         matches = [result for result in results if result.get("request_id") == request_id]
@@ -117,7 +132,7 @@ async def matrix(client):
             raise RuntimeError("Missing or duplicate SDK client observation.")
         execution, history = await observe(client, runtime)
         update_id, related, expected = verify_completed(history, request_id, runtime, caller)
-        if matches[0].get("result") != expected:
+        if not same_result(matches[0].get("result"), expected):
             raise RuntimeError(f"SDK client result differs from persisted result: {matches[0]!r}")
         emit(scenario="client-handler", caller=caller, runtime=runtime, run_id=execution.run_id,
              update_id=update_id, result=expected, events=related)
@@ -150,7 +165,8 @@ async def replacement(client):
     if update_id != original["update_id"] or execution.run_id != original["run_id"]:
         raise RuntimeError("Replacement changed the original accepted identity.")
     if any(response.get("update_id") != update_id or response.get("update_status") != "completed"
-           or serializer.decode_envelope(response["result"], codec="avro") != expected for response in responses):
+           or not same_result(serializer.decode_envelope(response["result"], codec="avro"), expected)
+           for response in responses):
         raise RuntimeError("Duplicate request did not retain its original completion.")
     emit(scenario="replacement-and-duplicate", runtime="rust", update_id=update_id,
          run_id=execution.run_id, result=expected, events=related)

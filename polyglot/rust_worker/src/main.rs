@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
         "activity" => run_activity_worker(client).await,
         "update-client" => updates::call(client).await,
         "validator-refusal" => updates::validator_refusal(client).await,
-        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow or activity"),
+        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow, activity, update-client or validator-refusal"),
     }
 }
 

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   updates:
-    name: SDK updates (Rust directions)
+    name: SDK updates (PHP/Python/Rust)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
