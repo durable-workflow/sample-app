@@ -30,9 +30,39 @@ async fn main() -> Result<()> {
         .namespace("default")
         .build()?;
     let mode = env::var("ACTIVITY_RECOVERY_MODE").expect("mode");
-    if mode == "stale" {
+    if mode == "stale" || mode == "stale-heartbeat" {
         let claim: Value =
             serde_json::from_str(&env::var("ACTIVITY_RECOVERY_CLAIM").expect("claim"))?;
+        if mode == "stale-heartbeat" {
+            let result = client
+                .heartbeat_activity_task(
+                    claim["task_id"].as_str().expect("task"),
+                    claim["activity_attempt_id"].as_str().expect("attempt"),
+                    claim["lease_owner"].as_str().expect("lease"),
+                    json!({"note":"obsolete heartbeat"}),
+                )
+                .await;
+            return match result {
+                Ok(reply) if !reply.heartbeat_recorded && reply.can_continue == Some(false) => {
+                    emit(
+                        json!({"event":"late-heartbeat-rejected","status":200,"reason":reply.reason,
+                        "heartbeat_recorded":reply.heartbeat_recorded,"can_continue":reply.can_continue}),
+                    );
+                    Ok(())
+                }
+                Err(Error::ActivityTaskRejected(rejection)) => {
+                    emit(
+                        json!({"event":"late-heartbeat-rejected","status":rejection.status,
+                        "reason":rejection.reason,"heartbeat_recorded":false,"can_continue":false}),
+                    );
+                    Ok(())
+                }
+                Err(error) => Err(error),
+                Ok(_) => Err(Error::WorkerLoop(
+                    "obsolete heartbeat retained authority".into(),
+                )),
+            };
+        }
         let result = client
             .complete_activity_task(
                 claim["task_id"].as_str().expect("task"),
@@ -63,6 +93,14 @@ async fn main() -> Result<()> {
     let mut worker = Worker::new(client, queue)
         .worker_id(worker_id)
         .poll_timeout(Duration::from_secs(2));
+    if mode == "activity"
+        && env::var("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION")
+            .ok()
+            .as_deref()
+            == Some("1")
+    {
+        worker = worker.cooperative_cancellation(true);
+    }
     if mode == "workflow" {
         worker.register_workflow(
             "sample-app.activity-recovery.rust",
@@ -72,13 +110,27 @@ async fn main() -> Result<()> {
                     .as_str()
                     .expect("activity runtime");
                 let total_deadline = request["scenario"] == "total-deadline";
-                let options = ActivityOptions::new()
+                let progress = request["scenario"] == "progress-heartbeat";
+                let mut options = ActivityOptions::new()
                     .task_queue(format!("activity-recovery-activity-{runtime}"))
                     .retry_policy(
                         ActivityRetryPolicy::new(2).backoff_intervals([Duration::from_secs(2)]),
                     )
-                    .start_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 20 }))
-                    .schedule_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 120 }));
+                    .start_to_close_timeout(Duration::from_secs(if progress {
+                        60
+                    } else if total_deadline {
+                        30
+                    } else {
+                        20
+                    }))
+                    .schedule_to_close_timeout(Duration::from_secs(if total_deadline {
+                        30
+                    } else {
+                        120
+                    }));
+                if progress {
+                    options = options.heartbeat_timeout(Duration::from_secs(10));
+                }
                 let result = ctx
                     .activity_with_options(
                         format!("sample-app.activity-recovery.{runtime}.work"),
@@ -106,6 +158,32 @@ async fn main() -> Result<()> {
             let temporary = path.with_extension("pending");
             fs::write(&temporary, receipt.to_string()).expect("write claim");
             fs::rename(temporary, path).expect("publish claim");
+            if request["scenario"] == "progress-heartbeat" {
+                if ctx.attempt_number == 1 {
+                    gate(case_id, ".first-release").await?;
+                }
+                let mut step = 0;
+                loop {
+                    step += 1;
+                    let reply = ctx.heartbeat(json!({"case_id":case_id,"runtime":"rust",
+                        "attempt":ctx.attempt_number,"step":step,"fraction":0.5,
+                        "ready":true,"optional":null,"note":"café ✓"})).await?;
+                    if !reply.heartbeat_recorded || reply.should_stop() {
+                        return Err(Error::WorkerLoop("application heartbeat was not accepted".into()));
+                    }
+                    let root = PathBuf::from(env::var("ACTIVITY_RECOVERY_PROOF").expect("proof"));
+                    if ctx.attempt_number == 1 && step == 5 {
+                        fs::write(root.join(format!("{case_id}.progress-ready")), "ready").expect("publish progress");
+                        gate(case_id, ".release").await?;
+                        fs::write(root.join(format!("{case_id}.expired-resumed")), "expired callback resumed").expect("publish forbidden resumption");
+                        return Err(Error::WorkerLoop("expired first attempt returned to application code".into()));
+                    }
+                    if root.join(format!("{case_id}.release")).exists() {
+                        return Ok(receipt);
+                    }
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                }
+            }
             if ctx.attempt_number == 1 {
                 gate(case_id, ".first-release").await?;
                 if request["scenario"] != "worker-loss" {
