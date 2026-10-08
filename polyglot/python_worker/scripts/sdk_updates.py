@@ -205,7 +205,7 @@ async def snapshot(client, stage="initial"):
              query=query.get("result"), update=result,
              response={key: response.get(key) for key in ("update_id", "update_status", "ordering_state",
                        "queued_behind_command_id", "queued_behind_command_type")},
-             history=[{"event_type": event["event_type"], "sequence": event["sequence"],
+             history=[{"event_type": event["event_type"], "sequence": event.get("sequence"),
                        "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
                       for event in history["events"]])
         raise RuntimeError("Snapshot update did not retain its one original completion.")
