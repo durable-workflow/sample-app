@@ -451,11 +451,14 @@ async def finish_race(client):
         state = {"counter": 1, "mutations": [request_id]}
         response = await client.update_workflow(
             identifier, "increment", args=[increment_request("python", request_id, 1)],
-            request_id=request_id)
+            request_id=request_id, wait_for="completed", wait_timeout_seconds=45)
         expected_update = {"handler_runtime": "rust",
                            "request": increment_request("python", request_id, 1), "state": state}
-        if not same_result(response.get("result"), expected_update):
-            raise RuntimeError("Finish race mutation did not complete once.")
+        if response.get("update_status") != "completed":
+            raise RuntimeError(f"Finish race mutation did not complete: {response!r}")
+        actual_update = serializer.decode_envelope(response["result_envelope"], codec="avro")
+        if not same_result(actual_update, expected_update):
+            raise RuntimeError(f"Finish race mutation changed its result: {actual_update!r}")
         # Do not wait for another query or signal-wait checkpoint after the
         # update acknowledgement. Completion must survive that replay window.
         await handle.signal("updates-finish")
