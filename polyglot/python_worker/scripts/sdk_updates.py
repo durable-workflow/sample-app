@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 
-from durable_workflow import Client, InvalidArgument, serializer
+from durable_workflow import Client, UpdateFailed, serializer
 
 RUNTIMES = ("php", "python", "rust")
 DIRECTIONS = tuple((caller, runtime) for caller in RUNTIMES for runtime in RUNTIMES)
@@ -175,24 +175,39 @@ async def replacement(client):
 
 async def failure(client):
     request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-failure"
-    try:
-        await client.update_workflow(workflow_id("rust"), "fail",
-                         args=[request("python", request_id)], wait_for="completed", request_id=request_id)
-    except InvalidArgument as error:
-        sdk_error = {"type": type(error).__name__, "message": str(error)}
-    else:
-        raise RuntimeError("Expected the published Python SDK's exception for a failed update.")
+    errors = []
+    for _ in range(2):
+        try:
+            await client.update_workflow(workflow_id("rust"), "fail",
+                             args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+        except UpdateFailed as error:
+            errors.append(error)
+        else:
+            raise RuntimeError("Expected the published Python SDK's typed failed update.")
     execution, history = await observe(client, "rust")
     update_id, related = update_events(history, request_id)
     failed = [event for event in related if event["event_type"] == "UpdateCompleted"
               and event["payload"].get("failure_id")]
     if (len(failed) != 1 or "update-probe-failure" not in json.dumps(failed[0]["payload"])
             or sum(event["event_type"] == "UpdateCompleted" for event in related) != 1):
-        raise RuntimeError(f"Missing durable handler failure: {sdk_error!r}, {related!r}")
+        raise RuntimeError(f"Missing durable handler failure: {related!r}")
+    payload = failed[0]["payload"]
+    expected = {"workflow_id": execution.workflow_id, "run_id": execution.run_id,
+                "update_id": update_id, "failure_id": payload["failure_id"]}
+    for error in errors:
+        if (error.status != 422 or str(error) != payload.get("message")
+                or "update-probe-failure" not in str(error)
+                or error.body.get("update_status") != "failed" or error.body.get("accepted") is not True
+                or any(getattr(error, name) != value or error.body.get(name) != value
+                       for name, value in expected.items())):
+            raise RuntimeError("SDK failed-update diagnostics do not match the original durable failure.")
     if execution.status in ("failed", "terminated", "completed"):
         raise RuntimeError("An update failure unexpectedly terminated the workflow.")
     emit(scenario="handler-failure", runtime="rust", update_id=update_id,
-         sdk_error=sdk_error, events=related)
+         run_id=execution.run_id, sdk_error={"type": type(errors[0]).__name__, "message": str(errors[0]),
+                                           "status": errors[0].status, **expected},
+         duplicate_sdk_error={"type": type(errors[1]).__name__, "message": str(errors[1]),
+                              "status": errors[1].status, **expected}, events=related)
 
 
 async def finish(client):
