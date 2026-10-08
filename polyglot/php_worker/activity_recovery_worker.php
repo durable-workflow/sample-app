@@ -54,6 +54,14 @@ if ($mode === 'workflow') {
                 'pid' => getmypid(), 'task_id' => $context->taskId,
                 'activity_attempt_id' => $context->activityAttemptId,
                 'lease_owner' => $context->leaseOwner, 'attempt_number' => $context->attemptNumber];
+            if ($request['scenario'] === 'external-effects') {
+                $response = (new GuzzleHttp\Client(['timeout' => 5]))->post(getenv('ACTIVITY_EFFECTS_URL').'/effects', [
+                    'json' => ['operation_key' => $request['case_id'].':effect',
+                        'attempt_id' => $context->activityAttemptId,
+                        'input' => ['units' => 37, 'note' => 'café ✓', 'tags' => [true, null]]],
+                ]);
+                $receipt['effect'] = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+            }
             fwrite(STDOUT, json_encode(['event' => 'activity-started', 'claim' => $receipt], JSON_THROW_ON_ERROR)."\n");
             $path = getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.attempt-'.$context->attemptNumber.'.json';
             file_put_contents($path.'.pending', json_encode($receipt, JSON_THROW_ON_ERROR));

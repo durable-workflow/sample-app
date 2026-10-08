@@ -1,0 +1,65 @@
+name: published SDK external effect recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/sdk-external-effects.yml
+      - scripts/sdk-activity-recovery.sh
+      - polyglot/docker-compose.activity-recovery.yml
+      - polyglot/qualified-artifact-tuple.json
+      - polyglot/php_worker/activity_recovery_worker.php
+      - polyglot/python_worker/scripts/*activity_recovery*.py
+      - polyglot/python_worker/scripts/*activity_effects*.py
+      - polyglot/rust_worker/src/bin/activity_recovery_worker.rs
+      - polyglot/rust_worker/Cargo.toml
+      - polyglot/rust_worker/Cargo.lock
+      - polyglot/*_worker/Dockerfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-effects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME: sample-app-external-effects-${{ github.run_id }}-${{ github.run_attempt }}
+      ACTIVITY_RECOVERY_RUNNER_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Prove the downstream idempotency contract
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" --cpus 1 --memory 128m --network none \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -v "$PWD/polyglot/python_worker/scripts:/tests:ro" -w /tests \
+            python:3.12-slim python -m unittest -v test_activity_effects_service
+      - name: Recover committed external effects after activity worker SIGKILL
+        run: scripts/sdk-activity-recovery.sh --external-effects --result-dir "$RUNNER_TEMP/activity-recovery"
+      - name: Remove remaining task resources
+        if: always()
+        env:
+          ACTIVITY_RECOVERY_PROOF_DIR: ${{ runner.temp }}/activity-recovery/proof
+          COMPOSE_PROJECT_NAME: ${{ env.SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME }}
+        run: |
+          export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
+          docker compose --project-directory polyglot -f polyglot/docker-compose.yml \
+            -f polyglot/docker-compose.activity-recovery.yml down --volumes --remove-orphans
+          docker image rm --no-prune "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" \
+            "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" "${COMPOSE_PROJECT_NAME}-smoke:latest" || true
+      - name: Retain observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sdk-external-effects-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/activity-recovery/*.json
+            ${{ runner.temp }}/activity-recovery/proof/*.json
+            ${{ runner.temp }}/activity-recovery/logs/*.log
+          if-no-files-found: error
+          retention-days: 30

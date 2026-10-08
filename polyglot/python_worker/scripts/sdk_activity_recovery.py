@@ -2,16 +2,19 @@
 
 import argparse
 import asyncio
+import hashlib
 import importlib.metadata
 import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.request import urlopen
 
 from durable_workflow import Client, serializer
 
 DIRECTIONS = {(workflow, activity) for workflow in ("php", "python", "rust") for activity in ("php", "python", "rust")}
 SCENARIOS = {"retry", "worker-loss", "total-deadline", "retry-exhaustion", "progress-heartbeat"}
+SUPPORTED_SCENARIOS = SCENARIOS | {"external-effects"}
 FAILURE_SCENARIOS = {"total-deadline", "retry-exhaustion"}
 TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated", "WorkflowTimedOut"}
 
@@ -49,6 +52,48 @@ def one(history, kind):
 
 def timestamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+async def effects_snapshot(record):
+    key = record["workflow_id"] + ":effect"
+    # The fixture accepts a bounded ASCII operation key, including ':'.
+    # Keep it literal so its observation path uses the same immutable key.
+    def fetch():
+        with urlopen(os.environ["ACTIVITY_EFFECTS_URL"] + "/effects/" + key, timeout=5) as response:
+            data = response.read(16385)
+            require(len(data) <= 16384, "Downstream effect observation exceeded its bound.")
+            return json.loads(data)
+    return await asyncio.to_thread(fetch)
+
+
+def verify_effects(record, first, second=None):
+    key = record["workflow_id"] + ":effect"
+    expected_input = {"units": 37, "note": "café ✓", "tags": [True, None]}
+    digest = hashlib.sha256(json.dumps(expected_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    snapshots = [first] if second is None else [first, second]
+    original_effect = None
+    for index, snapshot in enumerate(snapshots):
+        downstream, claim = snapshot["downstream"], snapshot["claim"]
+        require(downstream["operation_key"] == key and len(downstream["effects"]) == 1,
+                "Downstream did not commit exactly one original effect.")
+        effect = downstream["effects"][0]
+        require(effect["operation_key"] == key and effect["input"] == expected_input
+                and type(effect["input"]["units"]) is int and effect["input"]["tags"][0] is True
+                and effect["input_sha256"] == digest and type(effect["effect_id"]) is int,
+                "Downstream changed the logical operation, typed input or committed identity.")
+        if original_effect is None:
+            original_effect = effect
+        require(effect == original_effect, "Retry changed the committed downstream effect.")
+        ack = claim["effect"]
+        require(ack == {"operation_key": key, "effect_id": effect["effect_id"],
+                        "input_sha256": digest, "reused": index == 1}
+                and type(ack["reused"]) is bool, "Activity did not receive the original downstream acknowledgment.")
+        expected_deliveries = [{"attempt_id": first["claim"]["activity_attempt_id"], "outcome": "committed"}]
+        if index == 1:
+            expected_deliveries.append({"attempt_id": second["claim"]["activity_attempt_id"], "outcome": "reused"})
+        require(downstream["deliveries"] == expected_deliveries,
+                "Downstream delivery receipts do not identify the two actual activity attempts.")
+    return original_effect
 
 
 async def observe(client, record):
@@ -91,7 +136,7 @@ def verify_attempts(history, record, first, second):
             and retry["payload"]["retry_after_attempt"] == 1, "Retry is not linked to the original first attempt.")
     require(retry["payload"]["retry_backoff_seconds"] == 2, "Retry changed its recorded backoff.")
     require(timestamp(starts[1]["timestamp"]) >= timestamp(retry["payload"]["retry_available_at"]), "Retry started before its durable backoff.")
-    if record["scenario"] == "worker-loss":
+    if record["scenario"] in {"worker-loss", "external-effects"}:
         require(retry["payload"].get("timeout_kind") == "start_to_close", "Worker loss did not exhaust the original attempt deadline.")
     if record["scenario"] == "progress-heartbeat":
         require(retry["payload"].get("timeout_kind") == "heartbeat", "Missing progress did not cause a heartbeat retry.")
@@ -178,12 +223,15 @@ def verify_terminal_failure(history, record, first, second):
     return execution_id
 
 
-def verify_results(results):
-    expected = {(w, a, scenario) for w, a in DIRECTIONS for scenario in SCENARIOS}
+def verify_results(results, scenarios=SCENARIOS):
+    require(scenarios in (SCENARIOS, {"external-effects"}), "Unsupported recovery suite.")
+    expected = {(w, a, scenario) for w, a in DIRECTIONS for scenario in scenarios}
     require(len(results) == len(expected)
             and {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]) for row in results} == expected,
             "Missing or duplicate recovery directions.")
     by_case = {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]): row for row in results}
+    if not FAILURE_SCENARIOS <= scenarios:
+        return
     for w, a in DIRECTIONS:
         require(by_case[w, a, "total-deadline"]["second_claim"]["lease_owner"]
                 == by_case[w, a, "retry-exhaustion"]["first_claim"]["lease_owner"],
@@ -194,8 +242,10 @@ async def main(phase):
     if phase == "summary":
         proof = Path(os.environ["ACTIVITY_RECOVERY_PROOF"])
         results = [json.loads(file.read_text()) for file in proof.glob("*.result.json")]
-        verify_results(results)
-        report = {"outcome": "pass", "schema": "durable-workflow.sample-app.activity-recovery/v1",
+        suite = os.environ.get("ACTIVITY_RECOVERY_SUITE", "activity-recovery")
+        require(suite in {"activity-recovery", "external-effects"}, "Unsupported recovery suite.")
+        verify_results(results, {"external-effects"} if suite == "external-effects" else SCENARIOS)
+        report = {"outcome": "pass", "schema": "durable-workflow.sample-app.activity-recovery/v1", "suite": suite,
                   "runner_commit": os.environ.get("ACTIVITY_RECOVERY_RUNNER_COMMIT"),
                   "observer_sdk_version": importlib.metadata.version("durable-workflow"),
                   "cases": results}
@@ -208,7 +258,7 @@ async def main(phase):
             require((w, a) in DIRECTIONS, "Unsupported recovery direction.")
             request = {"case_id": os.environ["ACTIVITY_RECOVERY_CASE"], "activity_runtime": a,
                        "scenario": os.environ["ACTIVITY_RECOVERY_SCENARIO"]}
-            require(request["scenario"] in SCENARIOS, "Unsupported recovery scenario.")
+            require(request["scenario"] in SUPPORTED_SCENARIOS, "Unsupported recovery scenario.")
             await client.start_workflow(workflow_type=f"sample-app.activity-recovery.{w}",
                                         task_queue=f"activity-recovery-workflow-{w}", workflow_id=request["case_id"], input=[request])
             run = await client.describe_workflow(request["case_id"])
@@ -254,8 +304,12 @@ async def main(phase):
             require(run.run_id == record["run_id"] and not events(history, "WorkflowCompleted")
                     and not events(history, "ActivityCompleted"), "Checkpoint is not the original pending execution.")
             snapshot = {"claim": claim, "status": status, "history": history}
+            if record["scenario"] == "external-effects":
+                snapshot["downstream"] = await effects_snapshot(record)
             save(f".{phase}.observation.json", snapshot)
             if phase == "first":
+                if record["scenario"] == "external-effects":
+                    verify_effects(record, snapshot)
                 require(len(events(history, "ActivityStarted")) == 1, "First checkpoint has additional attempts.")
                 policy = one(history, "ActivityScheduled")["payload"]["activity"]["retry_policy"]
                 attempt_budget, total_budget = ((60, 120) if record["scenario"] == "progress-heartbeat"
@@ -268,12 +322,14 @@ async def main(phase):
             else:
                 first = read(".first.json")
                 verify_attempts(history, record, first["claim"], claim)
-                if record["scenario"] == "worker-loss":
+                if record["scenario"] in {"worker-loss", "external-effects"}:
                     require(claim["lease_owner"] != first["claim"]["lease_owner"],
                             "Replacement reused the killed worker's registration identity.")
                     require(timestamp(events(history, "ActivityStarted")[1]["timestamp"])
                             >= timestamp(first["status"]["deadlines"]["start_to_close"]),
                             "Replacement claimed work before the original attempt deadline.")
+                if record["scenario"] == "external-effects":
+                    verify_effects(record, first, snapshot)
                 require(status["deadlines"]["schedule_to_close"] == first["status"]["deadlines"]["schedule_to_close"],
                         "Retry reset the original total deadline.")
                 require(timestamp(status["deadlines"]["start_to_close"]) > timestamp(first["status"]["deadlines"]["start_to_close"]),
@@ -383,12 +439,17 @@ async def main(phase):
                   "original_total_deadline": first["status"]["deadlines"]["schedule_to_close"],
                   "first_claim": first["claim"], "second_claim": second["claim"], "result": result,
                   "stale_rejection": read(".stale-check.json")["rejection"], "history": history}
-        if record["scenario"] == "worker-loss":
+        if record["scenario"] in {"worker-loss", "external-effects"}:
             before, killed, replacement = (read(f".container-{stage}.json") for stage in ("before", "killed", "replacement"))
             require(before["State"]["Running"] and before["Id"] == killed["Id"] != replacement["Id"]
                     and killed["State"]["ExitCode"] == 137 and not killed["State"]["Running"]
                     and not killed["State"]["OOMKilled"] and replacement["State"]["Running"], "Missing actual SIGKILL and fresh-container recovery.")
             report["physical_failure"] = {"before": before, "killed": killed, "replacement": replacement}
+        if record["scenario"] == "external-effects":
+            final_downstream = await effects_snapshot(record)
+            verify_effects(record, first, {**second, "downstream": final_downstream})
+            require(final_downstream == second["downstream"], "Completion or stale writes changed the downstream ledger.")
+            report["downstream_effect"] = {"first": first["downstream"], "second": second["downstream"], "final": final_downstream}
         if record["scenario"] == "progress-heartbeat":
             require(not path(".expired-resumed").exists(), "The expired callback resumed after its replacement was released.")
             before, after = read(".progress-container-before.json"), read(".progress-container-after.json")

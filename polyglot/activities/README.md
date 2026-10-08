@@ -115,3 +115,40 @@ remove the same project with both Compose files and its original proof directory
 
 This checks durable results and claim fencing. Exactly-once external effects
 require application idempotency or downstream fencing and have separate cases.
+
+## External effect committed before activity worker loss
+
+Run the separate nine-direction suite with the same published tuple:
+
+```bash
+SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME=sample-app-external-effects \
+  scripts/sdk-activity-recovery.sh --external-effects --result-dir /tmp/external-effects-result
+```
+
+Each real PHP, Python or Rust activity first commits a synthetic operation to a
+separate HTTP service, then waits before returning its SDK result. The service
+uses a SQLite transaction and a unique application operation key, supplied in
+the immutable workflow input. A repeated key with the same input returns the
+original effect identity. Changed input is refused. This application contract
+supplies idempotency independently of Workflow's attempt fencing.
+
+The observer verifies that the effect is committed while the original workflow
+and activity remain pending. The runner then SIGKILLs the actual activity worker
+and starts a distinct replacement. After the original attempt deadline and
+recorded backoff, the second SDK callback repeats the same logical operation.
+Require the original effect identity, byte-equivalent canonical input and one
+business effect, with two downstream delivery receipts tied to the actual
+activity attempts. The original total activity deadline remains authoritative.
+
+Before releasing the retry, submit the obsolete first claim through the
+published Rust SDK and require refusal without changed history. After normal
+SDK completion, require one original workflow completion, the retry's actual
+result and an unchanged downstream ledger. Results retain the committed effect,
+both delivery receipts, claim/deadline snapshots and physical SIGKILL records.
+The isolated service and its synthetic database are removed with the task.
+
+The focused external-effect Action also tests concurrent duplicate HTTP requests,
+conflicting inputs and physical downstream SIGKILL/restart over the same SQLite
+database. No real customer account or external provider is involved. The normal
+45-case recovery suite remains separate, and this fixture makes no guarantee
+about services that lack idempotency or their own fencing contract.
