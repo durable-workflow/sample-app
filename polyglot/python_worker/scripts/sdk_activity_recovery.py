@@ -10,7 +10,7 @@ from pathlib import Path
 
 from durable_workflow import Client, serializer
 
-DIRECTIONS = {("php", "rust"), ("python", "rust"), ("rust", "php"), ("rust", "python"), ("rust", "rust")}
+DIRECTIONS = {(workflow, activity) for workflow in ("php", "python", "rust") for activity in ("php", "python", "rust")}
 SCENARIOS = {"retry", "worker-loss", "total-deadline", "retry-exhaustion"}
 FAILURE_SCENARIOS = {"total-deadline", "retry-exhaustion"}
 TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated", "WorkflowTimedOut"}
@@ -134,17 +134,23 @@ def verify_terminal_failure(history, record, first, second):
     return execution_id
 
 
+def verify_results(results):
+    expected = {(w, a, scenario) for w, a in DIRECTIONS for scenario in SCENARIOS}
+    require(len(results) == len(expected)
+            and {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]) for row in results} == expected,
+            "Missing or duplicate recovery directions.")
+    by_case = {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]): row for row in results}
+    for w, a in DIRECTIONS:
+        require(by_case[w, a, "total-deadline"]["second_claim"]["lease_owner"]
+                == by_case[w, a, "retry-exhaustion"]["first_claim"]["lease_owner"],
+                "The activity worker did not keep its identity when taking the next task after deadline expiry.")
+
+
 async def main(phase):
     if phase == "summary":
         proof = Path(os.environ["ACTIVITY_RECOVERY_PROOF"])
         results = [json.loads(file.read_text()) for file in proof.glob("*.result.json")]
-        require(len(results) == 20 and {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]) for row in results}
-                == {(w, a, scenario) for w, a in DIRECTIONS for scenario in SCENARIOS}, "Missing or duplicate recovery directions.")
-        by_case = {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]): row for row in results}
-        for w, a in DIRECTIONS:
-            require(by_case[w, a, "total-deadline"]["second_claim"]["lease_owner"]
-                    == by_case[w, a, "retry-exhaustion"]["first_claim"]["lease_owner"],
-                    "The activity worker did not keep its identity when taking the next task after deadline expiry.")
+        verify_results(results)
         report = {"outcome": "pass", "schema": "durable-workflow.sample-app.activity-recovery/v1",
                   "runner_commit": os.environ.get("ACTIVITY_RECOVERY_RUNNER_COMMIT"),
                   "observer_sdk_version": importlib.metadata.version("durable-workflow"),

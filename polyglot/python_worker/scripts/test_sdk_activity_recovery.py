@@ -3,7 +3,38 @@
 import copy
 import unittest
 
-from sdk_activity_recovery import verify_attempts, verify_terminal_failure
+from sdk_activity_recovery import verify_attempts, verify_results, verify_terminal_failure
+
+
+class RecoveryCoverageTest(unittest.TestCase):
+    def setUp(self):
+        self.results = [
+            {"workflow_runtime": workflow, "activity_runtime": activity, "scenario": scenario,
+             "first_claim": {"lease_owner": f"{activity}-worker"},
+             "second_claim": {"lease_owner": f"{activity}-worker"}}
+            for workflow in ("php", "python", "rust")
+            for activity in ("php", "python", "rust")
+            for scenario in ("retry", "worker-loss", "total-deadline", "retry-exhaustion")
+        ]
+
+    def test_complete_recovery_matrix(self):
+        verify_results(self.results)
+
+    def test_rust_only_missing_and_duplicate_cases_are_rejected(self):
+        incomplete = [row for row in self.results
+                      if "rust" in (row["workflow_runtime"], row["activity_runtime"])]
+        for results in (incomplete, self.results[:-1], self.results[:-1] + [self.results[0]]):
+            with self.subTest(case_count=len(results)):
+                with self.assertRaisesRegex(RuntimeError, "Missing or duplicate"):
+                    verify_results(results)
+
+    def test_replacing_worker_after_deadline_cannot_hide_a_continuity_failure(self):
+        for row in self.results:
+            if row["scenario"] == "retry-exhaustion":
+                row["first_claim"]["lease_owner"] = "replacement-worker"
+                break
+        with self.assertRaisesRegex(RuntimeError, "did not keep its identity"):
+            verify_results(self.results)
 
 
 class AttemptHistoryTest(unittest.TestCase):

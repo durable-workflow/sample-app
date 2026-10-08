@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-activity-recovery.sh [--result-dir DIR]' \
-    'Runs retry, activity-worker SIGKILL, total deadline expiry and retry exhaustion in five Rust-involving SDK directions.' \
+    'Runs retry, activity-worker SIGKILL, total deadline expiry and retry exhaustion in all nine PHP/Python/Rust SDK directions.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME selects an isolated project. All task resources are removed.'
   exit 0
@@ -66,7 +66,7 @@ observer() {
 snapshot() {
   docker inspect "$1" | jq '.[0] | {Id,State:{Pid:.State.Pid,StartedAt:.State.StartedAt,FinishedAt:.State.FinishedAt,ExitCode:.State.ExitCode,OOMKilled:.State.OOMKilled,Running:.State.Running}}'
 }
-for direction in php:rust python:rust rust:php rust:python rust:rust; do
+for direction in php:php php:python php:rust python:php python:python python:rust rust:php rust:python rust:rust; do
   export ACTIVITY_RECOVERY_WORKFLOW="${direction%%:*}" ACTIVITY_RECOVERY_ACTIVITY="${direction##*:}"
   for scenario in retry worker-loss total-deadline retry-exhaustion; do
     export ACTIVITY_RECOVERY_SCENARIO="$scenario"
