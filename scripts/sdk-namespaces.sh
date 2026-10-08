@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-namespaces.sh' \
-    'Runs published Rust clients/workers in two namespaces with identical queue and workflow names.' \
+    'Runs published Rust clients/workers in two namespaces with identical queue and type names.' \
     'Checks role credentials, denied reads/mutations/polls and original-run recovery after SIGKILL.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.'
@@ -72,24 +72,26 @@ caller() {
 observer setup
 "${compose[@]}" up -d --wait --no-build "${workers[@]}"
 for namespace in rust-namespace-a rust-namespace-b; do
-  caller "$namespace" "$namespace" operator start same-workflow-id
+  caller "$namespace" "$namespace" operator start "namespace-run-$namespace"
   caller "$namespace" "$namespace" operator start "only-$namespace"
 done
 for namespace in rust-namespace-a rust-namespace-b; do
-  caller "$namespace" "$namespace" both routed same-workflow-id
-  caller "$namespace" "$namespace" worker missing-control same-workflow-id
-  caller "$namespace" "$namespace" worker-as-control deny-describe same-workflow-id
+  caller "$namespace" "$namespace" both routed "namespace-run-$namespace"
+  caller "$namespace" "$namespace" worker missing-control "namespace-run-$namespace"
+  caller "$namespace" "$namespace" worker-as-control deny-describe "namespace-run-$namespace"
   # The operator role can perform diagnostic registration. Polling requires worker authority.
-  caller "$namespace" "$namespace" operator missing-worker same-workflow-id
-  caller "$namespace" "$namespace" operator-as-worker deny-poll same-workflow-id
+  caller "$namespace" "$namespace" operator missing-worker "namespace-run-$namespace"
+  caller "$namespace" "$namespace" operator-as-worker deny-poll "namespace-run-$namespace"
 done
+# Workflow IDs are reserved across namespaces by the published Server contract.
+caller rust-namespace-b rust-namespace-b operator deny-collision namespace-run-rust-namespace-a
 # Namespace A credentials cannot access B, default, or an unregistered namespace.
 for namespace in rust-namespace-b default missing-namespace; do
-  caller "$namespace" rust-namespace-a both deny-describe same-workflow-id
-  caller "$namespace" rust-namespace-a both deny-signal same-workflow-id
+  caller "$namespace" rust-namespace-a both deny-describe "namespace-run-$namespace"
+  caller "$namespace" rust-namespace-a both deny-signal "namespace-run-$namespace"
   caller "$namespace" rust-namespace-a both deny-start denied-cross-namespace-start
-  caller "$namespace" rust-namespace-a both deny-register same-workflow-id
-  caller "$namespace" rust-namespace-a both deny-poll same-workflow-id
+  caller "$namespace" rust-namespace-a both deny-register "namespace-run-$namespace"
+  caller "$namespace" rust-namespace-a both deny-poll "namespace-run-$namespace"
 done
 for namespace in rust-namespace-a rust-namespace-b; do
   foreign=rust-namespace-a
@@ -105,13 +107,13 @@ export DURABLE_WORKFLOW_NAMESPACE_RUNS
 printf '%s\n' "$DURABLE_WORKFLOW_NAMESPACE_RUNS"
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
 for namespace in rust-namespace-a rust-namespace-b; do
-  caller "$namespace" "$namespace" operator release same-workflow-id
+  caller "$namespace" "$namespace" operator release "namespace-run-$namespace"
   caller "$namespace" "$namespace" operator release "only-$namespace"
 done
 observer released
 "${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
 for namespace in rust-namespace-a rust-namespace-b; do
-  caller "$namespace" "$namespace" operator verify same-workflow-id
+  caller "$namespace" "$namespace" operator verify "namespace-run-$namespace"
   caller "$namespace" "$namespace" operator verify "only-$namespace"
 done
 observer verify

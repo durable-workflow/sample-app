@@ -14,7 +14,7 @@ from durable_workflow import Client, serializer
 NAMESPACES = ("rust-namespace-a", "rust-namespace-b")
 IDENTITIES = tuple((namespace, workflow_id)
                    for namespace in NAMESPACES
-                   for workflow_id in ("same-workflow-id", f"only-{namespace}"))
+                   for workflow_id in (f"namespace-run-{namespace}", f"only-{namespace}"))
 TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated"}
 
 
@@ -178,7 +178,7 @@ async def inspect(phase):
                     emit(scenario="rust-namespace-recovered", **{key: value for key, value in record.items() if key != "scenario"},
                          result=result, events=[event["event_type"] for event in history["events"]])
         if phase == "verify":
-            for namespace in NAMESPACES:
+            for namespace in (*NAMESPACES, "default"):
                 rejected = api("/workflows/denied-cross-namespace-start", namespace=namespace, status=404)
                 if rejected.get("reason") != "instance_not_found":
                     raise RuntimeError("Rejected start was persisted in a namespace.")

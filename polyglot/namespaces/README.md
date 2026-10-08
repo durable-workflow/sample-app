@@ -1,7 +1,7 @@
 # Rust namespace execution
 
 Run published Rust clients and workers in two namespaces with the same queue,
-workflow type, activity type, and stable workflow ID.
+workflow type and activity type.
 
 ```bash
 while IFS= read -r assignment; do export "$assignment"; done \
@@ -25,8 +25,10 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-namespaces docker compose \
 ```
 
 The public Server API creates two disposable namespaces and namespace-bound
-operator and worker credentials. Rust clients start four runs, including an
-identically named workflow in both namespaces. Each Rust worker has only its
+operator and worker credentials. Rust clients start four runs. Server reserves
+workflow IDs across namespace boundaries, so successful runs use distinct IDs.
+Attempting to reuse the other namespace's workflow ID must return
+`workflow_id_reserved_in_namespace` with HTTP 409. Each Rust worker has only its
 own worker credential. Callers have only their operator credential. A client
 with both credentials also proves that control and worker requests select the
 correct credential.

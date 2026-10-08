@@ -189,6 +189,15 @@ pub async fn call(client: Client) -> Result<()> {
                 "forbidden",
             )?;
         }
+        "deny-collision" => {
+            record["diagnostic"] = refused(
+                client
+                    .start_workflow(WORKFLOW, QUEUE, &id, json!([request]))
+                    .await,
+                409,
+                "workflow_id_reserved_in_namespace",
+            )?;
+        }
         "deny-register" => {
             record["diagnostic"] = refused(
                 client
