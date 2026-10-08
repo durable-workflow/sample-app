@@ -19,12 +19,16 @@ async def gate(case_id, suffix):
 class RecoveryWorkflow:
     def run(self, context, request):
         runtime = request["activity_runtime"]
+        options = {}
+        if request["scenario"] == "progress-heartbeat":
+            options["heartbeat_timeout"] = 10
         result = yield context.schedule_activity(
             f"sample-app.activity-recovery.{runtime}.work", [request],
             queue=f"activity-recovery-activity-{runtime}",
             retry_policy=workflow.ActivityRetryPolicy(max_attempts=2, backoff_seconds=[2]),
-            start_to_close_timeout=30 if request["scenario"] == "total-deadline" else 20,
+            start_to_close_timeout=60 if request["scenario"] == "progress-heartbeat" else (30 if request["scenario"] == "total-deadline" else 20),
             schedule_to_close_timeout=30 if request["scenario"] == "total-deadline" else 120,
+            **options,
         )
         return {"workflow_runtime": "python", "activity": result}
 
@@ -41,6 +45,24 @@ async def recover(request):
     temporary = path.with_suffix(".pending")
     temporary.write_text(json.dumps(receipt))
     temporary.replace(path)
+    if request["scenario"] == "progress-heartbeat":
+        if info.attempt_number == 1:
+            await gate(request["case_id"], ".first-release")
+        step = 0
+        while True:
+            step += 1
+            await activity.context().heartbeat({"case_id": request["case_id"], "runtime": "python",
+                "attempt": info.attempt_number, "step": step, "fraction": 0.5,
+                "ready": True, "optional": None, "note": "café ✓"})
+            if info.attempt_number == 1 and step == 5:
+                path = Path(os.environ["ACTIVITY_RECOVERY_PROOF"]) / f'{request["case_id"]}.progress-ready'
+                path.touch()
+                await gate(request["case_id"], ".release")
+                (path.parent / f'{request["case_id"]}.expired-resumed').touch()
+                raise RuntimeError("Expired first attempt returned to application code.")
+            if (Path(os.environ["ACTIVITY_RECOVERY_PROOF"]) / f'{request["case_id"]}.release').exists():
+                return receipt
+            await asyncio.sleep(3)
     if info.attempt_number == 1:
         await gate(request["case_id"], ".first-release")
         raise RuntimeError("injected first-attempt failure")
@@ -55,11 +77,15 @@ async def main():
     if mode not in {"workflow", "activity"}:
         raise ValueError("unknown activity recovery worker mode")
     queue = f"activity-recovery-{mode}-python"
+    cooperative = mode == "activity" and os.environ.get("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION") == "1"
+    if cooperative:
+        os.environ["DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION"] = "1.20"
     async with Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token=os.environ["DURABLE_WORKFLOW_AUTH_TOKEN"],
                       namespace="default") as client:
         worker = Worker(client, task_queue=queue, worker_id=f'{queue}-{os.environ["HOSTNAME"]}', poll_timeout=2,
                         workflows=[RecoveryWorkflow] if mode == "workflow" else [],
-                        activities=[recover] if mode == "activity" else [])
+                        activities=[recover] if mode == "activity" else [],
+                        capabilities=["cooperative_cancellation"] if cooperative else [])
         await worker.run()
 
 

@@ -20,7 +20,7 @@ permissions:
 jobs:
   activity-recovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME: sample-app-activity-recovery-${{ github.run_id }}-${{ github.run_attempt }}
       ACTIVITY_RECOVERY_RUNNER_COMMIT: ${{ github.sha }}

@@ -3,7 +3,7 @@
 import copy
 import unittest
 
-from sdk_activity_recovery import verify_attempts, verify_results, verify_terminal_failure
+from sdk_activity_recovery import verify_attempts, verify_progress, verify_results, verify_terminal_failure, verify_unchanged_history
 
 
 class RecoveryCoverageTest(unittest.TestCase):
@@ -14,7 +14,7 @@ class RecoveryCoverageTest(unittest.TestCase):
              "second_claim": {"lease_owner": f"{activity}-worker"}}
             for workflow in ("php", "python", "rust")
             for activity in ("php", "python", "rust")
-            for scenario in ("retry", "worker-loss", "total-deadline", "retry-exhaustion")
+            for scenario in ("retry", "worker-loss", "total-deadline", "retry-exhaustion", "progress-heartbeat")
         ]
 
     def test_complete_recovery_matrix(self):
@@ -23,7 +23,8 @@ class RecoveryCoverageTest(unittest.TestCase):
     def test_rust_only_missing_and_duplicate_cases_are_rejected(self):
         incomplete = [row for row in self.results
                       if "rust" in (row["workflow_runtime"], row["activity_runtime"])]
-        for results in (incomplete, self.results[:-1], self.results[:-1] + [self.results[0]]):
+        previous = [row for row in self.results if row["scenario"] != "progress-heartbeat"]
+        for results in (incomplete, previous, self.results[:-1], self.results[:-1] + [self.results[0]]):
             with self.subTest(case_count=len(results)):
                 with self.assertRaisesRegex(RuntimeError, "Missing or duplicate"):
                     verify_results(results)
@@ -35,6 +36,70 @@ class RecoveryCoverageTest(unittest.TestCase):
                 break
         with self.assertRaisesRegex(RuntimeError, "did not keep its identity"):
             verify_results(self.results)
+
+
+class ApplicationProgressTest(unittest.TestCase):
+    def setUp(self):
+        self.record = {"scenario": "progress-heartbeat", "workflow_id": "original-run", "activity_runtime": "python"}
+        self.first = {"claim": {"activity_attempt_id": "first"},
+                      "status": {"deadlines": {"start_to_close": "2026-10-08T00:01:00Z",
+                                               "schedule_to_close": "2026-10-08T00:02:00Z"}}}
+        self.history = {"events": [
+            {"event_type": "ActivityScheduled", "payload": {"activity_execution_id": "original"}},
+            {"event_type": "ActivityStarted", "payload": {}},
+        ]}
+        for step, seconds in enumerate((0, 3, 6, 9, 12), start=1):
+            self.history["events"].append({"event_type": "ActivityHeartbeatRecorded", "payload": {
+                "activity_execution_id": "original", "activity_attempt_id": "first", "attempt_number": 1,
+                "heartbeat_at": f"2026-10-08T00:00:{seconds:02d}Z",
+                "progress": {"details": {"case_id": "original-run", "runtime": "python", "attempt": 1,
+                    "step": step, "fraction": 0.5, "ready": True, "optional": None, "note": "café ✓"}},
+            }})
+        self.status = {"can_continue": True, "heartbeat_recorded": False, "last_heartbeat_at": "2026-10-08T00:00:12Z",
+                       "deadlines": {**self.first["status"]["deadlines"], "heartbeat": "2026-10-08T00:00:22Z"}}
+
+    def test_actual_progress_preserves_typed_details_and_fixed_deadlines(self):
+        self.assertEqual(len(verify_progress(self.history, self.record, self.first, self.status)), 5)
+
+    def test_wrong_attempt_progress_and_short_liveness_are_rejected(self):
+        for mutation in ("wrong-attempt", "changed-progress", "short-span", "missing-step"):
+            with self.subTest(mutation=mutation):
+                history = copy.deepcopy(self.history)
+                if mutation == "wrong-attempt":
+                    history["events"][-1]["payload"]["activity_attempt_id"] = "other"
+                elif mutation == "changed-progress":
+                    history["events"][-1]["payload"]["progress"]["details"]["step"] = 1
+                elif mutation == "short-span":
+                    history["events"][-1]["payload"]["heartbeat_at"] = "2026-10-08T00:00:10Z"
+                else:
+                    history["events"].pop()
+                with self.assertRaises(RuntimeError):
+                    verify_progress(history, self.record, self.first, self.status)
+
+    def test_read_only_status_and_immutable_total_budget_are_required(self):
+        for mutation in ("withdrawn", "recorded", "stale-heartbeat", "reset-total"):
+            status = copy.deepcopy(self.status)
+            if mutation == "withdrawn":
+                status["can_continue"] = False
+            elif mutation == "recorded":
+                status["heartbeat_recorded"] = True
+            elif mutation == "stale-heartbeat":
+                status["deadlines"]["heartbeat"] = "2026-10-08T00:00:10Z"
+            else:
+                status["deadlines"]["schedule_to_close"] = "2026-10-08T00:03:00Z"
+            with self.assertRaises(RuntimeError):
+                verify_progress(self.history, self.record, self.first, status)
+
+    def test_only_the_live_retry_can_append_progress_during_a_stale_write(self):
+        second = {"claim": {"activity_attempt_id": "second"}}
+        history = copy.deepcopy(self.history)
+        history["events"].append({"event_type": "ActivityHeartbeatRecorded", "payload": {"activity_attempt_id": "second"}})
+        verify_unchanged_history(history, self.history, self.record, second)
+        for event in ({"event_type": "ActivityHeartbeatRecorded", "payload": {"activity_attempt_id": "first"}},
+                      {"event_type": "ActivityCompleted", "payload": {"activity_attempt_id": "first"}}):
+            history["events"][-1] = event
+            with self.assertRaises(RuntimeError):
+                verify_unchanged_history(history, self.history, self.record, second)
 
 
 class AttemptHistoryTest(unittest.TestCase):
