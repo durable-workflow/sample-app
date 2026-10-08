@@ -190,7 +190,7 @@ async def main(phase):
             if phase == "first":
                 require(len(events(history, "ActivityStarted")) == 1, "First checkpoint has additional attempts.")
                 policy = one(history, "ActivityScheduled")["payload"]["activity"]["retry_policy"]
-                attempt_budget, total_budget = (60, 30) if record["scenario"] == "total-deadline" else (20, 120)
+                attempt_budget, total_budget = (30, 30) if record["scenario"] == "total-deadline" else (20, 120)
                 require(policy["max_attempts"] == 2 and policy["backoff_seconds"] == [2]
                         and policy["start_to_close_timeout"] == attempt_budget and policy["schedule_to_close_timeout"] == total_budget,
                         "SDK command did not record the selected attempt, backoff and timeout budgets.")

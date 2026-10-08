@@ -44,8 +44,9 @@ deadline. Both attempts have a 20-second start-to-close budget. The whole
 activity has one 120-second budget and two attempts with a two-second backoff.
 Activities send no application heartbeats in this experiment.
 
-Total deadline expiry uses a 60-second per-attempt budget and one original
-30-second total budget. Fail attempt one normally, then hold the live retry
+Total deadline expiry uses a 30-second per-attempt budget and one original
+30-second total budget. The retry starts later, so its attempt deadline is
+after the original total deadline. Fail attempt one normally, then hold the live retry
 until the original total deadline expires. Require `ActivityTimedOut` with
 `schedule_to_close`, at or after the original deadline, and an unhandled
 `WorkflowFailed`. Retry exhaustion uses the original two-attempt policy and

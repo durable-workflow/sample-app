@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
                     .retry_policy(
                         ActivityRetryPolicy::new(2).backoff_intervals([Duration::from_secs(2)]),
                     )
-                    .start_to_close_timeout(Duration::from_secs(if total_deadline { 60 } else { 20 }))
+                    .start_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 20 }))
                     .schedule_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 120 }));
                 let result = ctx
                     .activity_with_options(

@@ -34,7 +34,7 @@ if ($mode === 'workflow') {
             $result = $context->activity('sample-app.activity-recovery.'.$runtime.'.work', [$request], [
                 'queue' => 'activity-recovery-activity-'.$runtime,
                 'retry_policy' => ['max_attempts' => 2, 'backoff_seconds' => [2]],
-                'start_to_close_timeout' => $request['scenario'] === 'total-deadline' ? 60 : 20,
+                'start_to_close_timeout' => $request['scenario'] === 'total-deadline' ? 30 : 20,
                 'schedule_to_close_timeout' => $request['scenario'] === 'total-deadline' ? 30 : 120,
             ]);
             return ['workflow_runtime' => 'php', 'activity' => $result];
