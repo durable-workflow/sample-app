@@ -6,6 +6,8 @@ import argparse
 import asyncio
 import json
 import os
+from dataclasses import asdict
+from urllib.parse import quote
 
 from durable_workflow import Client, UpdateFailed, serializer
 
@@ -119,16 +121,20 @@ async def observe(client, runtime):
     original = next(record for record in originals if record["runtime"] == runtime)
     if execution.run_id != original["run_id"]:
         raise RuntimeError("Update experiment replaced its original run.")
+    return execution, await history_for(client, execution.workflow_id, execution.run_id)
+
+
+async def history_for(client, workflow, run):
     history = {"events": []}
     token = None
     seen = set()
     while True:
-        page = await client.get_history(execution.workflow_id, execution.run_id,
+        page = await client.get_history(workflow, run,
                                         page_size=100, next_page_token=token)
         history["events"].extend(page["events"])
         token = page.get("next_page_token")
         if not token:
-            return execution, history
+            return history
         if token in seen:
             raise RuntimeError("History pagination repeated its token.")
         seen.add(token)
@@ -351,7 +357,10 @@ async def snapshot(client, stage="initial"):
              history=[{"event_type": event["event_type"], "sequence": event.get("sequence"),
                        "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
                       for event in history["events"]])
-        raise RuntimeError("Snapshot update did not retain its one original completion.")
+        error = RuntimeError("Snapshot update did not retain its one original completion.")
+        await failure_diagnostics(client, client.get_workflow_handle(execution.workflow_id),
+                                  "rust", error, "snapshot")
+        raise error
     applied = [event for event in history["events"] if event["event_type"] == "SignalApplied"
                and event["payload"].get("signal_name") == "updates-touch"]
     signal_ids = {event["payload"].get("signal_id") for event in deliveries}
@@ -406,12 +415,94 @@ async def failure(client):
                               "status": errors[1].status, **expected}, events=related)
 
 
+async def completion_result(client, handle, runtime):
+    try:
+        return await handle.result(timeout=60, poll_interval=.25)
+    except Exception as error:
+        await failure_diagnostics(client, handle, runtime, error, "completion")
+        raise
+
+
+async def failure_diagnostics(client, handle, runtime, error, phase):
+    # Read the failed run before the shell's exit trap removes its stack.
+    # Diagnostics must preserve the original error and stay bounded.
+    try:
+        async with asyncio.timeout(10):
+            execution = await handle.describe()
+            history = await history_for(client, execution.workflow_id, execution.run_id)
+            debug = await client._request("GET", f"/workflows/{quote(execution.workflow_id, safe='')}"
+                                          f"/runs/{quote(execution.run_id, safe='')}/debug")
+            workers = await client.list_workers(task_queue=execution.task_queue)
+            emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
+                 error={"type": type(error).__name__, "message": str(error)},
+                 execution=asdict(execution), history=history, debug=debug,
+                 workers=[worker.raw for worker in workers.workers])
+    except Exception as diagnostic_error:
+        emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
+             error={"type": type(error).__name__, "message": str(error)},
+             diagnostic_error=str(diagnostic_error))
+
+
+async def finish_race(client):
+    repetitions = int(os.environ.get("SDK_UPDATES_FINISH_RACE_REPETITIONS", "0"))
+    if not 0 <= repetitions <= 20:
+        raise ValueError("SDK_UPDATES_FINISH_RACE_REPETITIONS must be between 0 and 20.")
+    for index in range(repetitions):
+        identifier = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-finish-race-{index}"
+        handle = await client.start_workflow(workflow_type="polyglot.rust.updates",
+                                            workflow_id=identifier, task_queue="polyglot-rust",
+                                            input=[identifier])
+        original = await handle.describe()
+        if not original.run_id:
+            raise RuntimeError("Finish race has no original run identity.")
+        for arguments in [[{"case_id": identifier}], [[1, 2]], []]:
+            await handle.signal("updates-touch", args=arguments)
+        request_id = f"{identifier}-increment"
+        state = {"counter": 1, "mutations": [request_id]}
+        response = await client.update_workflow(
+            identifier, "increment", args=[increment_request("python", request_id, 1)],
+            request_id=request_id, wait_for="completed", wait_timeout_seconds=45)
+        expected_update = {"handler_runtime": "rust",
+                           "request": increment_request("python", request_id, 1), "state": state}
+        if response.get("update_status") != "completed":
+            error = RuntimeError(f"Finish race mutation did not complete: {response!r}")
+            await failure_diagnostics(client, handle, "rust", error, "finish_race_update")
+            raise error
+        actual_update = serializer.decode_envelope(response["result_envelope"], codec="avro")
+        if not same_result(actual_update, expected_update):
+            raise RuntimeError(f"Finish race mutation changed its result: {actual_update!r}")
+        # Do not wait for another query or signal-wait checkpoint after the
+        # update acknowledgement. Completion must survive that replay window.
+        await handle.signal("updates-finish")
+        result = await completion_result(client, handle, "rust")
+        execution = await handle.describe()
+        history = await history_for(client, identifier, original.run_id)
+        verify_increment(history, request_id, "rust", "python", 1, state)
+        expected = {"workflow_runtime": "rust", "request": identifier, "state": state}
+        if (execution.run_id != original.run_id or execution.status != "completed"
+                or not same_result(result, expected)
+                or sum(event["event_type"] == "WorkflowCompleted" for event in history["events"]) != 1):
+            raise RuntimeError("Finish race changed its original run, state or completion.")
+        for signal_name, count in (("updates-touch", 3), ("updates-finish", 1)):
+            received = [event["payload"].get("signal_id") for event in history["events"]
+                        if event["event_type"] == "SignalReceived"
+                        and event["payload"].get("signal_name") == signal_name]
+            applied = [event["payload"].get("signal_id") for event in history["events"]
+                       if event["event_type"] == "SignalApplied"
+                       and event["payload"].get("signal_name") == signal_name]
+            if (len(received) != count or len(applied) != count or None in received
+                    or len(set(received)) != count or set(received) != set(applied)):
+                raise RuntimeError("Finish race did not apply each original signal once.")
+        emit(scenario="rust-update-finish-race", repetition=index, run_id=original.run_id,
+             result=result, history=history)
+
+
 async def finish(client):
     for runtime in RUNTIMES:
         execution, _ = await observe(client, runtime)
         handle = client.get_workflow_handle(execution.workflow_id)
         await handle.signal("updates-finish")
-        result = await handle.result(timeout=60, poll_interval=.25)
+        result = await completion_result(client, handle, runtime)
         execution, history = await observe(client, runtime)
         if result != {"workflow_runtime": runtime, "request": workflow_id(runtime),
                       "state": counter_state(runtime, replaced=True)}:
@@ -424,7 +515,7 @@ async def finish(client):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish",
+    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish", "finish_race",
                                          "state_matrix", "state_queued", "state_replacement", "state_duplicates"])
     parser.add_argument("arguments", nargs="*")
     args = parser.parse_args()
