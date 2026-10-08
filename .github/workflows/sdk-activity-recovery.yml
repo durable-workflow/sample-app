@@ -38,6 +38,7 @@ jobs:
           ACTIVITY_RECOVERY_PROOF_DIR: ${{ runner.temp }}/activity-recovery/proof
           COMPOSE_PROJECT_NAME: ${{ env.SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME }}
         run: |
+          export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
           docker compose --project-directory polyglot -f polyglot/docker-compose.yml \
             -f polyglot/docker-compose.activity-recovery.yml down --volumes --remove-orphans
           docker image rm --no-prune "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" \

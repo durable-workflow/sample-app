@@ -17,6 +17,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME:-sample-app-activity-recovery-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export ACTIVITY_RECOVERY_PROOF_DIR="$result_dir/proof"
+export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml" \
   -f "$repo_root/polyglot/docker-compose.activity-recovery.yml")
 workers=(recovery-workflow-php recovery-workflow-python recovery-workflow-rust \
@@ -46,16 +47,18 @@ for name in DURABLE_SERVER_IMAGE DURABLE_SERVER_VERSION DURABLE_WORKFLOW_PHP_SDK
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke php-same-workflow-worker rust-workflow-worker
-"${compose[@]}" run --rm --no-deps --user 1000:1000 -T smoke \
+"${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T smoke \
   python -m unittest discover -s /app/scripts -p test_sdk_activity_recovery.py
 "${compose[@]}" pull --policy always bootstrap server recovery-timeouts
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server recovery-timeouts "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
+docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
+  "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"
 [[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" == "$DURABLE_SERVER_VERSION" ]]
 [[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.workflow.version"}}')" == "$DURABLE_WORKFLOW_WORKFLOW_VERSION" ]]
 
 observer() {
-  "${compose[@]}" run --rm --no-deps --user 1000:1000 -T \
+  "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
     -e ACTIVITY_RECOVERY_CASE -e ACTIVITY_RECOVERY_WORKFLOW -e ACTIVITY_RECOVERY_ACTIVITY \
     -e ACTIVITY_RECOVERY_SCENARIO -e ACTIVITY_RECOVERY_RUNNER_COMMIT \
     smoke python /app/scripts/sdk_activity_recovery.py "$@"
@@ -88,7 +91,7 @@ for direction in php:rust python:rust rust:php rust:python rust:rust; do
     observer second
     ACTIVITY_RECOVERY_CLAIM="$(jq -c .claim "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.first.json")"
     export ACTIVITY_RECOVERY_CLAIM
-    "${compose[@]}" run --rm --no-deps --user 1000:1000 -T \
+    "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
       -e ACTIVITY_RECOVERY_MODE=stale -e ACTIVITY_RECOVERY_CLAIM recovery-workflow-rust \
       > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.stale.json"
     observer stale

@@ -1,6 +1,6 @@
 x-recovery: &recovery
   init: true
-  user: "1000:1000"
+  user: "${ACTIVITY_RECOVERY_UID:?set the invoking UID}:${ACTIVITY_RECOVERY_GID:?set the invoking GID}"
   mem_limit: 256m
   cpus: 0.5
   volumes:
