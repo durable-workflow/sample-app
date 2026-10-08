@@ -62,7 +62,8 @@ exercise these boundaries without editing database records or clocks.
 
 The focused Action runs all twenty cases, checks the observer's rejection of
 contradictory attempts and retains thin JSON observations and logs for 30 days.
-Results include run/execution/attempt IDs, installed SDK versions, deadlines,
+The same worker registration must take the following exhaustion case after
+deadline expiry. Results include run/execution/attempt IDs, installed SDK versions, deadlines,
 histories and physical container failure/replacement records. Record its exact
 runner commit, artifact tuple, Server digest and UTC interval in the owning
 issue. The exit trap removes task containers, networks, volumes and built
