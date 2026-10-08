@@ -11,6 +11,7 @@ from durable_workflow import Client, UpdateFailed, serializer
 
 RUNTIMES = ("php", "python", "rust")
 DIRECTIONS = tuple((caller, runtime) for caller in RUNTIMES for runtime in RUNTIMES)
+STATE_DELTAS = {"php": 1, "python": 2, "rust": 3}
 
 
 def required(name):
@@ -35,6 +36,23 @@ def workflow_id(runtime):
 def request(caller, request_id):
     return {"caller": caller, "request_id": request_id, "value": "hello",
             "nested": {"enabled": True, "count": 42}}
+
+
+def increment_request(caller, request_id, delta):
+    return {**request(caller, request_id), "delta": delta}
+
+
+def increment_id(runtime, caller):
+    return f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-increment-{caller}-{runtime}"
+
+
+def counter_state(runtime, callers=RUNTIMES, replaced=False):
+    mutations = [increment_id(runtime, caller) for caller in callers]
+    counter = sum(STATE_DELTAS[caller] for caller in callers)
+    if replaced:
+        mutations.append(increment_id(runtime, "queued"))
+        counter += 5
+    return {"counter": counter, "mutations": mutations}
 
 
 def same_result(actual, expected):
@@ -68,6 +86,27 @@ def verify_completed(history, request_id, runtime, caller):
     result = serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro")
     if not same_result(result, expected):
         raise RuntimeError(f"Persisted result changed: {result!r}")
+    return update_id, related, expected
+
+
+def verify_increment(history, request_id, runtime, caller, delta, state):
+    update_id, related = update_events(history, request_id)
+    types = [event["event_type"] for event in related]
+    if any(types.count(kind) != 1 for kind in ("UpdateAccepted", "UpdateApplied", "UpdateCompleted")):
+        raise RuntimeError("A state mutation needs one accepted, applied and completed identity.")
+    if not types.index("UpdateAccepted") < types.index("UpdateApplied") < types.index("UpdateCompleted"):
+        raise RuntimeError("State mutation history is out of order.")
+    completed = next(event for event in related if event["event_type"] == "UpdateCompleted")
+    expected = {"handler_runtime": runtime, "request": increment_request(caller, request_id, delta), "state": state}
+    for event in related:
+        if event["event_type"] in ("UpdateAccepted", "UpdateApplied"):
+            if (event["payload"].get("update_name") != "increment"
+                    or not same_result(serializer.decode_envelope(event["payload"]["arguments"], codec="avro"),
+                                       [expected["request"]])):
+                raise RuntimeError("Accepted and applied mutation arguments differ from the original request.")
+    if (completed["payload"].get("failure_id")
+            or not same_result(serializer.decode_envelope(completed["payload"]["result"], codec="avro"), expected)):
+        raise RuntimeError("Persisted mutation does not retain the expected accumulated state.")
     return update_id, related, expected
 
 
@@ -112,8 +151,9 @@ async def start(client):
         emit(runtime=runtime, workflow_id=execution.workflow_id, run_id=execution.run_id)
 
 
-async def call(client, target, request_id, name):
-    response = await client.update_workflow(target, name, args=[request("python", request_id)],
+async def call(client, target, request_id, name, delta=None):
+    arguments = request("python", request_id) if delta is None else increment_request("python", request_id, int(delta))
+    response = await client.update_workflow(target, name, args=[arguments],
                                            wait_for="completed", request_id=request_id)
     if response.get("update_status") != "completed":
         raise RuntimeError(f"Update did not complete: {response!r}")
@@ -136,6 +176,95 @@ async def matrix(client):
             raise RuntimeError(f"SDK client result differs from persisted result: {matches[0]!r}")
         emit(scenario="client-handler", caller=caller, runtime=runtime, run_id=execution.run_id,
              update_id=update_id, result=expected, events=related)
+
+
+async def check_counter(client, runtime, state, stage):
+    execution, before = await observe(client, runtime)
+    response = await client.query_workflow(execution.workflow_id, "counter")
+    _, after = await observe(client, runtime)
+    if not same_result(response.get("result"), state):
+        raise RuntimeError(f"Counter query lost accumulated state: expected={state!r}, actual={response!r}")
+    identity = lambda history: [(event["event_type"], event.get("sequence")) for event in history["events"]]
+    if identity(before) != identity(after):
+        raise RuntimeError("Counter query changed durable workflow history.")
+    emit(scenario="stateful-counter-query", runtime=runtime, stage=stage, run_id=execution.run_id,
+         expected=state, query=response.get("result"))
+
+
+async def state_matrix(client):
+    results = records("DURABLE_WORKFLOW_STATE_RESULTS")
+    if len(results) != len(DIRECTIONS):
+        raise RuntimeError("Not all nine state mutation directions executed.")
+    for caller, runtime in DIRECTIONS:
+        request_id = increment_id(runtime, caller)
+        matches = [record for record in results if record.get("request_id") == request_id and record.get("caller") == caller]
+        if len(matches) != 1:
+            raise RuntimeError("Missing or duplicate state mutation SDK observation.")
+        execution, history = await observe(client, runtime)
+        state = counter_state(runtime, RUNTIMES[:RUNTIMES.index(caller) + 1])
+        update_id, related, expected = verify_increment(history, request_id, runtime, caller, STATE_DELTAS[caller], state)
+        if not same_result(matches[0].get("result"), expected):
+            raise RuntimeError("State mutation SDK and durable results disagree.")
+        emit(scenario="stateful-client-handler", caller=caller, runtime=runtime, run_id=execution.run_id,
+             update_id=update_id, result=expected, events=related)
+    for runtime in RUNTIMES:
+        await check_counter(client, runtime, counter_state(runtime), "initial")
+
+
+async def state_queued(client):
+    for runtime in RUNTIMES:
+        request_id = increment_id(runtime, "queued")
+        arguments = [increment_request("python", request_id, 5)]
+        response = await client.update_workflow(workflow_id(runtime), "increment", args=arguments,
+                                                wait_for="accepted", request_id=request_id)
+        duplicate = await client.update_workflow(workflow_id(runtime), "increment", args=arguments,
+                                                 wait_for="accepted", request_id=request_id)
+        execution, history = await observe(client, runtime)
+        update_id, related = update_events(history, request_id)
+        if (response.get("update_status") != "accepted" or duplicate.get("update_status") != "accepted"
+                or response.get("update_id") != update_id or duplicate.get("update_id") != update_id
+                or any(event["event_type"] in ("UpdateApplied", "UpdateCompleted") for event in related)):
+            raise RuntimeError("Absent workers must retain one unapplied mutation and duplicate identity.")
+        emit(scenario="stateful-accepted-without-workers", runtime=runtime, request_id=request_id,
+             run_id=execution.run_id, update_id=update_id)
+
+
+async def state_replacement(client):
+    queued = records("DURABLE_WORKFLOW_STATE_QUEUED")
+    for runtime in RUNTIMES:
+        request_id = increment_id(runtime, "queued")
+        response = await client.update_workflow(workflow_id(runtime), "increment",
+                    args=[increment_request("python", request_id, 5)], wait_for="completed", request_id=request_id)
+        execution, history = await observe(client, runtime)
+        update_id, related, expected = verify_increment(history, request_id, runtime, "python", 5,
+                                                        counter_state(runtime, replaced=True))
+        original = [record for record in queued if record.get("runtime") == runtime]
+        if (len(original) != 1 or original[0].get("update_id") != update_id
+                or original[0].get("run_id") != execution.run_id or response.get("update_status") != "completed"
+                or response.get("update_id") != update_id
+                or not same_result(serializer.decode_envelope(response["result_envelope"], codec="avro"), expected)):
+            raise RuntimeError("Replacement worker lost mutation state or original accepted identity.")
+        emit(scenario="stateful-replacement", runtime=runtime, run_id=execution.run_id,
+             update_id=update_id, result=expected, events=related)
+        await check_counter(client, runtime, counter_state(runtime, replaced=True), "replacement")
+
+
+async def state_duplicates(client):
+    results = records("DURABLE_WORKFLOW_STATE_DUPLICATES")
+    if len(results) != len(DIRECTIONS):
+        raise RuntimeError("Not all nine completed mutation duplicate directions executed.")
+    for caller, runtime in DIRECTIONS:
+        request_id = increment_id(runtime, caller)
+        matches = [record for record in results if record.get("request_id") == request_id and record.get("caller") == caller]
+        execution, history = await observe(client, runtime)
+        state = counter_state(runtime, RUNTIMES[:RUNTIMES.index(caller) + 1])
+        update_id, related, expected = verify_increment(history, request_id, runtime, caller, STATE_DELTAS[caller], state)
+        if len(matches) != 1 or not same_result(matches[0].get("result"), expected):
+            raise RuntimeError("Duplicate mutation did not return its original accumulated result.")
+        emit(scenario="stateful-completed-duplicate", caller=caller, runtime=runtime,
+             run_id=execution.run_id, update_id=update_id, result=expected, events=related)
+    for runtime in RUNTIMES:
+        await check_counter(client, runtime, counter_state(runtime, replaced=True), "duplicates-and-handler-failure")
 
 
 async def queued(client):
@@ -270,7 +399,8 @@ async def finish(client):
         await handle.signal("updates-finish")
         result = await handle.result(timeout=60, poll_interval=.25)
         execution, history = await observe(client, runtime)
-        if result != {"workflow_runtime": runtime, "request": workflow_id(runtime)}:
+        if result != {"workflow_runtime": runtime, "request": workflow_id(runtime),
+                      "state": counter_state(runtime, replaced=True)}:
             raise RuntimeError(f"Unexpected workflow result: {result!r}")
         if execution.status != "completed" or sum(event["event_type"] == "WorkflowCompleted"
                                                    for event in history["events"]) != 1:
@@ -280,14 +410,15 @@ async def finish(client):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish"])
+    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish",
+                                         "state_matrix", "state_queued", "state_replacement", "state_duplicates"])
     parser.add_argument("arguments", nargs="*")
     args = parser.parse_args()
     async with Client(required("DURABLE_WORKFLOW_SERVER_URL"), token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
                       namespace=required("DURABLE_WORKFLOW_NAMESPACE"), timeout=60) as client:
         if args.phase == "call":
-            if len(args.arguments) != 3:
-                parser.error("call requires workflow ID, request ID and update name")
+            if len(args.arguments) not in (3, 4):
+                parser.error("call requires workflow ID, request ID, update name and optional increment delta")
             await call(client, *args.arguments)
         else:
             await globals()[args.phase](client)

@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-updates.sh' \
-    'Runs nine PHP/Python/Rust client/update-handler directions, committed snapshots, Rust worker replacement, duplicate requests, handler failure and validator refusal.' \
+    'Runs nine PHP/Python/Rust client/update-handler directions, state mutation and queries, committed snapshots, all-worker replacement, duplicate requests, handler failure and validator refusal.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_UPDATES_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -47,17 +47,20 @@ observer() {
   "${compose[@]}" run --rm --no-deps --user 1000:1000 \
     -e DURABLE_WORKFLOW_UPDATE_ID -e DURABLE_WORKFLOW_UPDATE_RUNS \
     -e DURABLE_WORKFLOW_UPDATE_RESULTS -e DURABLE_WORKFLOW_UPDATE_QUEUED \
+    -e DURABLE_WORKFLOW_STATE_RESULTS -e DURABLE_WORKFLOW_STATE_QUEUED -e DURABLE_WORKFLOW_STATE_DUPLICATES \
     smoke python /app/scripts/sdk_updates.py "$@"
 }
 
 client() {
-  local caller=$1 target=$2 request_id=$3
+  local caller=$1 target=$2 request_id=$3 update_name=${4:-echo}
+  local arguments=("${COMPOSE_PROJECT_NAME}-${target}" "$request_id" "$update_name")
+  if [[ $# == 5 ]]; then arguments+=("$5"); fi
   case "$caller" in
     php) "${compose[@]}" exec -T --user 1000:1000 php-same-workflow-worker \
-      php -d display_errors=stderr /app/update_client.php "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
-    python) observer call "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
+      php -d display_errors=stderr /app/update_client.php "${arguments[@]}" ;;
+    python) observer call "${arguments[@]}" ;;
     rust) "${compose[@]}" exec -T --user 1000:1000 -e POLYGLOT_RUST_MODE=update-client \
-      rust-workflow-worker polyglot-rust-worker "${COMPOSE_PROJECT_NAME}-${target}" "$request_id" echo ;;
+      rust-workflow-worker polyglot-rust-worker "${arguments[@]}" ;;
   esac
 }
 
@@ -77,13 +80,36 @@ done
 observer matrix
 observer snapshot
 
-"${compose[@]}" kill --signal SIGKILL rust-workflow-worker
+export DURABLE_WORKFLOW_STATE_RESULTS=''
+for caller in php python rust; do
+  case "$caller" in php) delta=1 ;; python) delta=2 ;; rust) delta=3 ;; esac
+  for target in php python rust; do
+    result="$(client "$caller" "$target" "${COMPOSE_PROJECT_NAME}-increment-${caller}-${target}" increment "$delta")"
+    DURABLE_WORKFLOW_STATE_RESULTS+="${result}"$'\n'
+  done
+done
+observer state_matrix
+
+"${compose[@]}" kill --signal SIGKILL "${workers[@]}"
 DURABLE_WORKFLOW_UPDATE_QUEUED="$(observer queued)"
 export DURABLE_WORKFLOW_UPDATE_QUEUED
 printf '%s\n' "$DURABLE_WORKFLOW_UPDATE_QUEUED"
-"${compose[@]}" up -d --wait --no-build rust-workflow-worker
+DURABLE_WORKFLOW_STATE_QUEUED="$(observer state_queued)"
+export DURABLE_WORKFLOW_STATE_QUEUED
+printf '%s\n' "$DURABLE_WORKFLOW_STATE_QUEUED"
+"${compose[@]}" up -d --wait --no-build "${workers[@]}"
 observer replacement
+observer state_replacement
 observer failure
+export DURABLE_WORKFLOW_STATE_DUPLICATES=''
+for caller in php python rust; do
+  case "$caller" in php) delta=1 ;; python) delta=2 ;; rust) delta=3 ;; esac
+  for target in php python rust; do
+    result="$(client "$caller" "$target" "${COMPOSE_PROJECT_NAME}-increment-${caller}-${target}" increment "$delta")"
+    DURABLE_WORKFLOW_STATE_DUPLICATES+="${result}"$'\n'
+  done
+done
+observer state_duplicates
 "${compose[@]}" exec -T --user 1000:1000 -e POLYGLOT_RUST_MODE=validator-refusal \
   rust-workflow-worker polyglot-rust-worker
 observer finish

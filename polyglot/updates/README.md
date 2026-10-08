@@ -21,8 +21,8 @@ The Rust worker's registration includes handler argument contracts and declared
 signals that Server records when starting a run.
 
 Each call checks the named handler's result through the real SDK client and
-persisted `UpdateAccepted`/`UpdateCompleted` history. It then kills the Rust
-worker, accepts an update while that process is absent, starts its replacement,
+persisted `UpdateAccepted`/`UpdateCompleted` history. It then kills all three
+workers, accepts an update while those processes are absent, starts replacements,
 and requires the same update/run identities and one completion. Repeating the
 request returns that original completion. A failed Rust handler must persist a
 failed update while leaving its workflow live. All three original workflows
@@ -38,6 +38,20 @@ array argument and no arguments. The update result must also match
 its persisted completion. This exercises the immutable state snapshot that a
 stateful handler uses to reconstruct its input and prior signal deliveries.
 The Rust workflow consumes these three signals before waiting for completion.
+
+All nine client/handler directions also increment workflow state. Each original
+run accumulates three changes and records their request identities in order.
+Queries must return this accumulated value without adding workflow history.
+After all workers are killed, another increment and its duplicate are admitted
+for each run. Fresh workers must recover the prior state, apply that increment
+once and return the original accepted identity. Repeating the earlier completed
+updates through all three clients returns their original results, while queries
+retain the latest state. Each final workflow result must contain that same state.
+
+Python uses its bound update and query methods. PHP reconstructs state through
+the documented committed-history context. Rust reconstructs a typed workflow
+instance and queries its detached replayed state. These authoring surfaces share
+the same durable outcome.
 
 Rust does not support synchronous pre-accept update validators. The installed
 crate must return `UnsupportedUpdateValidators` for a contract claiming one.
