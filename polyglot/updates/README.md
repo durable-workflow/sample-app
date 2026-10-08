@@ -17,9 +17,8 @@ each of the three handler languages. These are client-to-handler directions.
 The Server's existing update experiment separately covers its embedded probe,
 PHP process boundary, Python SDK surface fixtures, validators and diagnostics.
 
-Rust update workers require SDK 3.3.0 or later. Their registration includes the
-handler argument contracts and declared completion signal Server records when
-starting a run.
+The Rust worker's registration includes handler argument contracts and declared
+signals that Server records when starting a run.
 
 Each call checks the named handler's result through the real SDK client and
 persisted `UpdateAccepted`/`UpdateCompleted` history. It then kills the Rust
