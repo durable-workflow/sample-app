@@ -75,6 +75,7 @@ for direction in php:php php:python php:rust python:php python:python python:rus
   DURABLE_WORKFLOW_UPDATE_RESULTS+="${result}"$'\n'
 done
 observer matrix
+observer snapshot
 
 "${compose[@]}" kill --signal SIGKILL rust-workflow-worker
 DURABLE_WORKFLOW_UPDATE_QUEUED="$(observer queued)"

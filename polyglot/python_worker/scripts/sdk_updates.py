@@ -171,6 +171,37 @@ async def replacement(client):
     emit(scenario="replacement-and-duplicate", runtime="rust", update_id=update_id,
          run_id=execution.run_id, result=expected, events=related)
     await matrix(client)
+    await snapshot(client, "replacement")
+
+
+async def snapshot(client, stage="initial"):
+    request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-snapshot-{stage}"
+    signal = {"request_id": f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-touch", "delta": 7}
+    if stage == "initial":
+        await client.get_workflow_handle(workflow_id("rust")).signal("updates-touch", args=[signal])
+    execution, history = await observe(client, "rust")
+    deliveries = [event for event in history["events"] if event["event_type"] == "SignalReceived"
+                  and event["payload"].get("signal_name") == "updates-touch"]
+    if (len(deliveries) != 1 or not same_result(
+            serializer.decode_envelope(deliveries[0]["payload"]["arguments"], codec="avro"), [signal])):
+        raise RuntimeError("The original snapshot signal was not durably recorded once.")
+    expected = {"workflow_id": execution.workflow_id, "run_id": execution.run_id,
+                "workflow_input": [workflow_id("rust")], "signals": [[signal]]}
+    query = await client.query_workflow(execution.workflow_id, "snapshot")
+    response = await client.update_workflow(execution.workflow_id, "snapshot",
+                    args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+    result = serializer.decode_envelope(response["result_envelope"], codec="avro")
+    execution, history = await observe(client, "rust")
+    update_id, related = update_events(history, request_id)
+    completed = [event for event in related if event["event_type"] == "UpdateCompleted"]
+    if (response.get("update_status") != "completed" or response.get("update_id") != update_id
+            or len(completed) != 1 or completed[0]["payload"].get("failure_id")
+            or not same_result(serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro"), result)):
+        raise RuntimeError("Snapshot update did not retain its one original completion.")
+    emit(scenario="rust-update-snapshot", stage=stage, expected=expected,
+         query=query.get("result"), update=result, run_id=execution.run_id, update_id=update_id)
+    if not same_result(query.get("result"), expected) or not same_result(result, expected):
+        raise RuntimeError("Query and update must expose the original workflow input and committed signal snapshot.")
 
 
 async def failure(client):
@@ -232,7 +263,7 @@ async def finish(client):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "failure", "finish"])
+    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish"])
     parser.add_argument("arguments", nargs="*")
     args = parser.parse_args()
     async with Client(required("DURABLE_WORKFLOW_SERVER_URL"), token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
