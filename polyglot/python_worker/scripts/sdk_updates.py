@@ -177,16 +177,19 @@ async def replacement(client):
 async def snapshot(client, stage="initial"):
     request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-snapshot-{stage}"
     signal = {"request_id": f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-touch", "delta": 7}
+    signal_arguments = [[signal], [[1, 2]], []]
     if stage == "initial":
-        await client.get_workflow_handle(workflow_id("rust")).signal("updates-touch", args=[signal])
+        for arguments in signal_arguments:
+            await client.get_workflow_handle(workflow_id("rust")).signal("updates-touch", args=arguments)
     execution, history = await observe(client, "rust")
     deliveries = [event for event in history["events"] if event["event_type"] == "SignalReceived"
                   and event["payload"].get("signal_name") == "updates-touch"]
-    if (len(deliveries) != 1 or not same_result(
-            serializer.decode_envelope(deliveries[0]["payload"]["arguments"], codec="avro"), [signal])):
-        raise RuntimeError("The original snapshot signal was not durably recorded once.")
+    if (len(deliveries) != len(signal_arguments) or not same_result(
+            [serializer.decode_envelope(event["payload"]["arguments"], codec="avro") for event in deliveries],
+            signal_arguments)):
+        raise RuntimeError("The original snapshot signals were not durably recorded once each.")
     expected = {"workflow_id": execution.workflow_id, "run_id": execution.run_id,
-                "workflow_input": [workflow_id("rust")], "signals": [[signal]]}
+                "workflow_input": [workflow_id("rust")], "signals": signal_arguments}
     query = await client.query_workflow(execution.workflow_id, "snapshot")
     response = await client.update_workflow(execution.workflow_id, "snapshot",
                     args=[request("python", request_id)], wait_for="completed", request_id=request_id)

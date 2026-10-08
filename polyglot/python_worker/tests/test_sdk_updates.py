@@ -162,11 +162,15 @@ class SnapshotObservationTest(unittest.IsolatedAsyncioTestCase):
     async def test_update_and_query_read_the_same_committed_snapshot(self):
         signal = {"request_id": "example-touch", "delta": 7}
         expected = {"workflow_id": "example-rust", "run_id": "original",
-                    "workflow_input": ["example-rust"], "signals": [[signal]]}
+                    "workflow_input": ["example-rust"], "signals": [[signal], [[1, 2]], []]}
         execution = types.SimpleNamespace(workflow_id="example-rust", run_id="original")
         history = {"events": [
             {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
                 "arguments": serializer.envelope([signal])}},
+            {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
+                "arguments": serializer.envelope([[1, 2]])}},
+            {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
+                "arguments": serializer.envelope([])}},
             {"event_type": "UpdateAccepted", "payload": {"update_id": "snapshot-update",
                 "arguments": serializer.envelope([updates.request("python", "example-snapshot-initial")])}},
             {"event_type": "UpdateCompleted", "payload": {"update_id": "snapshot-update",

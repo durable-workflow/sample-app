@@ -33,7 +33,8 @@ matching workflow, run, update and failure IDs. Repeating that failed request
 must return the same error identities with one durable failed completion.
 
 A Rust query and update inspect the same original workflow input and committed
-signal before and after worker replacement. The update result must also match
+signals before and after worker replacement, including a map argument, one nested
+array argument and no arguments. The update result must also match
 its persisted completion. This exercises the immutable state snapshot that a
 stateful handler uses to reconstruct its input and prior signal deliveries.
 
