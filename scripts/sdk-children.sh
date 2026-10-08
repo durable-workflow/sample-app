@@ -51,7 +51,10 @@ observer() {
 
 observer matrix
 observer failure
-DURABLE_WORKFLOW_CHILD_RUNS="$(observer park)"
+if ! DURABLE_WORKFLOW_CHILD_RUNS="$(observer park)"; then
+  printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS" >&2
+  exit 1
+fi
 export DURABLE_WORKFLOW_CHILD_RUNS
 printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"

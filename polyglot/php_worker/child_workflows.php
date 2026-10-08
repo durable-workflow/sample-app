@@ -41,7 +41,7 @@ final class PhpChildWorkflow
             throw new RuntimeException('child-probe-failure: '.$value);
         }
         if ($behavior === 'wait') {
-            $context->waitSignal('child-finish');
+            $context->waitCondition(static fn (): bool => $context->signals('child-finish') !== [], 'child-finish');
         } elseif ($behavior !== 'complete') {
             throw new InvalidArgumentException('Unknown child behavior.');
         }

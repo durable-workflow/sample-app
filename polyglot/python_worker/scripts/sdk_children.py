@@ -178,9 +178,12 @@ async def park(client):
             if any(event["event_type"] == "ChildRunStarted" for event in history["events"]):
                 record.update(child_identity(history, record["child_type"]))
                 child_execution, child_history = await observe(client, record["child_workflow_instance_id"], record["child_workflow_run_id"])
+                if any(event["event_type"] in TERMINAL_EVENTS for event in child_history["events"]):
+                    terminal = [event for event in child_history["events"] if event["event_type"] in TERMINAL_EVENTS]
+                    emit(scenario="child-closed-before-wait", **record, parent_status=parent_execution.status,
+                         child_status=child_execution.status, terminal_events=terminal)
+                    raise RuntimeError("Recovery child closed before reaching its signal wait.")
                 if parent_execution.status == "waiting" and child_execution.status == "waiting":
-                    if any(event["event_type"] in TERMINAL_EVENTS for event in child_history["events"]):
-                        raise RuntimeError("Recovery child closed before worker loss.")
                     emit(scenario="child-parked", **record)
                     break
             await asyncio.sleep(.25)
