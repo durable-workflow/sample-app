@@ -197,10 +197,15 @@ async def failure(client):
     for error in errors:
         if (error.status != 422 or str(error) != payload.get("message")
                 or "update-probe-failure" not in str(error)
-                or error.body.get("update_status") != "failed" or error.body.get("accepted") is not True
+                or error.body.get("update_status") != "failed"
+                or error.body.get("command_status") != "accepted" or error.body.get("accepted") is False
                 or any(getattr(error, name) != value or error.body.get(name) != value
                        for name, value in expected.items())):
-            raise RuntimeError("SDK failed-update diagnostics do not match the original durable failure.")
+            actual = {name: getattr(error, name) for name in expected}
+            actual.update(message=str(error), status=error.status,
+                          update_status=error.body.get("update_status"),
+                          command_status=error.body.get("command_status"))
+            raise RuntimeError(f"SDK failed-update diagnostics differ: expected={expected!r}, actual={actual!r}")
     if execution.status in ("failed", "terminated", "completed"):
         raise RuntimeError("An update failure unexpectedly terminated the workflow.")
     emit(scenario="handler-failure", runtime="rust", update_id=update_id,

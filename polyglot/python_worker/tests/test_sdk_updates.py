@@ -112,7 +112,7 @@ class ClientResultTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_sdk_failure_requires_a_matching_durable_handler_failure(self):
         request_id = "example-failure"
-        body = {"update_status": "failed", "accepted": True, "workflow_id": "example-rust",
+        body = {"update_status": "failed", "command_status": "accepted", "workflow_id": "example-rust",
                 "run_id": "run", "update_id": "original", "failure_id": "failure"}
         client = types.SimpleNamespace(update_workflow=AsyncMock(
             side_effect=UpdateFailed("update-probe-failure", status=422, body=body)))
@@ -136,7 +136,7 @@ class ClientResultTest(unittest.IsolatedAsyncioTestCase):
                     await updates.failure(client)
 
     async def test_sdk_failure_rejects_wrong_diagnostics(self):
-        body = {"update_status": "failed", "accepted": True, "workflow_id": "example-rust",
+        body = {"update_status": "failed", "command_status": "accepted", "workflow_id": "example-rust",
                 "run_id": "run", "update_id": "original", "failure_id": "failure"}
         execution = types.SimpleNamespace(status="waiting", workflow_id="example-rust", run_id="run")
         history = {"events": [
@@ -147,7 +147,7 @@ class ClientResultTest(unittest.IsolatedAsyncioTestCase):
         ]}
         for change in ({"message": ""}, {"status": 409}, {"failure_id": "other"},
                        {"run_id": "replacement"}, {"workflow_id": "other"}, {"update_id": "other"},
-                       {"accepted": False}, {"update_status": "rejected"}):
+                       {"accepted": False}, {"update_status": "rejected"}, {"command_status": "rejected"}):
             with self.subTest(change=change):
                 error = UpdateFailed(change.get("message", "update-probe-failure"),
                                      status=change.get("status", 422), body={**body, **change})
