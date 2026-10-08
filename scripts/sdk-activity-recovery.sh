@@ -2,13 +2,16 @@
 set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
-  printf '%s\n' 'Usage: scripts/sdk-activity-recovery.sh [--result-dir DIR]' \
+  printf '%s\n' 'Usage: scripts/sdk-activity-recovery.sh [--external-effects] [--result-dir DIR]' \
     'Runs retry, activity-worker SIGKILL, total deadline expiry, retry exhaustion and application progress heartbeats in all nine PHP/Python/Rust SDK directions.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
+    '--external-effects runs all nine directions through a separate idempotent downstream service and actual activity worker SIGKILL.' \
     'SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME selects an isolated project. All task resources are removed.'
   exit 0
 fi
 result_dir=""
+external_effects=false
+if [[ "${1:-}" == --external-effects ]]; then external_effects=true; shift; fi
 if [[ "${1:-}" == --result-dir && $# == 2 ]]; then result_dir="$2"; elif [[ $# != 0 ]]; then exit 2; fi
 if [[ -z "$result_dir" ]]; then result_dir="$(mktemp -d "${TMPDIR:-/tmp}/dw-sdk-activity-recovery.XXXXXX")"; fi
 mkdir -p "$result_dir/proof" "$result_dir/logs"
@@ -19,8 +22,15 @@ export COMPOSE_PROJECT_NAME="${SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME:-sampl
 export ACTIVITY_RECOVERY_PROOF_DIR="$result_dir/proof"
 export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
 export ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION=0
+export ACTIVITY_RECOVERY_SUITE=activity-recovery
+scenarios=(retry worker-loss total-deadline retry-exhaustion progress-heartbeat)
+if $external_effects; then
+  export ACTIVITY_RECOVERY_SUITE=external-effects
+  scenarios=(external-effects)
+fi
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml" \
   -f "$repo_root/polyglot/docker-compose.activity-recovery.yml")
+if $external_effects; then compose+=(--profile external-effects); fi
 workers=(recovery-workflow-php recovery-workflow-python recovery-workflow-rust \
   recovery-activity-php recovery-activity-python recovery-activity-rust)
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
@@ -32,6 +42,7 @@ cleanup() {
   for service in server recovery-timeouts "${workers[@]}"; do
     "${compose[@]}" logs --no-color --timestamps "$service" > "$result_dir/logs/$service.log" 2>&1 || true
   done
+  if $external_effects; then "${compose[@]}" logs --no-color --timestamps recovery-effects > "$result_dir/logs/recovery-effects.log" 2>&1 || true; fi
   "${compose[@]}" down --volumes --remove-orphans || return 1
   for service in php-sdk-worker rust-workflow-worker smoke; do
     image="${COMPOSE_PROJECT_NAME}-${service}:latest"
@@ -52,6 +63,7 @@ done
   python -m unittest discover -s /app/scripts -p test_sdk_activity_recovery.py
 "${compose[@]}" pull --policy always bootstrap server recovery-timeouts
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server recovery-timeouts "${workers[@]}"
+if $external_effects; then "${compose[@]}" up -d --wait --no-build recovery-effects; fi
 docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
 docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
   "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"
@@ -62,6 +74,7 @@ observer() {
   "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
     -e ACTIVITY_RECOVERY_CASE -e ACTIVITY_RECOVERY_WORKFLOW -e ACTIVITY_RECOVERY_ACTIVITY \
     -e ACTIVITY_RECOVERY_SCENARIO -e ACTIVITY_RECOVERY_RUNNER_COMMIT \
+    -e ACTIVITY_RECOVERY_SUITE -e ACTIVITY_EFFECTS_URL=http://recovery-effects:8080 \
     smoke python /app/scripts/sdk_activity_recovery.py "$@"
 }
 snapshot() {
@@ -69,7 +82,7 @@ snapshot() {
 }
 for direction in php:php php:python php:rust python:php python:python python:rust rust:php rust:python rust:rust; do
   export ACTIVITY_RECOVERY_WORKFLOW="${direction%%:*}" ACTIVITY_RECOVERY_ACTIVITY="${direction##*:}"
-  for scenario in retry worker-loss total-deadline retry-exhaustion progress-heartbeat; do
+  for scenario in "${scenarios[@]}"; do
     export ACTIVITY_RECOVERY_SCENARIO="$scenario"
     export ACTIVITY_RECOVERY_CASE="$COMPOSE_PROJECT_NAME-$scenario-${direction/:/-}"
     activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
@@ -88,9 +101,9 @@ for direction in php:php php:python php:rust python:php python:python python:rus
       observer release-first
       observer progress
     fi
-    if [[ "$scenario" != worker-loss && "$scenario" != progress-heartbeat ]]; then
+    if [[ "$scenario" != worker-loss && "$scenario" != external-effects && "$scenario" != progress-heartbeat ]]; then
       observer release-first
-    elif [[ "$scenario" == worker-loss ]]; then
+    elif [[ "$scenario" == worker-loss || "$scenario" == external-effects ]]; then
       activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
       old_container="$("${compose[@]}" ps -q "$activity_service")"
       snapshot "$old_container" > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.container-before.json"

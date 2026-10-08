@@ -1,9 +1,11 @@
 """Reject contradictory attempt histories rather than trusting a pass label."""
 
 import copy
+import hashlib
+import json
 import unittest
 
-from sdk_activity_recovery import verify_attempts, verify_progress, verify_results, verify_terminal_failure, verify_unchanged_history
+from sdk_activity_recovery import verify_attempts, verify_effects, verify_progress, verify_results, verify_terminal_failure, verify_unchanged_history
 
 
 class RecoveryCoverageTest(unittest.TestCase):
@@ -36,6 +38,57 @@ class RecoveryCoverageTest(unittest.TestCase):
                 break
         with self.assertRaisesRegex(RuntimeError, "did not keep its identity"):
             verify_results(self.results)
+
+
+class ExternalEffectsTest(unittest.TestCase):
+    def setUp(self):
+        self.record = {"workflow_id": "original-run", "scenario": "external-effects"}
+        data = {"units": 37, "note": "café ✓", "tags": [True, None]}
+        digest = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        self.effect = {"operation_key": "original-run:effect", "effect_id": 1, "input": data, "input_sha256": digest}
+        self.first = {"claim": {"activity_attempt_id": "first", "effect": {
+            "operation_key": "original-run:effect", "effect_id": 1, "input_sha256": digest, "reused": False}},
+            "downstream": {"operation_key": "original-run:effect", "effects": [copy.deepcopy(self.effect)],
+                           "deliveries": [{"attempt_id": "first", "outcome": "committed"}]}}
+        self.second = copy.deepcopy(self.first)
+        self.second["claim"]["activity_attempt_id"] = "second"
+        self.second["claim"]["effect"]["reused"] = True
+        self.second["downstream"]["deliveries"].append({"attempt_id": "second", "outcome": "reused"})
+
+    def test_committed_effect_survives_two_actual_attempts(self):
+        self.assertEqual(verify_effects(self.record, self.first), self.effect)
+        self.assertEqual(verify_effects(self.record, self.first, self.second), self.effect)
+
+    def test_lost_commit_duplicate_effect_changed_input_and_false_ack_are_rejected(self):
+        for mutation in ("lost-commit", "duplicate", "input", "new-effect", "false-reuse", "wrong-attempt", "extra-delivery"):
+            with self.subTest(mutation=mutation):
+                second = copy.deepcopy(self.second)
+                if mutation == "lost-commit":
+                    second["downstream"]["effects"] = []
+                elif mutation == "duplicate":
+                    second["downstream"]["effects"].append(copy.deepcopy(self.effect))
+                elif mutation == "input":
+                    second["downstream"]["effects"][0]["input"]["units"] = 38
+                elif mutation == "new-effect":
+                    second["downstream"]["effects"][0]["effect_id"] = 2
+                elif mutation == "false-reuse":
+                    second["claim"]["effect"]["reused"] = False
+                elif mutation == "wrong-attempt":
+                    second["downstream"]["deliveries"][1]["attempt_id"] = "invented"
+                else:
+                    second["downstream"]["deliveries"].append({"attempt_id": "third", "outcome": "reused"})
+                with self.assertRaises(RuntimeError):
+                    verify_effects(self.record, self.first, second)
+
+    def test_effect_suite_requires_all_nine_directions(self):
+        rows = [{"workflow_runtime": w, "activity_runtime": a, "scenario": "external-effects"}
+                for w in ("php", "python", "rust") for a in ("php", "python", "rust")]
+        verify_results(rows, {"external-effects"})
+        for incomplete in (rows[:-1], rows[:-1] + [rows[0]]):
+            with self.assertRaisesRegex(RuntimeError, "Missing or duplicate"):
+                verify_results(incomplete, {"external-effects"})
+        with self.assertRaisesRegex(RuntimeError, "Missing or duplicate"):
+            verify_results(rows)
 
 
 class ApplicationProgressTest(unittest.TestCase):

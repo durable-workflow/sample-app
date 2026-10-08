@@ -14,8 +14,23 @@ x-recovery-env: &recovery-env
   DURABLE_WORKFLOW_AUTH_TOKEN: test-token
   ACTIVITY_RECOVERY_PROOF: /proof
   ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION: "${ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION:-0}"
+  ACTIVITY_EFFECTS_URL: http://recovery-effects:8080
 
 services:
+  recovery-effects:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-smoke:latest"
+    profiles: [external-effects]
+    command: ["python", "/app/scripts/activity_effects_service.py"]
+    mem_limit: 128m
+    environment:
+      ACTIVITY_EFFECTS_DB: /proof/effects.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health',timeout=2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   recovery-workflow-php:
     <<: *recovery
     image: "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest"

@@ -148,9 +148,21 @@ async fn main() -> Result<()> {
     } else if mode == "activity" {
         worker.register_activity("sample-app.activity-recovery.rust.work", |ctx, args| async move {
             let request = args[0].clone();
-            let receipt = json!({"case_id":request["case_id"],"runtime":"rust","sdk_version":SDK_VERSION,
+            let mut receipt = json!({"case_id":request["case_id"],"runtime":"rust","sdk_version":SDK_VERSION,
                 "pid":std::process::id(),"task_id":ctx.task_id,"activity_attempt_id":ctx.activity_attempt_id,
                 "lease_owner":ctx.lease_owner,"attempt_number":ctx.attempt_number});
+            if request["scenario"] == "external-effects" {
+                let operation_key = format!("{}:effect", request["case_id"].as_str().expect("case"));
+                let response = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()
+                    .map_err(|error| Error::WorkerLoop(error.to_string()))?
+                    .post(format!("{}/effects", env::var("ACTIVITY_EFFECTS_URL").expect("effects URL")))
+                    .json(&json!({"operation_key":operation_key,"attempt_id":ctx.activity_attempt_id,
+                        "input":{"units":37,"note":"café ✓","tags":[true,null]}}))
+                    .send().await.map_err(|error| Error::WorkerLoop(error.to_string()))?
+                    .error_for_status().map_err(|error| Error::WorkerLoop(error.to_string()))?;
+                receipt["effect"] = response.json::<Value>().await
+                    .map_err(|error| Error::WorkerLoop(error.to_string()))?;
+            }
             emit(json!({"event":"activity-started","claim":receipt}));
             let case_id = request["case_id"].as_str().expect("case");
             let path = PathBuf::from(env::var("ACTIVITY_RECOVERY_PROOF").expect("proof"))
@@ -186,7 +198,7 @@ async fn main() -> Result<()> {
             }
             if ctx.attempt_number == 1 {
                 gate(case_id, ".first-release").await?;
-                if request["scenario"] != "worker-loss" {
+                if request["scenario"] != "worker-loss" && request["scenario"] != "external-effects" {
                     return Err(Error::WorkerLoop("injected first-attempt failure".into()));
                 }
                 return Err(Error::WorkerLoop("first attempt was not killed".into()));

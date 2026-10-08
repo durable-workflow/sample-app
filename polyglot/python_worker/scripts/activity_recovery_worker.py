@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from durable_workflow import Client, Worker, activity, workflow
 
@@ -40,6 +41,16 @@ async def recover(request):
                "sdk_version": "durable-workflow-python/" + importlib.metadata.version("durable-workflow"),
                "pid": os.getpid(), "task_id": info.task_id, "activity_attempt_id": info.activity_attempt_id,
                "lease_owner": info.worker_id, "attempt_number": info.attempt_number}
+    if request["scenario"] == "external-effects":
+        body = {"operation_key": request["case_id"] + ":effect", "attempt_id": info.activity_attempt_id,
+                "input": {"units": 37, "note": "café ✓", "tags": [True, None]}}
+
+        def apply_effect():
+            with urlopen(Request(os.environ["ACTIVITY_EFFECTS_URL"] + "/effects",
+                                 data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}), timeout=5) as response:
+                return json.load(response)
+
+        receipt["effect"] = await asyncio.to_thread(apply_effect)
     print(json.dumps({"event": "activity-started", "claim": receipt}), flush=True)
     path = Path(os.environ["ACTIVITY_RECOVERY_PROOF"]) / f'{request["case_id"]}.attempt-{info.attempt_number}.json'
     temporary = path.with_suffix(".pending")
