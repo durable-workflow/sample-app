@@ -42,6 +42,7 @@ services:
 
   recovery-activity-python:
     <<: *recovery
+    cpus: 1
     image: "${COMPOSE_PROJECT_NAME}-smoke:latest"
     command: ["python", "/app/scripts/activity_recovery_worker.py"]
     environment:

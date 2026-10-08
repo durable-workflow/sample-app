@@ -26,8 +26,13 @@ SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME=sample-app-activity-recovery \
 
 The checked-in tuple selects published packages and Server. The command builds
 the existing PHP, Python and Rust consumer images and starts only the isolated
-stack and workers needed here. The first callback publishes its real claim and
-waits at a fixture gate. The observer records the live claim and original
+stack and workers needed here. The Python activity worker has one CPU for
+supervised callback startup. The other SDK workers have half a CPU, and each
+SDK worker has a 256 MiB memory
+limit.
+
+The first callback publishes its real claim and waits at a fixture gate. The
+observer records the live claim and original
 deadlines through the SDK's read-only ownership API. Retry releases that gate
 and injects an ordinary callback failure. Worker loss kills the actual activity
 container with SIGKILL and starts a fresh container with a distinct worker
