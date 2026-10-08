@@ -56,7 +56,10 @@ async fn main() -> Result<()> {
         };
     }
     let queue = format!("activity-recovery-{mode}-rust");
-    let worker_id = queue.clone();
+    let worker_id = format!(
+        "{queue}-{}",
+        env::var("HOSTNAME").expect("container hostname")
+    );
     let mut worker = Worker::new(client, queue)
         .worker_id(worker_id)
         .poll_timeout(Duration::from_secs(2));

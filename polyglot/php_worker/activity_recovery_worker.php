@@ -26,7 +26,7 @@ $mode = (string) getenv('ACTIVITY_RECOVERY_MODE');
 $queue = 'activity-recovery-'.$mode.'-php';
 $client = new Client((string) getenv('DURABLE_WORKFLOW_SERVER_URL'),
     token: (string) getenv('DURABLE_WORKFLOW_AUTH_TOKEN'), namespace: 'default');
-$worker = new Worker($client, $queue, $queue);
+$worker = new Worker($client, $queue, $queue.'-'.getenv('HOSTNAME'));
 if ($mode === 'workflow') {
     $worker->registerWorkflow('sample-app.activity-recovery.php',
         static function (WorkflowContext $context, array $request): array {

@@ -27,7 +27,10 @@ stack and workers needed here. The first callback publishes its real claim and
 waits at a fixture gate. The observer records the live claim and original
 deadlines through the SDK's read-only ownership API. Retry releases that gate
 and injects an ordinary callback failure. Worker loss kills the actual activity
-container with SIGKILL and starts a fresh container. The ordinary published
+container with SIGKILL and starts a fresh container with a distinct worker
+registration identity. This exercises recovery after the original attempt
+deadline, rather than the immediate lease release provided when a worker
+reregisters with its previous identity. The ordinary published
 `activity:timeout-enforce` command scans real deadlines every second. No clock
 or database record is edited.
 

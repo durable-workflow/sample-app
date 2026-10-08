@@ -155,6 +155,12 @@ async def main(phase):
             else:
                 first = read(".first.json")
                 verify_attempts(history, record, first["claim"], claim)
+                if record["scenario"] == "worker-loss":
+                    require(claim["lease_owner"] != first["claim"]["lease_owner"],
+                            "Replacement reused the killed worker's registration identity.")
+                    require(timestamp(events(history, "ActivityStarted")[1]["timestamp"])
+                            >= timestamp(first["status"]["deadlines"]["start_to_close"]),
+                            "Replacement claimed work before the original attempt deadline.")
                 require(status["deadlines"]["schedule_to_close"] == first["status"]["deadlines"]["schedule_to_close"],
                         "Retry reset the original total deadline.")
                 require(timestamp(status["deadlines"]["start_to_close"]) > timestamp(first["status"]["deadlines"]["start_to_close"]),

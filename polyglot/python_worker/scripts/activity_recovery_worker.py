@@ -54,7 +54,7 @@ async def main():
     queue = f"activity-recovery-{mode}-python"
     async with Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token=os.environ["DURABLE_WORKFLOW_AUTH_TOKEN"],
                       namespace="default") as client:
-        worker = Worker(client, task_queue=queue, worker_id=queue, poll_timeout=2,
+        worker = Worker(client, task_queue=queue, worker_id=f'{queue}-{os.environ["HOSTNAME"]}', poll_timeout=2,
                         workflows=[RecoveryWorkflow] if mode == "workflow" else [],
                         activities=[recover] if mode == "activity" else [])
         await worker.run()
