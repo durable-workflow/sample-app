@@ -32,6 +32,8 @@ Attempting to reuse the other namespace's workflow ID must return
 own worker credential. Callers have only their operator credential. A client
 with both credentials also proves that control and worker requests select the
 correct credential.
+Its empty-queue credential probe returns immediately instead of occupying an
+additional long-poll slot alongside the actual workers.
 
 The SDK reports typed missing-role diagnostics when only the opposite role's
 credential is configured. Supplying that credential for the wrong plane must

@@ -144,8 +144,8 @@ pub async fn call(client: Client) -> Result<()> {
                 client
                     .poll_workflow_task(
                         "rust-namespace-role-probe",
-                        "namespace-empty-probe",
-                        Duration::from_secs(1),
+                    "namespace-empty-probe",
+                    Duration::ZERO,
                     )
                     .await?
                     .is_none(),
