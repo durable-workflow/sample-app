@@ -48,6 +48,15 @@ application heartbeats.
 
 ## Application progress and heartbeat timeout
 
+This case explicitly enables the published cooperative worker mode and
+protocol 1.20 before starting its activity. PHP uses
+`enableCooperativeCancellation: true`, Python advertises
+`cooperative_cancellation`, and Rust uses `.cooperative_cancellation(true)`.
+These workers observe attempt authority independently of application
+heartbeats and stop the expired callback. The first four scenarios retain
+their ordinary worker mode. The runner changes modes between cases, then
+requires no container restart during the actual heartbeat-expiry case.
+
 The progress case uses actual `ActivityContext.heartbeat()` calls in each SDK.
 Its first attempt records five ordered progress updates three seconds apart,
 including integer steps, a fractional value, a boolean, null and Unicode text.

@@ -76,11 +76,15 @@ async def main():
     if mode not in {"workflow", "activity"}:
         raise ValueError("unknown activity recovery worker mode")
     queue = f"activity-recovery-{mode}-python"
+    cooperative = mode == "activity" and os.environ.get("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION") == "1"
+    if cooperative:
+        os.environ["DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION"] = "1.20"
     async with Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token=os.environ["DURABLE_WORKFLOW_AUTH_TOKEN"],
                       namespace="default") as client:
         worker = Worker(client, task_queue=queue, worker_id=f'{queue}-{os.environ["HOSTNAME"]}', poll_timeout=2,
                         workflows=[RecoveryWorkflow] if mode == "workflow" else [],
-                        activities=[recover] if mode == "activity" else [])
+                        activities=[recover] if mode == "activity" else [],
+                        capabilities=["cooperative_cancellation"] if cooperative else [])
         await worker.run()
 
 

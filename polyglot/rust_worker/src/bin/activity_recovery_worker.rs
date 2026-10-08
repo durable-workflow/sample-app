@@ -85,6 +85,9 @@ async fn main() -> Result<()> {
     let mut worker = Worker::new(client, queue)
         .worker_id(worker_id)
         .poll_timeout(Duration::from_secs(2));
+    if mode == "activity" && env::var("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION").ok().as_deref() == Some("1") {
+        worker = worker.cooperative_cancellation(true);
+    }
     if mode == "workflow" {
         worker.register_workflow(
             "sample-app.activity-recovery.rust",

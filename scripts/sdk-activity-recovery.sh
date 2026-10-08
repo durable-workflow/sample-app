@@ -18,6 +18,7 @@ export COMPOSE_PROJECT_NAME="${SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME:-sampl
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export ACTIVITY_RECOVERY_PROOF_DIR="$result_dir/proof"
 export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
+export ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION=0
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml" \
   -f "$repo_root/polyglot/docker-compose.activity-recovery.yml")
 workers=(recovery-workflow-php recovery-workflow-python recovery-workflow-rust \
@@ -71,6 +72,14 @@ for direction in php:php php:python php:rust python:php python:python python:rus
   for scenario in retry worker-loss total-deadline retry-exhaustion progress-heartbeat; do
     export ACTIVITY_RECOVERY_SCENARIO="$scenario"
     export ACTIVITY_RECOVERY_CASE="$COMPOSE_PROJECT_NAME-$scenario-${direction/:/-}"
+    activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
+    if [[ "$scenario" == progress-heartbeat ]]; then
+      export ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION=1
+      "${compose[@]}" up -d --wait --no-build --force-recreate "$activity_service"
+    elif [[ "$ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION" == 1 ]]; then
+      export ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION=0
+      "${compose[@]}" up -d --wait --no-build --force-recreate "$activity_service"
+    fi
     observer start
     observer first
     if [[ "$scenario" == progress-heartbeat ]]; then

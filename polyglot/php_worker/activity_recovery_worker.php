@@ -7,6 +7,7 @@ require __DIR__.'/vendor/autoload.php';
 use Composer\InstalledVersions;
 use DurableWorkflow\Client;
 use DurableWorkflow\Worker;
+use DurableWorkflow\Version;
 use DurableWorkflow\Worker\ActivityContext;
 use DurableWorkflow\Worker\WorkflowContext;
 
@@ -23,10 +24,12 @@ function recoveryGate(string $caseId, string $suffix): void
 }
 
 $mode = (string) getenv('ACTIVITY_RECOVERY_MODE');
+$cooperative = $mode === 'activity' && getenv('ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION') === '1';
 $queue = 'activity-recovery-'.$mode.'-php';
 $client = new Client((string) getenv('DURABLE_WORKFLOW_SERVER_URL'),
-    token: (string) getenv('DURABLE_WORKFLOW_AUTH_TOKEN'), namespace: 'default');
-$worker = new Worker($client, $queue, $queue.'-'.getenv('HOSTNAME'));
+    token: (string) getenv('DURABLE_WORKFLOW_AUTH_TOKEN'), namespace: 'default',
+    workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL_VERSION);
+$worker = new Worker($client, $queue, $queue.'-'.getenv('HOSTNAME'), enableCooperativeCancellation: $cooperative);
 if ($mode === 'workflow') {
     $worker->registerWorkflow('sample-app.activity-recovery.php',
         static function (WorkflowContext $context, array $request): array {
