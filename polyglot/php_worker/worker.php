@@ -21,7 +21,13 @@ if (! class_exists(Client::class)) {
     require __DIR__.'/vendor/autoload.php';
 }
 
+require __DIR__.'/child_workflows.php';
+
 const WORKFLOW_TYPES = [
+    'sample-app.child-matrix.php.child',
+    'sample-app.child-matrix.php.parent-php',
+    'sample-app.child-matrix.php.parent-python',
+    'sample-app.child-matrix.php.parent-rust',
     'polyglot.php.greeter',
     'polyglot.php.timer',
     'polyglot.php.updates',
@@ -478,6 +484,7 @@ function appliedIncrementState(QueryContext $context, PayloadCodec $codec): arra
 
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 {
+    configureChildWorkflows($worker);
     $worker->registerWorkflow('polyglot.php.updates', static function (WorkflowContext $context, string $request): array {
         $context->waitCondition(static fn (): bool => $context->signals('updates-finish') !== [], 'updates-finish');
 

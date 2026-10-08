@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+from pathlib import Path
 
-from durable_workflow import Client, Worker, workflow
+from durable_workflow import Client, Worker
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python_workflow"))
+from child_workflows import CHILD_WORKFLOWS
 
 
 def required(name: str) -> str:
@@ -11,39 +16,6 @@ def required(name: str) -> str:
     if not value:
         raise RuntimeError(f"Set {name} before starting the worker.")
     return value
-
-
-@workflow.defn(name="sample-app.child-matrix.python.child")
-class PythonChildWorkflow:
-    def run(self, context, value):
-        return {"value": value, "runtime": "python"}
-
-
-@workflow.defn(name="sample-app.child-matrix.python.parent-php")
-class PythonParentPhpWorkflow:
-    def run(self, context, value):
-        child_result = yield context.start_child_workflow(
-            "sample-app.child-matrix.php.child", [value]
-        )
-        return {"parent_runtime": "python", "child_result": child_result}
-
-
-@workflow.defn(name="sample-app.child-matrix.python.parent-python")
-class PythonParentPythonWorkflow:
-    def run(self, context, value):
-        child_result = yield context.start_child_workflow(
-            "sample-app.child-matrix.python.child", [value]
-        )
-        return {"parent_runtime": "python", "child_result": child_result}
-
-
-@workflow.defn(name="sample-app.child-matrix.python.parent-rust")
-class PythonParentRustWorkflow:
-    def run(self, context, value):
-        child_result = yield context.start_child_workflow(
-            "sample-app.child-matrix.rust.child", [value]
-        )
-        return {"parent_runtime": "python", "child_result": child_result}
 
 
 async def main() -> None:
@@ -56,12 +28,7 @@ async def main() -> None:
             client,
             task_queue=required("DURABLE_WORKFLOW_TASK_QUEUE"),
             worker_id=f"sample-child-matrix-python-{os.getpid()}",
-            workflows=[
-                PythonChildWorkflow,
-                PythonParentPhpWorkflow,
-                PythonParentPythonWorkflow,
-                PythonParentRustWorkflow,
-            ],
+            workflows=list(CHILD_WORKFLOWS),
             activities=[],
         )
         await worker.run()

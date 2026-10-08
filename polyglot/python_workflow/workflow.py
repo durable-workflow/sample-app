@@ -424,6 +424,8 @@ def verify_replay_fixtures() -> int:
 
 
 async def main() -> int:
+    from child_workflows import CHILD_WORKFLOWS
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -453,6 +455,7 @@ async def main() -> int:
             task_queue=TASK_QUEUE,
             capabilities=["cooperative_cancellation"] if cooperative else [],
             workflows=[
+                *CHILD_WORKFLOWS,
                 PythonGreeterWorkflow,
                 PythonTimerWorkflow,
                 PythonUpdatesWorkflow,
