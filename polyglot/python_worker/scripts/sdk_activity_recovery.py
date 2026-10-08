@@ -161,7 +161,7 @@ async def main(phase):
         if phase == "stale":
             rejection = read(".stale.json")
             require(rejection["event"] == "stale-rejected" and rejection["status"] == 409
-                    and rejection["reason"] in {"stale_attempt", "stale_task", "task_not_leased", "attempt_not_running"}
+                    and rejection["reason"] in {"attempt_closed", "stale_attempt", "stale_task", "task_not_leased"}
                     and rejection["task_id"] == first["claim"]["task_id"]
                     and rejection["activity_attempt_id"] == first["claim"]["activity_attempt_id"], "Stale completion lacked precise claim refusal.")
             _, history = await observe(client, record)
