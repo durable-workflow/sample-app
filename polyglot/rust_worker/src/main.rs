@@ -4,6 +4,8 @@ use apache_avro::{from_avro_datum, to_avro_datum, Schema};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, Value, Worker};
 
+mod updates;
+
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
 const RUST_TIMER_DELAY_SECONDS: u64 = 30;
@@ -40,7 +42,9 @@ async fn main() -> Result<()> {
     match mode.as_str() {
         "workflow" => run_workflow_worker(client).await,
         "activity" => run_activity_worker(client).await,
-        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow or activity"),
+        "update-client" => updates::call(client).await,
+        "validator-refusal" => updates::validator_refusal(client).await,
+        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow, activity, update-client or validator-refusal"),
     }
 }
 
@@ -53,6 +57,8 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
         .recover_transient_outages(true)
         .cooperative_cancellation(env_value("POLYGLOT_TIMER_COOPERATIVE", "0") == "1")
         .poll_timeout(Duration::from_secs(5));
+
+    updates::register(&mut worker);
 
     worker.register_activity("polyglot.rust.echo", |_ctx, args| async move {
         Ok(runtime_echo(first_argument(&args)))

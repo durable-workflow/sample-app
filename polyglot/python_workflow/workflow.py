@@ -85,6 +85,24 @@ class PythonTimerWorkflow:
         return {"workflow_runtime": "python", "request": request, "timer_seconds": 30}
 
 
+@workflow.defn(name="polyglot.python.updates")
+class PythonUpdatesWorkflow:
+    def __init__(self):
+        self.done = False
+
+    @workflow.update("echo")
+    def echo(self, request):
+        return {"handler_runtime": "python", "request": request}
+
+    @workflow.signal("updates-finish")
+    def finish(self):
+        self.done = True
+
+    def run(self, ctx, request):
+        yield ctx.wait_condition(lambda: self.done, key="updates-finish")
+        return {"workflow_runtime": "python", "request": request}
+
+
 @workflow.defn(name="polyglot.python-to-php.greeter")
 class PythonToPhpGreeterWorkflow:
     def run(self, ctx, request):  # type: ignore[no-untyped-def]
@@ -425,6 +443,7 @@ async def main() -> int:
             workflows=[
                 PythonGreeterWorkflow,
                 PythonTimerWorkflow,
+                PythonUpdatesWorkflow,
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,
                 PythonToPhpBinaryTypeRoundtripWorkflow,

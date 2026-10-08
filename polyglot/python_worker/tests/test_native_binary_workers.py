@@ -24,6 +24,10 @@ class _Definitions:
     def query(_name):  # type: ignore[no-untyped-def]
         return lambda value: value
 
+    @staticmethod
+    def update(_name):  # type: ignore[no-untyped-def]
+        return lambda value: value
+
 
 durable_workflow = types.ModuleType("durable_workflow")
 durable_workflow.Client = object

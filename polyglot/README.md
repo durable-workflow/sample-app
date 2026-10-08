@@ -53,6 +53,7 @@ different isolated project name.
 | [`sagas/`](sagas/README.md) | Five Rust-involving workflow/compensation directions across PHP, Python, and Rust |
 | [`schedules/`](schedules/README.md) | PHP- and Python-created automatic schedules dispatched to a Rust workflow worker |
 | [`timers/`](timers/README.md) | PHP/Python/Rust timer completion, worker SIGKILL and cold replay, Server restart and cooperative cancellation |
+| [`updates/`](updates/README.md) | Nine PHP/Python/Rust SDK client/update-handler directions, Rust replacement and duplicate requests |
 | `python_workflow/` | Python-authored workflow examples |
 | `laravel/` | Waterline image used to inspect standalone runs |
 | `docker-compose.yml` | Complete service-mode topology |
