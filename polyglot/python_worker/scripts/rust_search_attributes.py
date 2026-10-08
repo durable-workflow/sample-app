@@ -100,11 +100,11 @@ def assert_recovery(history: dict, parked: dict) -> None:
 
 async def visibility(client: Client, expected: dict, final: bool) -> dict:
     queries = [
-        f'SearchKeyword = {json.dumps(expected["SearchKeyword"])}',
+        f'SearchKeyword = {json.dumps(expected["SearchKeyword"], ensure_ascii=False)}',
         'SearchCount > 9007199254740992 AND SearchCount <= 9007199254740993',
         'SearchRatio > 1.0 AND SearchRatio < 2.0',
         f'SearchFlag = {str(expected["SearchFlag"]).lower()}',
-        f'SearchTags = {json.dumps(expected["SearchTags"][0])}',
+        f'SearchTags = {json.dumps(expected["SearchTags"][0], ensure_ascii=False)}',
         'SearchTime >= "2026-10-08T12:34:56Z" AND SearchTime < "2026-10-08T12:34:57Z"',
     ]
     observed = {}
