@@ -61,6 +61,34 @@ def child_identity(history, child_type):
     return {key: started[key] for key in keys}
 
 
+def wait_identity(history, runtime):
+    signal_wait = runtime == "rust"
+    opened = one(history, "SignalWaitOpened" if signal_wait else "ConditionWaitOpened")["payload"]
+    wait_id = opened.get("signal_wait_id" if signal_wait else "condition_wait_id")
+    if (not wait_id or opened.get("signal_name" if signal_wait else "condition_key") != "child-finish"
+            or not isinstance(opened.get("sequence"), int)):
+        raise RuntimeError("Child did not retain its declared durable completion wait.")
+    return {"wait_id": wait_id, "wait_sequence": opened["sequence"]}
+
+
+def verify_resume(history, record):
+    if wait_identity(history, record["child"]) != {key: record[key] for key in ("wait_id", "wait_sequence")}:
+        raise RuntimeError("Recovery replaced the original child wait.")
+    signal_wait = record["child"] == "rust"
+    received = one(history, "SignalReceived")["payload"]
+    resolved_kind = "SignalApplied" if signal_wait else "ConditionWaitSatisfied"
+    resolved = one(history, resolved_kind)["payload"]
+    if (received.get("signal_name") != "child-finish" or not received.get("signal_id")
+            or received["signal_id"] != resolved.get("signal_id" if signal_wait else "workflow_signal_id")
+            or resolved.get("signal_name") != "child-finish"
+            or resolved.get("signal_wait_id" if signal_wait else "condition_wait_id") != record["wait_id"]
+            or resolved.get("sequence") != record["wait_sequence"]):
+        raise RuntimeError("Recovery did not resolve the original wait with its acknowledged signal once.")
+    kinds = [event["event_type"] for event in history["events"]]
+    if not kinds.index("SignalReceived") < kinds.index(resolved_kind) < kinds.index("WorkflowCompleted"):
+        raise RuntimeError("Child completion did not follow its acknowledged signal and durable wait resolution.")
+
+
 def expected_result(record, failed=False):
     if failed:
         prefix = "codec error: " if record["child"] == "rust" else ""
@@ -147,12 +175,7 @@ async def verify(client, handle, record, failed=False, recovered=False):
         raise RuntimeError("Public status differs from the expected parent/child outcome.")
     verify_pair(parent_history, child_history, record, result, failed)
     if recovered:
-        received = one(child_history, "SignalReceived")["payload"]
-        applied = one(child_history, "SignalApplied")["payload"]
-        if (received.get("signal_name") != "child-finish" or not received.get("signal_id")
-                or received["signal_id"] != applied.get("signal_id")
-                or applied.get("signal_name") != "child-finish"):
-            raise RuntimeError("Recovery did not apply the signal acknowledged during absence once.")
+        verify_resume(child_history, record)
     emit(scenario="typed-child-failure" if failed else ("child-worker-recovery" if recovered else "child-completion"),
          **record, result=result,
          parent_events=[event for event in parent_history["events"] if event["event_type"] in PARENT_EVENTS],
@@ -186,6 +209,7 @@ async def park(client):
                          child_status=child_execution.status, terminal_events=terminal)
                     raise RuntimeError("Recovery child closed before reaching its signal wait.")
                 if parent_execution.status == "waiting" and child_execution.status == "waiting":
+                    record.update(wait_identity(child_history, child))
                     emit(scenario="child-parked", **record)
                     break
             await asyncio.sleep(.25)
@@ -199,7 +223,8 @@ async def release(client):
         await handle.signal("child-finish")
         _, parent_history = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
         _, child_history = await observe(client, record["child_workflow_instance_id"], record["child_workflow_run_id"])
-        if (any(event["event_type"] in TERMINAL_EVENTS | {"SignalApplied"} for event in child_history["events"])
+        if (any(event["event_type"] in TERMINAL_EVENTS | {"SignalApplied", "ConditionWaitSatisfied", "ConditionWaitTimedOut"}
+                for event in child_history["events"])
                 or any(event["event_type"] in TERMINAL_EVENTS | {"ChildRunCompleted"} for event in parent_history["events"])):
             raise RuntimeError("An absent worker unexpectedly applied or completed child work.")
         received = one(child_history, "SignalReceived")["payload"]

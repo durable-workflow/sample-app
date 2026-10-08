@@ -59,6 +59,37 @@ class ChildRelationshipTest(unittest.TestCase):
         for call in output.call_args_list:
             self.assertEqual(json.loads(call.args[0])["scenario"], "child-signal-without-workers")
 
+    def test_recovery_matches_each_runtimes_original_wait_and_signal(self):
+        for runtime in children.RUNTIMES:
+            signal_wait = runtime == "rust"
+            opened_kind = "SignalWaitOpened" if signal_wait else "ConditionWaitOpened"
+            resolved_kind = "SignalApplied" if signal_wait else "ConditionWaitSatisfied"
+            wait_key = "signal_wait_id" if signal_wait else "condition_wait_id"
+            signal_key = "signal_id" if signal_wait else "workflow_signal_id"
+            history = {"events": [event(opened_kind, **{wait_key: "original-wait", "sequence": 1,
+                "signal_name" if signal_wait else "condition_key": "child-finish"}),
+                event("SignalReceived", signal_id="accepted-signal", signal_name="child-finish"),
+                event(resolved_kind, **{wait_key: "original-wait", "sequence": 1,
+                    signal_key: "accepted-signal", "signal_name": "child-finish"}),
+                event("WorkflowCompleted")]}
+            record = {**self.record, "child": runtime, "wait_id": "original-wait", "wait_sequence": 1}
+            with self.subTest(runtime=runtime):
+                children.verify_resume(history, record)
+            for index, key in ((0, wait_key), (2, wait_key), (2, signal_key), (2, "sequence"), (2, "signal_name")):
+                changed = copy.deepcopy(history)
+                changed["events"][index]["payload"][key] = "replacement"
+                with self.subTest(runtime=runtime, index=index, key=key), self.assertRaises(RuntimeError):
+                    children.verify_resume(changed, record)
+            for index in (0, 1, 2):
+                changed = copy.deepcopy(history)
+                changed["events"].append(copy.deepcopy(changed["events"][index]))
+                with self.subTest(runtime=runtime, duplicate=index), self.assertRaises(RuntimeError):
+                    children.verify_resume(changed, record)
+            changed = copy.deepcopy(history)
+            changed["events"][2], changed["events"][3] = changed["events"][3], changed["events"][2]
+            with self.subTest(runtime=runtime, out_of_order=True), self.assertRaises(RuntimeError):
+                children.verify_resume(changed, record)
+
     def test_missing_or_duplicate_schedule_start_completion_is_rejected(self):
         for index in (1, 2, 3, 4):
             for duplicate in (False, True):
