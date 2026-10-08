@@ -23,6 +23,8 @@ physical SIGKILL/replacement receipts. Normal logs identify the tuple and times.
 The Rust workflow writes all seven types, including a 2048-byte Unicode string,
 a 255-byte Unicode keyword and list entry, an integer larger than JavaScript's
 exact range, a fractional float, a boolean and a datetime with microseconds.
+Server schema administration registers the numeric type as `double`. The Rust
+workflow and durable history use its canonical `float` identity.
 PHP and Python inspect selected-run values and equality, integer/float range,
 boolean, list membership and datetime queries. Nonmatching queries must return
 no workflow. The UTF-8 limits are bytes at Server's public API boundary.

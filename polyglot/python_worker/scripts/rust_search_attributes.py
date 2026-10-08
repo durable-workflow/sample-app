@@ -19,6 +19,7 @@ DEFINITIONS = {
     "SearchCount": "int", "SearchRatio": "float", "SearchFlag": "bool",
     "SearchTime": "datetime", "SearchRemoved": "keyword",
 }
+REGISTERED_TYPES = {key: "double" if kind == "float" else kind for key, kind in DEFINITIONS.items()}
 INITIAL = {
     "SearchText": "界" * 682 + "ab", "SearchKeyword": "界" * 85,
     "SearchTags": ["urgent", "界" * 85, "urgent"],
@@ -130,11 +131,11 @@ async def run(phase: str) -> None:
                     namespace=os.environ.get("DURABLE_WORKFLOW_NAMESPACE", "default"))
     async with client:
         if phase == "setup":
-            for key, kind in DEFINITIONS.items():
+            for key, kind in REGISTERED_TYPES.items():
                 await client.create_search_attribute(key, kind)
             schema = await client.list_search_attributes()
-            if schema.custom_attributes != DEFINITIONS:
-                raise RuntimeError("Published schema differs from canonical authored types")
+            if schema.custom_attributes != REGISTERED_TYPES:
+                raise RuntimeError("Published schema differs from its registered types")
             record(phase, {"definitions": schema.custom_attributes})
         elif phase == "park":
             handle = await client.start_workflow(workflow_type=WORKFLOW, task_queue=QUEUE,
