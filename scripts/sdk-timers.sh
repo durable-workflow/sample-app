@@ -15,6 +15,7 @@ export COMPOSE_PROJECT_NAME="${SDK_TIMERS_COMPOSE_PROJECT_NAME:-sample-app-sdk-t
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export COMPOSE_PROFILES=timers
 export POLYGLOT_TIMER_COOPERATIVE=1
+export POLYGLOT_WORKER_DIAGNOSTICS=1
 export DURABLE_WORKFLOW_TIMER_ID="${COMPOSE_PROJECT_NAME}"
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml")
 workers=(php-same-workflow-worker python-workflow-worker rust-workflow-worker)
@@ -25,7 +26,10 @@ fi
 
 cleanup() {
   local code=$?
-  if [[ "$code" != 0 ]]; then "${compose[@]}" logs --no-color --timestamps || true; fi
+  if [[ "$code" != 0 ]]; then
+    "${compose[@]}" ps --all || true
+    "${compose[@]}" logs --no-color --timestamps || true
+  fi
   "${compose[@]}" down --volumes --remove-orphans || return 1
   local suffix image
   for suffix in php-sdk-worker python-workflow-worker rust-workflow-worker smoke; do
@@ -79,6 +83,7 @@ export DURABLE_WORKFLOW_SERVER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 sleep 32
 export DURABLE_WORKFLOW_SERVER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
+client diagnose server-restart
 client verify server-restart
 
 start cancellation

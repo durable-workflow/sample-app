@@ -219,6 +219,7 @@ services:
       DURABLE_WORKFLOW_NAMESPACE: default
       POLYGLOT_PHP_TASK_QUEUE: polyglot-php
       POLYGLOT_TIMER_COOPERATIVE: "${POLYGLOT_TIMER_COOPERATIVE:-0}"
+      POLYGLOT_WORKER_DIAGNOSTICS: "${POLYGLOT_WORKER_DIAGNOSTICS:-0}"
     depends_on:
       server:
         condition: service_healthy

@@ -878,10 +878,27 @@ function runStandaloneWorker(): void
         return;
     }
 
-    $worker = new Worker($client, $taskQueue, $workerId, enableCooperativeCancellation: $cooperative);
+    $diagnosticListener = getenv('POLYGLOT_WORKER_DIAGNOSTICS') === '1'
+        ? static function (string $event, array $context): void {
+            $record = ['event' => $event];
+            foreach (['worker_id', 'operation', 'attempt', 'delay_seconds', 'poll_status', 'reason'] as $key) {
+                if (array_key_exists($key, $context)) {
+                    $record[$key] = $context[$key];
+                }
+            }
+            $exception = $context['exception'] ?? null;
+            if ($exception instanceof \DurableWorkflow\Exception\ServerException) {
+                $record['status'] = $exception->status;
+                $record['reason'] = $exception->reason;
+            }
+            fwrite(STDERR, json_encode($record, JSON_THROW_ON_ERROR)."\n");
+        }
+        : null;
+    $worker = new Worker($client, $taskQueue, $workerId,
+        diagnosticListener: $diagnosticListener, enableCooperativeCancellation: $cooperative);
     configureWorkflows($worker, $client->payloadCodec());
     fwrite(STDOUT, sprintf(
-        "polyglot php worker registered: id=%s queue=%s types=[%s]\n",
+        "polyglot php worker starting: id=%s queue=%s types=[%s]\n",
         $workerId,
         $taskQueue,
         implode(',', WORKFLOW_TYPES),
