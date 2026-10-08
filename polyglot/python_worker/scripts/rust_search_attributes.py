@@ -163,12 +163,12 @@ async def run(phase: str) -> None:
                            "queries": await visibility(client, INITIAL, False)})
         elif phase == "release":
             parked = json.loads((PROOF / "park.json").read_text())
-            acknowledgment = await client.signal_workflow(WORKFLOW_ID, SIGNAL, ["released"])
+            await client.signal_workflow(WORKFLOW_ID, SIGNAL, args=["released"])
             history = await client.get_history(WORKFLOW_ID, parked["run_id"])
             one(history, "SignalReceived")
             if events(history, "SignalApplied") or len(events(history, "SearchAttributesUpserted")) != 1:
                 raise RuntimeError("Work progressed during the required worker-absence window")
-            record(phase, {"acknowledgment": acknowledgment, "history": history})
+            record(phase, {"acknowledged": True, "history": history})
         elif phase == "verify":
             parked = json.loads((PROOF / "park.json").read_text())
             handle = client.get_workflow_handle(WORKFLOW_ID, workflow_type=WORKFLOW)
