@@ -1,0 +1,22 @@
+services:
+  server:
+    environment:
+      DW_RUNTIME_CREDENTIALS_ENABLED: "true"
+
+  rust-namespace-a:
+    init: true
+    image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+      DURABLE_WORKFLOW_NAMESPACE: rust-namespace-a
+      DURABLE_WORKFLOW_WORKER_TOKEN: dwr_fixture_worker_rust_namespace_a_0123456789
+      POLYGLOT_RUST_MODE: namespace-worker
+
+  rust-namespace-b:
+    init: true
+    image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+      DURABLE_WORKFLOW_NAMESPACE: rust-namespace-b
+      DURABLE_WORKFLOW_WORKER_TOKEN: dwr_fixture_worker_rust_namespace_b_0123456789
+      POLYGLOT_RUST_MODE: namespace-worker

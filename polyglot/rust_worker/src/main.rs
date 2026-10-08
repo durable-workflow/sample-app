@@ -6,6 +6,7 @@ use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, 
 
 mod updates;
 mod children;
+mod namespaces;
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
@@ -31,12 +32,24 @@ async fn main() -> Result<()> {
     verify_official_avro_runtime()?;
 
     let server_url = required_env("DURABLE_WORKFLOW_SERVER_URL");
-    let token = env::var("DURABLE_WORKFLOW_AUTH_TOKEN").ok();
+    let token = env::var("DURABLE_WORKFLOW_AUTH_TOKEN")
+        .ok()
+        .filter(|value| !value.is_empty());
     let namespace = env::var("DURABLE_WORKFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
     let mode = env::var("POLYGLOT_RUST_MODE").unwrap_or_else(|_| "workflow".into());
 
     let client = Client::builder(server_url)
         .token(token)
+        .control_token(
+            env::var("DURABLE_WORKFLOW_CONTROL_TOKEN")
+                .ok()
+                .filter(|value| !value.is_empty()),
+        )
+        .worker_token(
+            env::var("DURABLE_WORKFLOW_WORKER_TOKEN")
+                .ok()
+                .filter(|value| !value.is_empty()),
+        )
         .namespace(namespace)
         .build()?;
 
@@ -45,7 +58,9 @@ async fn main() -> Result<()> {
         "activity" => run_activity_worker(client).await,
         "update-client" => updates::call(client).await,
         "validator-refusal" => updates::validator_refusal(client).await,
-        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow, activity, update-client or validator-refusal"),
+        "namespace-worker" => namespaces::worker(client).await,
+        "namespace-client" => namespaces::call(client).await,
+        other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow, activity, update-client, validator-refusal, namespace-worker or namespace-client"),
     }
 }
 

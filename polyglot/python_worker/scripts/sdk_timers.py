@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone
+from urllib.request import Request, urlopen
 
 from durable_workflow import Client
 
@@ -191,13 +192,32 @@ async def main(phase: str, scenario: str) -> None:
         namespace=required("DURABLE_WORKFLOW_NAMESPACE"),
         control_token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
     ) as client:
+        if phase == "diagnose":
+            workers = []
+            for suffix in ("", "?status=stale"):
+                request = Request(required("DURABLE_WORKFLOW_SERVER_URL") + "/api/workers" + suffix,
+                    headers={"Authorization": "Bearer " + required("DURABLE_WORKFLOW_AUTH_TOKEN"),
+                             "Accept": "application/json", "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"),
+                             "X-Durable-Workflow-Control-Plane-Version": "2"})
+                with urlopen(request, timeout=30) as response:
+                    rows = json.loads(response.read())["workers"]
+                fields = ("worker_id", "task_queue", "runtime", "sdk_version", "status",
+                          "last_heartbeat_at", "heartbeat_interval_seconds")
+                workers.extend({key: row.get(key) for key in fields} for row in rows)
+            emit(phase="worker_diagnostics", scenario=scenario, workers=workers)
+            for runtime in RUNTIMES:
+                _, execution, history = await observe(client, runtime, scenario)
+                emit(phase="run_diagnostics", scenario=scenario, runtime=runtime,
+                     workflow_id=execution.workflow_id, run_id=execution.run_id, status=execution.status,
+                     history_events=[event["event_type"] for event in history["events"]])
+            return
         action = {"start": pending, "fired": fired, "verify": verify}[phase]
         await asyncio.gather(*(action(client, runtime, scenario) for runtime in RUNTIMES))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("start", "fired", "verify"))
+    parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose"))
     parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation"))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))
