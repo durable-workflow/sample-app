@@ -29,6 +29,10 @@ request returns that original completion. A failed Rust handler must persist a
 failed update while leaving its workflow live. All three original workflows
 finish once after a signal.
 
+The Python client must raise `UpdateFailed` with the handler's message and
+matching workflow, run, update and failure IDs. Repeating that failed request
+must return the same error identities with one durable failed completion.
+
 Rust does not support synchronous pre-accept update validators. The installed
 crate must return `UnsupportedUpdateValidators` for a contract claiming one.
 This check does not claim validator execution, process loss during an external
