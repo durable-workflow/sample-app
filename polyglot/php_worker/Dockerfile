@@ -33,6 +33,7 @@ COPY php_created_rust_schedule.php ./
 COPY update_client.php ./
 COPY task_codec_rejection_probe.php ./
 COPY activity_recovery_worker.php ./
+COPY rust_search_attributes.php ./
 COPY replay_fixtures ./replay_fixtures
 
 RUN php worker.php --mode=replay-fixtures
