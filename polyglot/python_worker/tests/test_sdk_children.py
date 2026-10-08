@@ -2,6 +2,7 @@
 
 import copy
 import importlib.util
+import json
 import pathlib
 import sys
 import types
@@ -43,6 +44,20 @@ class ChildRelationshipTest(unittest.TestCase):
 
     def test_original_relationship_and_results_pass(self):
         self.verify()
+
+    def test_parked_records_can_be_reported_in_the_next_phase(self):
+        parked = [{**self.record, "parent": parent, "child": child, "scenario": "child-parked"}
+                  for parent, child in children.RUST_DIRECTIONS]
+        with patch.dict(children.os.environ, {"DURABLE_WORKFLOW_CHILD_RUNS":
+                "\n".join(json.dumps(record) for record in parked)}):
+            pending = children.records()
+        self.assertEqual(len(pending), 5)
+        with patch("builtins.print") as output:
+            for record in pending:
+                children.emit(scenario="child-signal-without-workers", **record)
+        self.assertEqual(output.call_count, 5)
+        for call in output.call_args_list:
+            self.assertEqual(json.loads(call.args[0])["scenario"], "child-signal-without-workers")
 
     def test_missing_or_duplicate_schedule_start_completion_is_rejected(self):
         for index in (1, 2, 3, 4):

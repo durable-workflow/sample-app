@@ -34,6 +34,8 @@ def records():
     if (len(pending) != len(RUST_DIRECTIONS)
             or {(record["parent"], record["child"]) for record in pending} != set(RUST_DIRECTIONS)):
         raise RuntimeError("Missing or repeated parked child recovery directions.")
+    for record in pending:
+        record.pop("scenario", None)
     return pending
 
 
