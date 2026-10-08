@@ -21,6 +21,51 @@ def event(kind, **payload):
     return {"event_type": kind, "payload": payload}
 
 
+class CancellationIdentityTest(unittest.TestCase):
+    def setUp(self):
+        self.root = {"request_id": "root", "requested_at": "2026-10-08T01:00:00Z",
+                     "cleanup_deadline_at": "2026-10-08T01:00:30Z"}
+        self.parent = {"schema": "durable-workflow.cancellation-context/v1", **self.root,
+            "root_request_id": "root", "root_workflow_instance_id": "parent", "root_workflow_run_id": "parent-run",
+            "parent_request_id": None, "reason": "SDK child cancellation conformance",
+            "requester": {"type": "auth:token", "id": "test", "label": "Test"}, "source": "control_plane",
+            "lineage": [{"request_id": "root", "workflow_instance_id": "parent", "workflow_run_id": "parent-run"}]}
+        self.child = {**self.parent, "request_id": "child-request", "parent_request_id": "root",
+            "lineage": [*self.parent["lineage"], {"request_id": "child-request", "workflow_instance_id": "child",
+                                                 "workflow_run_id": "child-run"}]}
+        self.record = {"root_request": self.root, "root_context": self.parent, "parent_workflow_id": "parent",
+            "parent_run_id": "parent-run", "child_workflow_instance_id": "child", "child_workflow_run_id": "child-run"}
+
+    def test_original_parent_and_child_context_pass(self):
+        for role, context in (("parent", self.parent), ("child", self.child)):
+            history = {"events": [event("CooperativeCancellationRequested", cancellation=context)]}
+            self.assertEqual(children.cancellation_context(history, self.record, role), context)
+
+    def test_changed_child_identity_budget_or_metadata_fails(self):
+        for key in ("schema", "root_request_id", "root_workflow_instance_id", "root_workflow_run_id",
+                    "requested_at", "cleanup_deadline_at", "reason", "parent_request_id", "requester", "source"):
+            changed = copy.deepcopy(self.child)
+            changed[key] = "replacement"
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                children.cancellation_context({"events": [event("CooperativeCancellationRequested", cancellation=changed)]}, self.record, "child")
+        for index in (0, 1):
+            for key in ("request_id", "workflow_instance_id", "workflow_run_id"):
+                changed = copy.deepcopy(self.child)
+                changed["lineage"][index][key] = "replacement"
+                with self.subTest(index=index, key=key), self.assertRaises(RuntimeError):
+                    children.cancellation_context({"events": [event("CooperativeCancellationRequested", cancellation=changed)]}, self.record, "child")
+
+    def test_cleanup_markers_require_original_role_runtime_and_order(self):
+        values = [{"role": "child", "runtime": "rust", "stage": stage} for stage in ("entry", "finished")]
+        def history(items):
+            return {"events": [event("SideEffectRecorded", result={"decoded": item}) for item in items]}
+        self.assertEqual(children.markers(history(values), "child", "rust"), values)
+        for changed in ([], values[::-1], values + values[:1], [values[1]],
+                        [{**values[0], "role": "parent"}], [{**values[0], "runtime": "php"}]):
+            with self.subTest(changed=changed), self.assertRaises(RuntimeError):
+                children.markers(history(changed), "child", "rust")
+
+
 class ChildRelationshipTest(unittest.TestCase):
     def setUp(self):
         self.record = {"parent": "python", "child": "rust", "value": "marker",

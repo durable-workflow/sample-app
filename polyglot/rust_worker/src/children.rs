@@ -1,4 +1,26 @@
-use durable_workflow::{json, ChildWorkflowOptions, Error, Value, Worker};
+use std::time::Duration;
+
+use durable_workflow::{
+    json, CancellationPolicy, ChildWorkflowOptions, Error, ParentClosePolicy, Result, Value,
+    Worker, WorkflowContext,
+};
+
+async fn cleanup(context: &WorkflowContext, role: &str) -> Result<()> {
+    let cancellation = context.cancellation_context()?.ok_or_else(|| {
+        Error::Codec("Child cancellation lacks its committed workflow context.".into())
+    })?;
+    let _shield = context.cancellation_shield()?;
+    let entry = json!({"role": role, "stage": "entry", "runtime": "rust",
+        "context": cancellation.to_value(), "remaining": cancellation.remaining()?.as_secs_f64()});
+    let _: Value = context.side_effect(|| entry)?;
+    context
+        .sleep(Duration::from_secs(if role == "child" { 10 } else { 1 }))
+        .await?;
+    let finished = json!({"role": role, "stage": "finished", "runtime": "rust",
+        "context": cancellation.to_value(), "remaining": cancellation.remaining()?.as_secs_f64()});
+    let _: Value = context.side_effect(|| finished)?;
+    Ok(())
+}
 
 pub fn register(worker: &mut Worker, common_queue: Option<String>) {
     worker.register_workflow(
@@ -13,9 +35,15 @@ pub fn register(worker: &mut Worker, common_queue: Option<String>) {
                         value.as_str().unwrap_or_default()
                     )))
                 }
-                "wait" => {
-                    context.wait_signal("child-finish").await?;
-                }
+                "wait" | "cancel" => match context.wait_signal("child-finish").await {
+                    Err(error @ Error::CooperativeCancellationRequested(_)) => {
+                        cleanup(&context, "child").await?;
+                        return Err(error);
+                    }
+                    outcome => {
+                        outcome?;
+                    }
+                },
                 "complete" => {}
                 _ => return Err(Error::Codec("Unknown child behavior.".into())),
             }
@@ -38,9 +66,18 @@ pub fn register(worker: &mut Worker, common_queue: Option<String>) {
             async move {
                 let value = input.get(0).cloned().unwrap_or(Value::Null);
                 let behavior = input.get(1).cloned().unwrap_or_else(|| json!("complete"));
-                match context.start_child_workflow(child_type, ChildWorkflowOptions::new(child_queue),
+                let mut options = ChildWorkflowOptions::new(child_queue);
+                if behavior == "cancel" {
+                    options = options.cancellation_policy(CancellationPolicy::WaitCancellationCompleted)
+                        .parent_close_policy(ParentClosePolicy::RequestCancellation);
+                }
+                match context.start_child_workflow(child_type, options,
                                                   json!([value, behavior])).await {
                     Ok(child) => Ok(json!({"parent_runtime": "rust", "child_result": child.result})),
+                    Err(error @ Error::CooperativeCancellationRequested(_)) => {
+                        cleanup(&context, "parent").await?;
+                        Err(error)
+                    }
                     Err(Error::ChildWorkflowFailed(failure)) => Ok(json!({"parent_runtime": "rust", "child_failure": {
                         "type": "ChildWorkflowFailed", "message": failure.message, "child_type": failure.child_workflow_type,
                     }})),
