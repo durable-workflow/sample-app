@@ -166,11 +166,13 @@ class SnapshotObservationTest(unittest.IsolatedAsyncioTestCase):
         execution = types.SimpleNamespace(workflow_id="example-rust", run_id="original")
         history = {"events": [
             {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
-                "arguments": serializer.envelope([signal])}},
+                "signal_id": "map", "arguments": serializer.envelope([signal])}},
             {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
-                "arguments": serializer.envelope([[1, 2]])}},
+                "signal_id": "nested", "arguments": serializer.envelope([[1, 2]])}},
             {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
-                "arguments": serializer.envelope([])}},
+                "signal_id": "empty", "arguments": serializer.envelope([])}},
+            *[{"event_type": "SignalApplied", "payload": {"signal_name": "updates-touch", "signal_id": identity}}
+              for identity in ("map", "nested", "empty")],
             {"event_type": "UpdateAccepted", "payload": {"update_id": "snapshot-update",
                 "arguments": serializer.envelope([updates.request("python", "example-snapshot-initial")])}},
             {"event_type": "UpdateCompleted", "payload": {"update_id": "snapshot-update",
@@ -195,6 +197,10 @@ class SnapshotObservationTest(unittest.IsolatedAsyncioTestCase):
                         await updates.snapshot(client)
             client.update_workflow.return_value["result_envelope"] = serializer.envelope(expected)
             with self.assertRaisesRegex(RuntimeError, "original completion"):
+                await updates.snapshot(client)
+            history["events"][-1]["payload"]["result"] = serializer.envelope(expected)
+            history["events"][3]["payload"]["signal_id"] = "nested"
+            with self.assertRaisesRegex(RuntimeError, "applied once each"):
                 await updates.snapshot(client)
 
 

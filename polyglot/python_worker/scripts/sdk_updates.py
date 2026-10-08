@@ -209,6 +209,12 @@ async def snapshot(client, stage="initial"):
                        "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
                       for event in history["events"]])
         raise RuntimeError("Snapshot update did not retain its one original completion.")
+    applied = [event for event in history["events"] if event["event_type"] == "SignalApplied"
+               and event["payload"].get("signal_name") == "updates-touch"]
+    signal_ids = {event["payload"].get("signal_id") for event in deliveries}
+    if (len(applied) != len(deliveries) or None in signal_ids or len(signal_ids) != len(deliveries)
+            or {event["payload"].get("signal_id") for event in applied} != signal_ids):
+        raise RuntimeError("Snapshot signals were not applied once each.")
     emit(scenario="rust-update-snapshot", stage=stage, expected=expected,
          query=query.get("result"), update=result, run_id=execution.run_id, update_id=update_id)
     if not same_result(query.get("result"), expected) or not same_result(result, expected):
