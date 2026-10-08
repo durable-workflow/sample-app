@@ -50,8 +50,10 @@ retain the latest state. Each final workflow result must contain that same state
 
 Python uses its bound update and query methods. PHP reconstructs state through
 the documented committed-history context. Rust reconstructs a typed workflow
-instance and queries its detached replayed state. These authoring surfaces share
-the same durable outcome.
+instance and queries its detached replayed state. PHP and Rust update handlers
+apply the current request after recovering earlier applied updates. Server
+records the new application when it commits the handler's completion. These
+authoring surfaces share the same durable outcome.
 
 Rust does not support synchronous pre-accept update validators. The installed
 crate must return `UnsupportedUpdateValidators` for a contract claiming one.

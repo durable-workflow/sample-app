@@ -489,7 +489,11 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
         return ['handler_runtime' => 'php', 'request' => $request];
     });
     $worker->registerUpdate('polyglot.php.updates', 'increment', static function (QueryContext $context, array $request) use ($codec): array {
-        return ['handler_runtime' => 'php', 'request' => $request, 'state' => appliedIncrementState($context, $codec)];
+        $state = appliedIncrementState($context, $codec);
+        $state['counter'] += $request['delta'];
+        $state['mutations'][] = $request['request_id'];
+
+        return ['handler_runtime' => 'php', 'request' => $request, 'state' => $state];
     });
     $worker->registerQuery('polyglot.php.updates', 'counter', static fn (QueryContext $context): array => appliedIncrementState($context, $codec));
 

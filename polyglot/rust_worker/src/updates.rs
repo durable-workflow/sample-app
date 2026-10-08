@@ -85,7 +85,9 @@ pub fn register(worker: &mut Worker) {
         Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input)}))
     });
     worker.register_update("polyglot.rust.updates", "increment", |ctx, input| async move {
-        Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input), "state": applied_counter(&ctx)?.value()}))
+        let mut counter = applied_counter(&ctx)?;
+        counter.apply(&input)?;
+        Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input), "state": counter.value()}))
     });
     worker.register_replayed_query::<Counter, _, _>(
         "polyglot.rust.updates",
