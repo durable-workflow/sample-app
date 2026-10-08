@@ -12,7 +12,7 @@ SDK_CHILDREN_COMPOSE_PROJECT_NAME=sample-app-sdk-children scripts/sdk-children.s
 ```
 
 It builds the existing PHP, Python and Rust workers from the frozen published
-tuple, starts an isolated Server/MySQL/Redis stack and runs all nine successful
+tuple, starts an isolated Server/MySQL/Redis stack with its queue consumer and runs all nine successful
 parent/child directions. For the five directions involving Rust, it also
 requires a typed child failure matched to durable history and a cold recovery.
 The child waits for a declared signal. All three workers are SIGKILLed, then the
