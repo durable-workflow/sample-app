@@ -28,6 +28,18 @@ request returns that original completion. A failed Rust handler must persist a
 failed update while leaving its workflow live. All three original workflows
 finish once after a signal.
 
+Set `SDK_UPDATES_FINISH_RACE_REPETITIONS` to run up to twenty additional Rust
+runs after the matrix. Each receives three signals and one stateful update,
+then receives its completion signal immediately after the update acknowledgement.
+The command requires the original run, exact final state, one workflow completion
+and one application of each signal. Actions runs ten repetitions. This probes
+the replay window without waiting for an extra query or signal-wait checkpoint.
+It uses the same published packages and isolated stack.
+
+A result error prints the current run, complete history and registered workers
+before cleanup. These bounded observations retain the original error and help
+distinguish an undelivered task from failed replay or an absent worker.
+
 The Python client must raise `UpdateFailed` with the handler's message and
 matching workflow, run, update and failure IDs. Repeating that failed request
 must return the same error identities with one durable failed completion.

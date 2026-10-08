@@ -4,11 +4,14 @@ set -euo pipefail
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-updates.sh' \
     'Runs nine PHP/Python/Rust client/update-handler directions, state mutation and queries, committed snapshots, all-worker replacement, duplicate requests, handler failure and validator refusal.' \
+    'SDK_UPDATES_FINISH_RACE_REPETITIONS=0..20 adds Rust signal completion during update replay.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_UPDATES_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
 fi
 [[ $# == 0 ]] || exit 2
+export SDK_UPDATES_FINISH_RACE_REPETITIONS="${SDK_UPDATES_FINISH_RACE_REPETITIONS:-0}"
+[[ "$SDK_UPDATES_FINISH_RACE_REPETITIONS" =~ ^([0-9]|1[0-9]|20)$ ]] || exit 2
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_UPDATES_COMPOSE_PROJECT_NAME:-sample-app-sdk-updates-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
@@ -48,6 +51,7 @@ observer() {
     -e DURABLE_WORKFLOW_UPDATE_ID -e DURABLE_WORKFLOW_UPDATE_RUNS \
     -e DURABLE_WORKFLOW_UPDATE_RESULTS -e DURABLE_WORKFLOW_UPDATE_QUEUED \
     -e DURABLE_WORKFLOW_STATE_RESULTS -e DURABLE_WORKFLOW_STATE_QUEUED -e DURABLE_WORKFLOW_STATE_DUPLICATES \
+    -e SDK_UPDATES_FINISH_RACE_REPETITIONS \
     smoke python /app/scripts/sdk_updates.py "$@"
 }
 
@@ -113,4 +117,5 @@ observer state_duplicates
 "${compose[@]}" exec -T --user 1000:1000 -e POLYGLOT_RUST_MODE=validator-refusal \
   rust-workflow-worker polyglot-rust-worker
 observer finish
+observer finish_race
 printf 'SDK updates pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

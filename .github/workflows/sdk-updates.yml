@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 25
     env:
       SDK_UPDATES_COMPOSE_PROJECT_NAME: sample-app-sdk-updates-${{ github.run_id }}-${{ github.run_attempt }}
+      SDK_UPDATES_FINISH_RACE_REPETITIONS: '10'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Resolve the exact published tuple
