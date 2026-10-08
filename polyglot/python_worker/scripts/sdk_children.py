@@ -382,7 +382,8 @@ async def inspect_cascade(record, parent, child):
     api = base if base.endswith("/api") else base + "/api"
     path = f"/workflows/{quote(record['parent_workflow_id'], safe='')}/runs/{quote(record['parent_run_id'], safe='')}/debug"
     async with httpx.AsyncClient(timeout=15, headers={"Authorization": "Bearer " + required("DURABLE_WORKFLOW_AUTH_TOKEN"),
-                                                    "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE")}) as client:
+            "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"), "Accept": "application/json",
+            "X-Durable-Workflow-Control-Plane-Version": "2"}) as client:
         response = await client.get(api + path)
         response.raise_for_status()
         view = response.json()["cancellation_cascade"]
