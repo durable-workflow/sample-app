@@ -1,8 +1,8 @@
 # Published remote activity retry and recovery
 
-This experiment extends the portable SDK audit with all five Rust-involving
-workflow/activity directions: PHP → Rust, Python → Rust, Rust → PHP,
-Rust → Python and Rust → Rust.
+This experiment runs every PHP, Python and Rust workflow/activity direction.
+Each workflow language calls an activity in each of the three languages,
+including its own language, for nine directions.
 
 For each direction, exercise four scenarios: a retryable first-attempt failure,
 worker SIGKILL during its first leased attempt, total deadline expiry across
@@ -60,7 +60,8 @@ unchanged terminal history, withdrawn attempt authority and the same total
 deadline. The callback gates, real deadline scanner and ordinary SDK APIs
 exercise these boundaries without editing database records or clocks.
 
-The focused Action runs all twenty cases, checks the observer's rejection of
+The focused Action runs all thirty-six cases, rejects omitted or duplicate
+directions, checks the observer's rejection of
 contradictory attempts and retains thin JSON observations and logs for 30 days.
 The same worker registration must take the following exhaustion case after
 deadline expiry. Results include run/execution/attempt IDs, installed SDK versions, deadlines,
