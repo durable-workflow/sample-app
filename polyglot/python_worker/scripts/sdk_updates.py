@@ -356,7 +356,10 @@ async def snapshot(client, stage="initial"):
              history=[{"event_type": event["event_type"], "sequence": event.get("sequence"),
                        "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
                       for event in history["events"]])
-        raise RuntimeError("Snapshot update did not retain its one original completion.")
+        error = RuntimeError("Snapshot update did not retain its one original completion.")
+        await failure_diagnostics(client, client.get_workflow_handle(execution.workflow_id),
+                                  "rust", error, "snapshot")
+        raise error
     applied = [event for event in history["events"] if event["event_type"] == "SignalApplied"
                and event["payload"].get("signal_name") == "updates-touch"]
     signal_ids = {event["payload"].get("signal_id") for event in deliveries}
@@ -415,22 +418,26 @@ async def completion_result(client, handle, runtime):
     try:
         return await handle.result(timeout=60, poll_interval=.25)
     except Exception as error:
-        # Read the failed run before the shell's exit trap removes its stack.
-        # Diagnostics must preserve the original result error and stay bounded.
-        try:
-            async with asyncio.timeout(10):
-                execution = await handle.describe()
-                history = await history_for(client, execution.workflow_id, execution.run_id)
-                workers = await client.list_workers(task_queue=execution.task_queue)
-                emit(scenario="workflow-completion-error", runtime=runtime,
-                     error={"type": type(error).__name__, "message": str(error)},
-                     execution=asdict(execution), history=history,
-                     workers=[worker.raw for worker in workers.workers])
-        except Exception as diagnostic_error:
-            emit(scenario="workflow-completion-error", runtime=runtime,
-                 error={"type": type(error).__name__, "message": str(error)},
-                 diagnostic_error=str(diagnostic_error))
+        await failure_diagnostics(client, handle, runtime, error, "completion")
         raise
+
+
+async def failure_diagnostics(client, handle, runtime, error, phase):
+    # Read the failed run before the shell's exit trap removes its stack.
+    # Diagnostics must preserve the original error and stay bounded.
+    try:
+        async with asyncio.timeout(10):
+            execution = await handle.describe()
+            history = await history_for(client, execution.workflow_id, execution.run_id)
+            workers = await client.list_workers(task_queue=execution.task_queue)
+            emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
+                 error={"type": type(error).__name__, "message": str(error)},
+                 execution=asdict(execution), history=history,
+                 workers=[worker.raw for worker in workers.workers])
+    except Exception as diagnostic_error:
+        emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
+             error={"type": type(error).__name__, "message": str(error)},
+             diagnostic_error=str(diagnostic_error))
 
 
 async def finish_race(client):
