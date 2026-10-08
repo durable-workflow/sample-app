@@ -7,7 +7,7 @@
     "sdk-php": "2.2.5",
     "sdk-python": "2.5.0",
     "sdk-rust": "3.4.0",
-    "server": "2.5.11",
+    "server": "2.5.12",
     "waterline": "2.3.1",
     "workflow": "2.5.3"
   }
