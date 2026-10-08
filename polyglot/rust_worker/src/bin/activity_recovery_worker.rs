@@ -34,25 +34,33 @@ async fn main() -> Result<()> {
         let claim: Value =
             serde_json::from_str(&env::var("ACTIVITY_RECOVERY_CLAIM").expect("claim"))?;
         if mode == "stale-heartbeat" {
-            let result = client.heartbeat_activity_task(
-                claim["task_id"].as_str().expect("task"),
-                claim["activity_attempt_id"].as_str().expect("attempt"),
-                claim["lease_owner"].as_str().expect("lease"),
-                json!({"note":"obsolete heartbeat"}),
-            ).await;
+            let result = client
+                .heartbeat_activity_task(
+                    claim["task_id"].as_str().expect("task"),
+                    claim["activity_attempt_id"].as_str().expect("attempt"),
+                    claim["lease_owner"].as_str().expect("lease"),
+                    json!({"note":"obsolete heartbeat"}),
+                )
+                .await;
             return match result {
                 Ok(reply) if !reply.heartbeat_recorded && reply.can_continue == Some(false) => {
-                    emit(json!({"event":"late-heartbeat-rejected","status":200,"reason":reply.reason,
-                        "heartbeat_recorded":reply.heartbeat_recorded,"can_continue":reply.can_continue}));
+                    emit(
+                        json!({"event":"late-heartbeat-rejected","status":200,"reason":reply.reason,
+                        "heartbeat_recorded":reply.heartbeat_recorded,"can_continue":reply.can_continue}),
+                    );
                     Ok(())
                 }
                 Err(Error::ActivityTaskRejected(rejection)) => {
-                    emit(json!({"event":"late-heartbeat-rejected","status":rejection.status,
-                        "reason":rejection.reason,"heartbeat_recorded":false,"can_continue":false}));
+                    emit(
+                        json!({"event":"late-heartbeat-rejected","status":rejection.status,
+                        "reason":rejection.reason,"heartbeat_recorded":false,"can_continue":false}),
+                    );
                     Ok(())
                 }
                 Err(error) => Err(error),
-                Ok(_) => Err(Error::WorkerLoop("obsolete heartbeat retained authority".into())),
+                Ok(_) => Err(Error::WorkerLoop(
+                    "obsolete heartbeat retained authority".into(),
+                )),
             };
         }
         let result = client
@@ -85,7 +93,12 @@ async fn main() -> Result<()> {
     let mut worker = Worker::new(client, queue)
         .worker_id(worker_id)
         .poll_timeout(Duration::from_secs(2));
-    if mode == "activity" && env::var("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION").ok().as_deref() == Some("1") {
+    if mode == "activity"
+        && env::var("ACTIVITY_RECOVERY_COOPERATIVE_CANCELLATION")
+            .ok()
+            .as_deref()
+            == Some("1")
+    {
         worker = worker.cooperative_cancellation(true);
     }
     if mode == "workflow" {
@@ -103,8 +116,18 @@ async fn main() -> Result<()> {
                     .retry_policy(
                         ActivityRetryPolicy::new(2).backoff_intervals([Duration::from_secs(2)]),
                     )
-                    .start_to_close_timeout(Duration::from_secs(if progress { 60 } else if total_deadline { 30 } else { 20 }))
-                    .schedule_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 120 }));
+                    .start_to_close_timeout(Duration::from_secs(if progress {
+                        60
+                    } else if total_deadline {
+                        30
+                    } else {
+                        20
+                    }))
+                    .schedule_to_close_timeout(Duration::from_secs(if total_deadline {
+                        30
+                    } else {
+                        120
+                    }));
                 if progress {
                     options = options.heartbeat_timeout(Duration::from_secs(10));
                 }
