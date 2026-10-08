@@ -6,6 +6,9 @@ pub fn register(worker: &mut Worker) {
         ctx.wait_signal("updates-finish").await?;
         Ok(json!({"workflow_runtime": "rust", "request": request}))
     });
+    worker
+        .declare_workflow_signals("polyglot.rust.updates", &["updates-finish"])
+        .expect("declare the update workflow's completion signal");
     worker.register_update("polyglot.rust.updates", "echo", |_ctx, input| async move {
         Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input)}))
     });
