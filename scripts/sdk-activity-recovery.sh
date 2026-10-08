@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-activity-recovery.sh [--result-dir DIR]' \
-    'Runs retry, activity-worker SIGKILL, total deadline expiry and retry exhaustion in all nine PHP/Python/Rust SDK directions.' \
+    'Runs retry, activity-worker SIGKILL, total deadline expiry, retry exhaustion and application progress heartbeats in all nine PHP/Python/Rust SDK directions.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME selects an isolated project. All task resources are removed.'
   exit 0
@@ -36,7 +36,7 @@ cleanup() {
     image="${COMPOSE_PROJECT_NAME}-${service}:latest"
     if docker image inspect "$image" >/dev/null 2>&1; then docker image rm --no-prune "$image" || return 1; fi
   done
-  rm -f "$result_dir"/proof/*.release "$result_dir"/proof/*.first-release "$result_dir"/proof/*.pending
+  rm -f "$result_dir"/proof/*.release "$result_dir"/proof/*.first-release "$result_dir"/proof/*.progress-ready "$result_dir"/proof/*.pending
   printf 'SDK activity cleanup complete: %s\n' "$result_dir"
   return "$code"
 }
@@ -68,14 +68,20 @@ snapshot() {
 }
 for direction in php:php php:python php:rust python:php python:python python:rust rust:php rust:python rust:rust; do
   export ACTIVITY_RECOVERY_WORKFLOW="${direction%%:*}" ACTIVITY_RECOVERY_ACTIVITY="${direction##*:}"
-  for scenario in retry worker-loss total-deadline retry-exhaustion; do
+  for scenario in retry worker-loss total-deadline retry-exhaustion progress-heartbeat; do
     export ACTIVITY_RECOVERY_SCENARIO="$scenario"
     export ACTIVITY_RECOVERY_CASE="$COMPOSE_PROJECT_NAME-$scenario-${direction/:/-}"
     observer start
     observer first
-    if [[ "$scenario" != worker-loss ]]; then
+    if [[ "$scenario" == progress-heartbeat ]]; then
+      activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
+      snapshot "$("${compose[@]}" ps -q "$activity_service")" > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.progress-container-before.json"
       observer release-first
-    else
+      observer progress
+    fi
+    if [[ "$scenario" != worker-loss && "$scenario" != progress-heartbeat ]]; then
+      observer release-first
+    elif [[ "$scenario" == worker-loss ]]; then
       activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
       old_container="$("${compose[@]}" ps -q "$activity_service")"
       snapshot "$old_container" > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.container-before.json"
@@ -89,12 +95,21 @@ for direction in php:php php:python php:rust python:php python:python python:rus
       snapshot "$new_container" > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.container-replacement.json"
     fi
     observer second
+    if [[ "$scenario" == progress-heartbeat ]]; then
+      snapshot "$("${compose[@]}" ps -q "$activity_service")" > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.progress-container-after.json"
+    fi
     ACTIVITY_RECOVERY_CLAIM="$(jq -c .claim "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.first.json")"
     export ACTIVITY_RECOVERY_CLAIM
     "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
       -e ACTIVITY_RECOVERY_MODE=stale -e ACTIVITY_RECOVERY_CLAIM recovery-workflow-rust \
       > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.stale.json"
     observer stale
+    if [[ "$scenario" == progress-heartbeat ]]; then
+      "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
+        -e ACTIVITY_RECOVERY_MODE=stale-heartbeat -e ACTIVITY_RECOVERY_CLAIM recovery-workflow-rust \
+        > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.late-heartbeat.json"
+      observer late-heartbeat
+    fi
     if [[ "$scenario" == total-deadline || "$scenario" == retry-exhaustion ]]; then
       if [[ "$scenario" == retry-exhaustion ]]; then observer release; fi
       observer terminal

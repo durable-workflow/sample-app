@@ -31,12 +31,16 @@ if ($mode === 'workflow') {
     $worker->registerWorkflow('sample-app.activity-recovery.php',
         static function (WorkflowContext $context, array $request): array {
             $runtime = $request['activity_runtime'];
-            $result = $context->activity('sample-app.activity-recovery.'.$runtime.'.work', [$request], [
+            $options = [
                 'queue' => 'activity-recovery-activity-'.$runtime,
                 'retry_policy' => ['max_attempts' => 2, 'backoff_seconds' => [2]],
-                'start_to_close_timeout' => $request['scenario'] === 'total-deadline' ? 30 : 20,
+                'start_to_close_timeout' => $request['scenario'] === 'progress-heartbeat' ? 60 : ($request['scenario'] === 'total-deadline' ? 30 : 20),
                 'schedule_to_close_timeout' => $request['scenario'] === 'total-deadline' ? 30 : 120,
-            ]);
+            ];
+            if ($request['scenario'] === 'progress-heartbeat') {
+                $options['heartbeat_timeout'] = 10;
+            }
+            $result = $context->activity('sample-app.activity-recovery.'.$runtime.'.work', [$request], $options);
             return ['workflow_runtime' => 'php', 'activity' => $result];
         });
 } elseif ($mode === 'activity') {
@@ -51,6 +55,28 @@ if ($mode === 'workflow') {
             $path = getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.attempt-'.$context->attemptNumber.'.json';
             file_put_contents($path.'.pending', json_encode($receipt, JSON_THROW_ON_ERROR));
             rename($path.'.pending', $path);
+            if ($request['scenario'] === 'progress-heartbeat') {
+                if ($context->attemptNumber === 1) {
+                    recoveryGate($request['case_id'], '.first-release');
+                }
+                $step = 0;
+                do {
+                    ++$step;
+                    $context->heartbeat(['case_id' => $request['case_id'], 'runtime' => 'php',
+                        'attempt' => $context->attemptNumber, 'step' => $step, 'fraction' => 0.5,
+                        'ready' => true, 'optional' => null, 'note' => 'café ✓']);
+                    if ($context->attemptNumber === 1 && $step === 5) {
+                        $ready = getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.progress-ready';
+                        file_put_contents($ready, 'ready');
+                        recoveryGate($request['case_id'], '.release');
+                        throw new RuntimeException('Expired first attempt returned to application code.');
+                    }
+                    if (is_file(getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.release')) {
+                        return $receipt;
+                    }
+                    usleep(3000000);
+                } while (true);
+            }
             if ($context->attemptNumber === 1) {
                 recoveryGate($request['case_id'], '.first-release');
                 throw new RuntimeException('injected first-attempt failure');

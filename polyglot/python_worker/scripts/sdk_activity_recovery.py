@@ -5,13 +5,13 @@ import asyncio
 import importlib.metadata
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from durable_workflow import Client, serializer
 
 DIRECTIONS = {(workflow, activity) for workflow in ("php", "python", "rust") for activity in ("php", "python", "rust")}
-SCENARIOS = {"retry", "worker-loss", "total-deadline", "retry-exhaustion"}
+SCENARIOS = {"retry", "worker-loss", "total-deadline", "retry-exhaustion", "progress-heartbeat"}
 FAILURE_SCENARIOS = {"total-deadline", "retry-exhaustion"}
 TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated", "WorkflowTimedOut"}
 
@@ -93,7 +93,51 @@ def verify_attempts(history, record, first, second):
     require(timestamp(starts[1]["timestamp"]) >= timestamp(retry["payload"]["retry_available_at"]), "Retry started before its durable backoff.")
     if record["scenario"] == "worker-loss":
         require(retry["payload"].get("timeout_kind") == "start_to_close", "Worker loss did not exhaust the original attempt deadline.")
+    if record["scenario"] == "progress-heartbeat":
+        require(retry["payload"].get("timeout_kind") == "heartbeat", "Missing progress did not cause a heartbeat retry.")
     return scheduled["activity_execution_id"]
+
+
+def verify_progress(history, record, first, status):
+    beats = [event for event in events(history, "ActivityHeartbeatRecorded")
+             if event["payload"]["activity_attempt_id"] == first["claim"]["activity_attempt_id"]]
+    require(len(beats) == 5, "Expected five actual application progress heartbeats.")
+    execution_id = one(history, "ActivityScheduled")["payload"]["activity_execution_id"]
+    for step, event in enumerate(beats, start=1):
+        payload = event["payload"]
+        details = payload.get("progress", {}).get("details")
+        expected = {"case_id": record["workflow_id"], "runtime": record["activity_runtime"],
+                    "attempt": 1, "step": step, "fraction": 0.5,
+                    "ready": True, "optional": None, "note": "café ✓"}
+        require(payload["activity_execution_id"] == execution_id and payload["attempt_number"] == 1
+                and details == expected and type(details["step"]) is int
+                and type(details["ready"]) is bool and type(details["fraction"]) is float,
+                "Progress lost its actual attempt, ordered step, typed values or Unicode details.")
+    times = [timestamp(event["payload"]["heartbeat_at"]) for event in beats]
+    require(all(later > earlier for earlier, later in zip(times, times[1:]))
+            and (times[-1] - times[0]).total_seconds() > 10,
+            "Progress did not keep the same attempt alive beyond its first heartbeat deadline.")
+    require(status.get("can_continue") is True and status.get("heartbeat_recorded") is False
+            and abs((timestamp(status["last_heartbeat_at"]) - times[-1]).total_seconds()) < 1
+            and abs((timestamp(status["deadlines"]["heartbeat"]) - times[-1] - timedelta(seconds=10)).total_seconds()) < 1,
+            "Read-only status does not expose the accepted progress and renewed heartbeat deadline.")
+    for kind in ("start_to_close", "schedule_to_close"):
+        require(status["deadlines"][kind] == first["status"]["deadlines"][kind],
+                "Progress changed the original attempt or total deadline.")
+    require(len(events(history, "ActivityStarted")) == 1, "Healthy progress caused another attempt.")
+    return beats
+
+
+def verify_unchanged_history(history, reference, record, second):
+    if record["scenario"] != "progress-heartbeat":
+        require(history == reference, "Stale completion changed durable history.")
+        return
+    prefix = reference["events"]
+    require(history["events"][:len(prefix)] == prefix, "A stale write changed the acknowledged history prefix.")
+    require(all(event["event_type"] == "ActivityHeartbeatRecorded"
+                and event["payload"]["activity_attempt_id"] == second["claim"]["activity_attempt_id"]
+                for event in history["events"][len(prefix):]),
+            "An obsolete claim changed history beyond live retry progress.")
 
 
 def verify_terminal_failure(history, record, first, second):
@@ -181,6 +225,19 @@ async def main(phase):
         if phase == "release":
             path(".release").touch()
             return
+        if phase == "progress":
+            async with asyncio.timeout(40):
+                while not path(".progress-ready").exists():
+                    await asyncio.sleep(0.2)
+            first = read(".first.json")
+            status = await ownership(client, first["claim"])
+            run, history = await observe(client, record)
+            require(run.run_id == record["run_id"] and run.status not in {"failed", "completed"},
+                    "Progress belongs to another or terminal run.")
+            beats = verify_progress(history, record, first, status)
+            save(".progress.json", {"history": history, "status": status, "heartbeats": beats})
+            emit({**record, "checkpoint": "progress", "accepted_heartbeats": len(beats), "deadlines": status["deadlines"]})
+            return
         if phase in {"first", "second"}:
             attempt = 1 if phase == "first" else 2
             async with asyncio.timeout(50):
@@ -201,10 +258,13 @@ async def main(phase):
             if phase == "first":
                 require(len(events(history, "ActivityStarted")) == 1, "First checkpoint has additional attempts.")
                 policy = one(history, "ActivityScheduled")["payload"]["activity"]["retry_policy"]
-                attempt_budget, total_budget = (30, 30) if record["scenario"] == "total-deadline" else (20, 120)
+                attempt_budget, total_budget = ((60, 120) if record["scenario"] == "progress-heartbeat"
+                                               else ((30, 30) if record["scenario"] == "total-deadline" else (20, 120)))
                 require(policy["max_attempts"] == 2 and policy["backoff_seconds"] == [2]
                         and policy["start_to_close_timeout"] == attempt_budget and policy["schedule_to_close_timeout"] == total_budget,
                         "SDK command did not record the selected attempt, backoff and timeout budgets.")
+                if record["scenario"] == "progress-heartbeat":
+                    require(policy["heartbeat_timeout"] == 10, "SDK did not record the ten-second progress heartbeat budget.")
             else:
                 first = read(".first.json")
                 verify_attempts(history, record, first["claim"], claim)
@@ -218,10 +278,32 @@ async def main(phase):
                         "Retry reset the original total deadline.")
                 require(timestamp(status["deadlines"]["start_to_close"]) > timestamp(first["status"]["deadlines"]["start_to_close"]),
                         "Retry did not receive its own attempt deadline.")
+                if record["scenario"] == "progress-heartbeat":
+                    progress = read(".progress.json")
+                    retry = one(history, "ActivityRetryScheduled")
+                    require(timestamp(retry["timestamp"]) >= timestamp(progress["status"]["deadlines"]["heartbeat"])
+                            and timestamp(retry["timestamp"]) < timestamp(first["status"]["deadlines"]["start_to_close"])
+                            and claim["lease_owner"] == first["claim"]["lease_owner"],
+                            "Heartbeat retry expired early, used another deadline or lost worker continuity.")
+                    beats = [event for event in events(history, "ActivityHeartbeatRecorded")
+                             if event["payload"]["activity_attempt_id"] == first["claim"]["activity_attempt_id"]]
+                    require(beats == progress["heartbeats"], "First attempt progress changed after timeout.")
             save(f".{phase}.json", snapshot)
             emit({**record, "checkpoint": phase, "claim": claim, "deadlines": status["deadlines"]})
             return
         first, second = read(".first.json"), read(".second.json")
+        if phase == "late-heartbeat":
+            rejection = read(".late-heartbeat.json")
+            require(rejection["event"] == "late-heartbeat-rejected" and rejection["status"] in {200, 409}
+                    and rejection["heartbeat_recorded"] is False and rejection["can_continue"] is False
+                    and rejection["reason"] in {"attempt_closed", "stale_attempt", "stale_task", "task_not_leased"},
+                    "Expired attempt heartbeat did not withdraw authority precisely.")
+            _, history = await observe(client, record)
+            verify_unchanged_history(history, read(".stale-check.json")["history"], record, second)
+            await ownership(client, second["claim"])
+            save(".late-heartbeat-check.json", {"rejection": rejection, "history": history})
+            emit({**record, "checkpoint": "late-heartbeat", "reason": rejection["reason"]})
+            return
         if phase in {"terminal", "terminal-stale"}:
             async with asyncio.timeout(50):
                 while True:
@@ -265,9 +347,14 @@ async def main(phase):
                     and rejection["task_id"] == first["claim"]["task_id"]
                     and rejection["activity_attempt_id"] == first["claim"]["activity_attempt_id"], "Stale completion lacked precise claim refusal.")
             _, history = await observe(client, record)
-            require(history == second["history"], "Stale completion changed durable history.")
+            verify_unchanged_history(history, second["history"], record, second)
             status = await ownership(client, second["claim"])
-            require(status["deadlines"] == second["status"]["deadlines"], "Stale completion changed current deadlines.")
+            if record["scenario"] == "progress-heartbeat":
+                require({key: value for key, value in status["deadlines"].items() if key != "heartbeat"}
+                        == {key: value for key, value in second["status"]["deadlines"].items() if key != "heartbeat"},
+                        "Stale completion changed a fixed deadline.")
+            else:
+                require(status["deadlines"] == second["status"]["deadlines"], "Stale completion changed current deadlines.")
             save(".stale-check.json", {"rejection": rejection, "history": history, "status": status})
             emit({**record, "stale_rejection": rejection["reason"]})
             return
@@ -302,11 +389,25 @@ async def main(phase):
                     and killed["State"]["ExitCode"] == 137 and not killed["State"]["Running"]
                     and not killed["State"]["OOMKilled"] and replacement["State"]["Running"], "Missing actual SIGKILL and fresh-container recovery.")
             report["physical_failure"] = {"before": before, "killed": killed, "replacement": replacement}
+        if record["scenario"] == "progress-heartbeat":
+            before, after = read(".progress-container-before.json"), read(".progress-container-after.json")
+            require(before["Id"] == after["Id"] and before["State"]["Pid"] == after["State"]["Pid"]
+                    and before["State"]["StartedAt"] == after["State"]["StartedAt"]
+                    and before["State"]["Running"] and after["State"]["Running"]
+                    and not after["State"]["OOMKilled"], "Progress timeout was hidden by a worker container restart.")
+            progress = read(".progress.json")
+            beats = [event for event in events(history, "ActivityHeartbeatRecorded")
+                     if event["payload"]["activity_attempt_id"] == first["claim"]["activity_attempt_id"]]
+            require(beats == progress["heartbeats"], "Late heartbeat changed expired attempt progress.")
+            report["application_progress"] = progress
+            report["late_heartbeat"] = read(".late-heartbeat-check.json")
+            report["worker_continuity"] = {"before": before, "after": after}
         save(".result.json", report)
         emit(report)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=("start", "first", "release-first", "second", "stale", "release", "verify", "terminal", "terminal-stale", "summary"))
+    parser.add_argument("phase", choices=("start", "first", "release-first", "progress", "second", "stale", "late-heartbeat",
+                                         "release", "verify", "terminal", "terminal-stale", "summary"))
     asyncio.run(main(parser.parse_args().phase))
