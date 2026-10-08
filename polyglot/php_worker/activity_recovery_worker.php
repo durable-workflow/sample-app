@@ -72,6 +72,7 @@ if ($mode === 'workflow') {
                         $ready = getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.progress-ready';
                         file_put_contents($ready, 'ready');
                         recoveryGate($request['case_id'], '.release');
+                        file_put_contents(getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.expired-resumed', 'expired callback resumed');
                         throw new RuntimeException('Expired first attempt returned to application code.');
                     }
                     if (is_file(getenv('ACTIVITY_RECOVERY_PROOF').'/'.$request['case_id'].'.release')) {

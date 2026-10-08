@@ -53,7 +53,8 @@ protocol 1.20 before starting its activity. PHP uses
 `enableCooperativeCancellation: true`, Python advertises
 `cooperative_cancellation`, and Rust uses `.cooperative_cancellation(true)`.
 These workers observe attempt authority independently of application
-heartbeats and stop the expired callback. The first four scenarios retain
+heartbeats and stop the expired callback. Releasing the retry's final gate
+must not let the expired callback resume application code. The first four scenarios retain
 their ordinary worker mode. The runner changes modes between cases, then
 requires no container restart during the actual heartbeat-expiry case.
 

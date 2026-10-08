@@ -390,6 +390,7 @@ async def main(phase):
                     and not killed["State"]["OOMKilled"] and replacement["State"]["Running"], "Missing actual SIGKILL and fresh-container recovery.")
             report["physical_failure"] = {"before": before, "killed": killed, "replacement": replacement}
         if record["scenario"] == "progress-heartbeat":
+            require(not path(".expired-resumed").exists(), "The expired callback resumed after its replacement was released.")
             before, after = read(".progress-container-before.json"), read(".progress-container-after.json")
             require(before["Id"] == after["Id"] and before["State"]["Pid"] == after["State"]["Pid"]
                     and before["State"]["StartedAt"] == after["State"]["StartedAt"]

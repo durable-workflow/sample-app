@@ -152,6 +152,7 @@ async fn main() -> Result<()> {
                     if ctx.attempt_number == 1 && step == 5 {
                         fs::write(root.join(format!("{case_id}.progress-ready")), "ready").expect("publish progress");
                         gate(case_id, ".release").await?;
+                        fs::write(root.join(format!("{case_id}.expired-resumed")), "expired callback resumed").expect("publish forbidden resumption");
                         return Err(Error::WorkerLoop("expired first attempt returned to application code".into()));
                     }
                     if root.join(format!("{case_id}.release")).exists() {

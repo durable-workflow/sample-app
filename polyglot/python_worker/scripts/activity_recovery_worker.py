@@ -58,6 +58,7 @@ async def recover(request):
                 path = Path(os.environ["ACTIVITY_RECOVERY_PROOF"]) / f'{request["case_id"]}.progress-ready'
                 path.touch()
                 await gate(request["case_id"], ".release")
+                (path.parent / f'{request["case_id"]}.expired-resumed').touch()
                 raise RuntimeError("Expired first attempt returned to application code.")
             if (Path(os.environ["ACTIVITY_RECOVERY_PROOF"]) / f'{request["case_id"]}.release').exists():
                 return receipt
