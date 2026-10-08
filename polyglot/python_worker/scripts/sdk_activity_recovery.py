@@ -11,6 +11,8 @@ from pathlib import Path
 from durable_workflow import Client, serializer
 
 DIRECTIONS = {("php", "rust"), ("python", "rust"), ("rust", "php"), ("rust", "python"), ("rust", "rust")}
+SCENARIOS = {"retry", "worker-loss", "total-deadline", "retry-exhaustion"}
+FAILURE_SCENARIOS = {"total-deadline", "retry-exhaustion"}
 TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated", "WorkflowTimedOut"}
 
 
@@ -94,12 +96,50 @@ def verify_attempts(history, record, first, second):
     return scheduled["activity_execution_id"]
 
 
+def verify_terminal_failure(history, record, first, second):
+    require(record["scenario"] in FAILURE_SCENARIOS, "Not a terminal activity scenario.")
+    execution_id = verify_attempts(history, record, first["claim"], second["claim"])
+    require(one(history, "WorkflowStarted")["payload"]["workflow_run_id"] == record["run_id"],
+            "Failure history belongs to another run.")
+    require(history["events"][:len(second["history"]["events"])] == second["history"]["events"],
+            "Failure changed the acknowledged history prefix.")
+    terminals = [event for event in history["events"] if event["event_type"] in TERMINAL]
+    require(len(terminals) == 1 and terminals[0]["event_type"] == "WorkflowFailed",
+            "Unhandled activity failure did not produce one workflow failure.")
+    activity_terminals = [event for event in history["events"] if event["event_type"] in
+                          {"ActivityCompleted", "ActivityFailed", "ActivityTimedOut", "ActivityCancelled"}]
+    kind = "ActivityTimedOut" if record["scenario"] == "total-deadline" else "ActivityFailed"
+    require(len(activity_terminals) == 1 and activity_terminals[0]["event_type"] == kind,
+            "Activity has another terminal result or successful completion.")
+    terminal = activity_terminals[0]
+    failure = terminal["payload"]
+    require(failure["activity_execution_id"] == execution_id
+            and failure["activity_attempt_id"] == second["claim"]["activity_attempt_id"]
+            and failure["attempt_number"] == 2, "Failure is not the actual second attempt.")
+    require(timestamp(terminals[0]["timestamp"]) >= timestamp(terminal["timestamp"]),
+            "Workflow failure preceded its activity failure.")
+    require(failure["message"] and failure["message"] in terminals[0]["payload"]["message"],
+            "Workflow failure lost the actual terminal activity cause.")
+    deadline = timestamp(first["status"]["deadlines"]["schedule_to_close"])
+    if record["scenario"] == "total-deadline":
+        require(failure.get("timeout_kind") == "schedule_to_close"
+                and timestamp(terminal["timestamp"]) >= deadline,
+                "Total deadline expired early or as a different timeout.")
+    else:
+        require(failure.get("non_retryable") is False
+                and "injected second-attempt failure" in failure["message"]
+                and "injected second-attempt failure" in terminals[0]["payload"]["message"],
+                "Exhaustion lost the actual retryable activity failure.")
+        require(timestamp(terminal["timestamp"]) < deadline, "Exhaustion was caused by the total deadline.")
+    return execution_id
+
+
 async def main(phase):
     if phase == "summary":
         proof = Path(os.environ["ACTIVITY_RECOVERY_PROOF"])
         results = [json.loads(file.read_text()) for file in proof.glob("*.result.json")]
-        require(len(results) == 10 and {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]) for row in results}
-                == {(w, a, scenario) for w, a in DIRECTIONS for scenario in ("retry", "worker-loss")}, "Missing or duplicate recovery directions.")
+        require(len(results) == 20 and {(row["workflow_runtime"], row["activity_runtime"], row["scenario"]) for row in results}
+                == {(w, a, scenario) for w, a in DIRECTIONS for scenario in SCENARIOS}, "Missing or duplicate recovery directions.")
         report = {"outcome": "pass", "schema": "durable-workflow.sample-app.activity-recovery/v1",
                   "runner_commit": os.environ.get("ACTIVITY_RECOVERY_RUNNER_COMMIT"),
                   "observer_sdk_version": importlib.metadata.version("durable-workflow"),
@@ -113,6 +153,7 @@ async def main(phase):
             require((w, a) in DIRECTIONS, "Unsupported recovery direction.")
             request = {"case_id": os.environ["ACTIVITY_RECOVERY_CASE"], "activity_runtime": a,
                        "scenario": os.environ["ACTIVITY_RECOVERY_SCENARIO"]}
+            require(request["scenario"] in SCENARIOS, "Unsupported recovery scenario.")
             await client.start_workflow(workflow_type=f"sample-app.activity-recovery.{w}",
                                         task_queue=f"activity-recovery-workflow-{w}", workflow_id=request["case_id"], input=[request])
             run = await client.describe_workflow(request["case_id"])
@@ -149,8 +190,9 @@ async def main(phase):
             if phase == "first":
                 require(len(events(history, "ActivityStarted")) == 1, "First checkpoint has additional attempts.")
                 policy = one(history, "ActivityScheduled")["payload"]["activity"]["retry_policy"]
+                attempt_budget, total_budget = (60, 30) if record["scenario"] == "total-deadline" else (20, 120)
                 require(policy["max_attempts"] == 2 and policy["backoff_seconds"] == [2]
-                        and policy["start_to_close_timeout"] == 20 and policy["schedule_to_close_timeout"] == 120,
+                        and policy["start_to_close_timeout"] == attempt_budget and policy["schedule_to_close_timeout"] == total_budget,
                         "SDK command did not record the selected attempt, backoff and timeout budgets.")
             else:
                 first = read(".first.json")
@@ -169,6 +211,42 @@ async def main(phase):
             emit({**record, "checkpoint": phase, "claim": claim, "deadlines": status["deadlines"]})
             return
         first, second = read(".first.json"), read(".second.json")
+        if phase in {"terminal", "terminal-stale"}:
+            async with asyncio.timeout(50):
+                while True:
+                    run, history = await observe(client, record)
+                    if run.status in {"completed", "failed", "cancelled", "terminated", "timed_out"}:
+                        break
+                    await asyncio.sleep(0.2)
+            save(f".{phase}.observation.json", {"history": history, "run_status": run.status})
+            require(run.run_id == record["run_id"] and run.status == "failed", "Original run did not fail.")
+            execution_id = verify_terminal_failure(history, record, first, second)
+            if phase == "terminal":
+                save(".terminal.json", {"history": history})
+                emit({**record, "checkpoint": "terminal", "run_status": run.status})
+                return
+            rejection = read(".terminal-stale.json")
+            require(rejection["event"] == "stale-rejected" and rejection["status"] == 409
+                    and rejection["reason"] in {"stale_attempt", "attempt_closed"}
+                    and rejection["task_id"] == second["claim"]["task_id"]
+                    and rejection["activity_attempt_id"] == second["claim"]["activity_attempt_id"],
+                    "Closed attempt did not refuse a late result precisely.")
+            require(history == read(".terminal.json")["history"], "Late completion changed terminal history.")
+            status = await client.activity_task_status(**{key: second["claim"][key]
+                                                       for key in ("task_id", "activity_attempt_id", "lease_owner")})
+            require(status.get("can_continue") is False and status.get("heartbeat_recorded") is False
+                    and status.get("reason") == "attempt_closed"
+                    and status.get("activity_status") == "failed" and status.get("attempt_status") == "failed"
+                    and status.get("deadlines", {}).get("schedule_to_close") == first["status"]["deadlines"]["schedule_to_close"],
+                    "Closed attempt retained authority or changed the original total deadline.")
+            report = {**record, "outcome": "pass", "activity_execution_id": execution_id,
+                      "original_total_deadline": first["status"]["deadlines"]["schedule_to_close"],
+                      "first_claim": first["claim"], "second_claim": second["claim"],
+                      "stale_rejection": read(".stale-check.json")["rejection"],
+                      "terminal_rejection": rejection, "terminal_status": status, "history": history}
+            save(".result.json", report)
+            emit(report)
+            return
         if phase == "stale":
             rejection = read(".stale.json")
             require(rejection["event"] == "stale-rejected" and rejection["status"] == 409
@@ -219,5 +297,5 @@ async def main(phase):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=("start", "first", "release-first", "second", "stale", "release", "verify", "summary"))
+    parser.add_argument("phase", choices=("start", "first", "release-first", "second", "stale", "release", "verify", "terminal", "terminal-stale", "summary"))
     asyncio.run(main(parser.parse_args().phase))
