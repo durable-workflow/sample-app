@@ -38,6 +38,8 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke rust-workflow-worker
+"${compose[@]}" run --rm --no-deps --user 1000:1000 smoke \
+  python -m unittest discover -s /app/scripts -p test_sdk_namespaces.py
 "${compose[@]}" pull --policy always bootstrap server timer-queue
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
@@ -54,6 +56,12 @@ caller() {
   if [[ "$role" == worker || "$role" == both ]]; then
     worker="dwr_fixture_worker_${credential_namespace//-/_}_0123456789"
   fi
+  if [[ "$role" == worker-as-control ]]; then
+    control="dwr_fixture_worker_${credential_namespace//-/_}_0123456789"
+  fi
+  if [[ "$role" == operator-as-worker ]]; then
+    worker="dwr_fixture_operator_${credential_namespace//-/_}_0123456789"
+  fi
   "${compose[@]}" run --rm --no-deps --user 1000:1000 \
     -e DURABLE_WORKFLOW_AUTH_TOKEN= \
     -e "DURABLE_WORKFLOW_CONTROL_TOKEN=$control" -e "DURABLE_WORKFLOW_WORKER_TOKEN=$worker" \
@@ -69,9 +77,11 @@ for namespace in rust-namespace-a rust-namespace-b; do
 done
 for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" both routed same-workflow-id
-  caller "$namespace" "$namespace" worker deny-describe same-workflow-id
+  caller "$namespace" "$namespace" worker missing-control same-workflow-id
+  caller "$namespace" "$namespace" worker-as-control deny-describe same-workflow-id
   # The operator role can perform diagnostic registration. Polling requires worker authority.
-  caller "$namespace" "$namespace" operator deny-poll same-workflow-id
+  caller "$namespace" "$namespace" operator missing-worker same-workflow-id
+  caller "$namespace" "$namespace" operator-as-worker deny-poll same-workflow-id
 done
 # Namespace A credentials cannot access B, default, or an unregistered namespace.
 for namespace in rust-namespace-b default missing-namespace; do

@@ -21,6 +21,10 @@ own worker credential. Callers have only their operator credential. A client
 with both credentials also proves that control and worker requests select the
 correct credential.
 
+The SDK reports typed missing-role diagnostics when only the opposite role's
+credential is configured. Supplying that credential for the wrong plane must
+also produce an explicit Server authorization failure.
+
 The experiment requires explicit authorization failures for wrong-role polls
 and reads, and for cross-namespace reads, signals, starts, registration and
 polls. A namespace-bound credential is also refused in the default namespace

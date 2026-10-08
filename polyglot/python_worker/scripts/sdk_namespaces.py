@@ -68,18 +68,23 @@ def one(history, kind):
 def parked_identity(history):
     started = one(history, "WorkflowStarted")["payload"]
     scheduled = one(history, "ActivityScheduled")["payload"]
+    activity_started = one(history, "ActivityStarted")["payload"]
     completed = one(history, "ActivityCompleted")["payload"]
     opened = one(history, "SignalWaitOpened")["payload"]
-    if (not started.get("workflow_run_id") or not scheduled.get("activity_command_id")
-            or scheduled["activity_command_id"] != completed.get("activity_command_id")
+    if (not started.get("workflow_run_id") or not scheduled.get("activity_execution_id")
+            or scheduled["activity_execution_id"] != completed.get("activity_execution_id")
+            or scheduled["activity_execution_id"] != activity_started.get("activity_execution_id")
+            or not activity_started.get("activity_attempt_id")
+            or activity_started["activity_attempt_id"] != completed.get("activity_attempt_id")
             or not opened.get("signal_wait_id") or opened.get("signal_name") != "namespace-finish"):
         raise RuntimeError("Run, activity, or signal wait lost its durable identity.")
-    return {"run_id": started["workflow_run_id"], "activity_command_id": scheduled["activity_command_id"],
+    return {"run_id": started["workflow_run_id"], "activity_execution_id": scheduled["activity_execution_id"],
+            "activity_attempt_id": activity_started["activity_attempt_id"],
             "wait_id": opened["signal_wait_id"], "wait_sequence": opened["sequence"]}
 
 
 def verify_history(history, record):
-    if parked_identity(history) != {key: record[key] for key in ("run_id", "activity_command_id", "wait_id", "wait_sequence")}:
+    if parked_identity(history) != {key: record[key] for key in ("run_id", "activity_execution_id", "activity_attempt_id", "wait_id", "wait_sequence")}:
         raise RuntimeError("Worker replacement changed the original run, activity, or signal wait.")
     received = one(history, "SignalReceived")["payload"]
     applied = one(history, "SignalApplied")["payload"]
