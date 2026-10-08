@@ -30,6 +30,7 @@ if $external_effects; then
 fi
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml" \
   -f "$repo_root/polyglot/docker-compose.activity-recovery.yml")
+if $external_effects; then compose+=(--profile external-effects); fi
 workers=(recovery-workflow-php recovery-workflow-python recovery-workflow-rust \
   recovery-activity-php recovery-activity-python recovery-activity-rust)
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
@@ -62,7 +63,7 @@ done
   python -m unittest discover -s /app/scripts -p test_sdk_activity_recovery.py
 "${compose[@]}" pull --policy always bootstrap server recovery-timeouts
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server recovery-timeouts "${workers[@]}"
-if $external_effects; then "${compose[@]}" --profile external-effects up -d --wait --no-build recovery-effects; fi
+if $external_effects; then "${compose[@]}" up -d --wait --no-build recovery-effects; fi
 docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
 docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
   "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"

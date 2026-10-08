@@ -2,7 +2,6 @@ name: published SDK external effect recovery
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - .github/workflows/sdk-external-effects.yml
       - scripts/sdk-activity-recovery.sh
@@ -49,7 +48,7 @@ jobs:
         run: |
           export ACTIVITY_RECOVERY_UID="$(id -u)" ACTIVITY_RECOVERY_GID="$(id -g)"
           docker compose --project-directory polyglot -f polyglot/docker-compose.yml \
-            -f polyglot/docker-compose.activity-recovery.yml down --volumes --remove-orphans
+            -f polyglot/docker-compose.activity-recovery.yml --profile external-effects down --volumes --remove-orphans
           docker image rm --no-prune "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" \
             "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" "${COMPOSE_PROJECT_NAME}-smoke:latest" || true
       - name: Retain observations
