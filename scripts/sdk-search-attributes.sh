@@ -40,11 +40,15 @@ cleanup() {
 }
 trap cleanup EXIT
 printf 'Search attributes start: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'Disposable proof directory: %s\n' "$SEARCH_ATTRIBUTES_PROOF_DIR"
+printf 'Runner commit: %s\n' "$(git -C "$repo_root" rev-parse HEAD)"
 for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke php-workflow-worker rust-workflow-worker
+"${compose[@]}" run --rm --no-deps --user "$SEARCH_ATTRIBUTES_UID:$SEARCH_ATTRIBUTES_GID" \
+  smoke python -m unittest discover -s /app/scripts -p test_rust_search_attributes.py
 "${compose[@]}" pull --policy always bootstrap server
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
