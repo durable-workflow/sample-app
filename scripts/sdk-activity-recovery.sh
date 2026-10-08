@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-activity-recovery.sh [--result-dir DIR]' \
-    'Runs retry and activity-worker SIGKILL in all five Rust-involving SDK directions.' \
+    'Runs retry, activity-worker SIGKILL, total deadline expiry and retry exhaustion in five Rust-involving SDK directions.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME selects an isolated project. All task resources are removed.'
   exit 0
@@ -68,12 +68,12 @@ snapshot() {
 }
 for direction in php:rust python:rust rust:php rust:python rust:rust; do
   export ACTIVITY_RECOVERY_WORKFLOW="${direction%%:*}" ACTIVITY_RECOVERY_ACTIVITY="${direction##*:}"
-  for scenario in retry worker-loss; do
+  for scenario in retry worker-loss total-deadline retry-exhaustion; do
     export ACTIVITY_RECOVERY_SCENARIO="$scenario"
     export ACTIVITY_RECOVERY_CASE="$COMPOSE_PROJECT_NAME-$scenario-${direction/:/-}"
     observer start
     observer first
-    if [[ "$scenario" == retry ]]; then
+    if [[ "$scenario" != worker-loss ]]; then
       observer release-first
     else
       activity_service="recovery-activity-$ACTIVITY_RECOVERY_ACTIVITY"
@@ -95,8 +95,20 @@ for direction in php:rust python:rust rust:php rust:python rust:rust; do
       -e ACTIVITY_RECOVERY_MODE=stale -e ACTIVITY_RECOVERY_CLAIM recovery-workflow-rust \
       > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.stale.json"
     observer stale
-    observer release
-    observer verify
+    if [[ "$scenario" == total-deadline || "$scenario" == retry-exhaustion ]]; then
+      if [[ "$scenario" == retry-exhaustion ]]; then observer release; fi
+      observer terminal
+      ACTIVITY_RECOVERY_CLAIM="$(jq -c .claim "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.second.json")"
+      export ACTIVITY_RECOVERY_CLAIM
+      "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
+        -e ACTIVITY_RECOVERY_MODE=stale -e ACTIVITY_RECOVERY_CLAIM recovery-workflow-rust \
+        > "$result_dir/proof/$ACTIVITY_RECOVERY_CASE.terminal-stale.json"
+      observer terminal-stale
+      observer release
+    else
+      observer release
+      observer verify
+    fi
   done
 done
 observer summary

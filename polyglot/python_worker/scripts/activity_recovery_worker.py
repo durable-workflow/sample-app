@@ -23,7 +23,8 @@ class RecoveryWorkflow:
             f"sample-app.activity-recovery.{runtime}.work", [request],
             queue=f"activity-recovery-activity-{runtime}",
             retry_policy=workflow.ActivityRetryPolicy(max_attempts=2, backoff_seconds=[2]),
-            start_to_close_timeout=20, schedule_to_close_timeout=120,
+            start_to_close_timeout=30 if request["scenario"] == "total-deadline" else 20,
+            schedule_to_close_timeout=30 if request["scenario"] == "total-deadline" else 120,
         )
         return {"workflow_runtime": "python", "activity": result}
 
@@ -44,6 +45,8 @@ async def recover(request):
         await gate(request["case_id"], ".first-release")
         raise RuntimeError("injected first-attempt failure")
     await gate(request["case_id"], ".release")
+    if request["scenario"] == "retry-exhaustion":
+        raise RuntimeError("injected second-attempt failure")
     return receipt
 
 

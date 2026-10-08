@@ -4,12 +4,14 @@ This experiment extends the portable SDK audit with all five Rust-involving
 workflow/activity directions: PHP → Rust, Python → Rust, Rust → PHP,
 Rust → Python and Rust → Rust.
 
-For each direction, exercise a retryable first-attempt failure and a worker
-SIGKILL during the first leased attempt. Require the original workflow run and
-activity execution, a distinct second attempt, the original total deadline,
-one activity result and one workflow completion. Submit the old claim through
-the published SDK and require explicit stale completion refusal without
-changing durable history.
+For each direction, exercise four scenarios: a retryable first-attempt failure,
+worker SIGKILL during its first leased attempt, total deadline expiry across
+both attempts and exhaustion after two retryable failures. Require the original
+workflow run and activity execution, distinct attempt identities and the original
+total deadline. Successful cases have one result and completion. Failed cases
+have one terminal activity failure and one workflow failure carrying its actual
+cause, with no third attempt or successful result. Submit obsolete claims through
+the published SDK and require explicit refusal without changing durable history.
 
 Run from the repository root in the prepared development container:
 
@@ -42,9 +44,26 @@ deadline. Both attempts have a 20-second start-to-close budget. The whole
 activity has one 120-second budget and two attempts with a two-second backoff.
 Activities send no application heartbeats in this experiment.
 
-The focused Action runs all ten cases, checks the observer's rejection of
+Total deadline expiry uses a 30-second per-attempt budget and one original
+30-second total budget. The retry starts later, so its attempt deadline is
+after the original total deadline. Fail attempt one normally, then hold the live retry
+until the original total deadline expires. Require `ActivityTimedOut` with
+`schedule_to_close`, at or after the original deadline, and an unhandled
+`WorkflowFailed`. Retry exhaustion uses the original two-attempt policy and
+20/120-second budgets. Fail both callbacks and require the actual second
+failure with `non_retryable: false`, one workflow failure and no third attempt.
+The workflow failure must retain the terminal activity cause in either case.
+
+Both failure cases first reject the obsolete first claim while attempt two is
+live. After the run fails, submit the second claim and require HTTP 409,
+unchanged terminal history, withdrawn attempt authority and the same total
+deadline. The callback gates, real deadline scanner and ordinary SDK APIs
+exercise these boundaries without editing database records or clocks.
+
+The focused Action runs all twenty cases, checks the observer's rejection of
 contradictory attempts and retains thin JSON observations and logs for 30 days.
-Results include run/execution/attempt IDs, installed SDK versions, deadlines,
+The same worker registration must take the following exhaustion case after
+deadline expiry. Results include run/execution/attempt IDs, installed SDK versions, deadlines,
 histories and physical container failure/replacement records. Record its exact
 runner commit, artifact tuple, Server digest and UTC interval in the owning
 issue. The exit trap removes task containers, networks, volumes and built
