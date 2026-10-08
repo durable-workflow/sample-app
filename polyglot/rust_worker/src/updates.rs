@@ -12,6 +12,9 @@ fn snapshot(ctx: QueryContext) -> Value {
 pub fn register(worker: &mut Worker) {
     worker.register_workflow("polyglot.rust.updates", |ctx, input| async move {
         let request = super::first_argument(&input);
+        for _ in 0..3 {
+            ctx.wait_signal("updates-touch").await?;
+        }
         ctx.wait_signal("updates-finish").await?;
         Ok(json!({"workflow_runtime": "rust", "request": request}))
     });

@@ -37,6 +37,7 @@ signals before and after worker replacement, including a map argument, one neste
 array argument and no arguments. The update result must also match
 its persisted completion. This exercises the immutable state snapshot that a
 stateful handler uses to reconstruct its input and prior signal deliveries.
+The Rust workflow consumes these three signals before waiting for completion.
 
 Rust does not support synchronous pre-accept update validators. The installed
 crate must return `UnsupportedUpdateValidators` for a contract claiming one.
