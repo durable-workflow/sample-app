@@ -145,8 +145,13 @@ async def main(phase):
             require(run.run_id == record["run_id"] and not events(history, "WorkflowCompleted")
                     and not events(history, "ActivityCompleted"), "Checkpoint is not the original pending execution.")
             snapshot = {"claim": claim, "status": status, "history": history}
+            save(f".{phase}.observation.json", snapshot)
             if phase == "first":
                 require(len(events(history, "ActivityStarted")) == 1, "First checkpoint has additional attempts.")
+                policy = one(history, "ActivityScheduled")["payload"]["activity"]["retry_policy"]
+                require(policy["max_attempts"] == 2 and policy["backoff_seconds"] == [2]
+                        and policy["start_to_close_timeout"] == 20 and policy["schedule_to_close_timeout"] == 120,
+                        "SDK command did not record the selected attempt, backoff and timeout budgets.")
             else:
                 first = read(".first.json")
                 verify_attempts(history, record, first["claim"], claim)

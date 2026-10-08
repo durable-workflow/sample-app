@@ -33,7 +33,7 @@ if ($mode === 'workflow') {
             $runtime = $request['activity_runtime'];
             $result = $context->activity('sample-app.activity-recovery.'.$runtime.'.work', [$request], [
                 'queue' => 'activity-recovery-activity-'.$runtime,
-                'retry_policy' => ['max_attempts' => 2, 'backoff' => [2]],
+                'retry_policy' => ['max_attempts' => 2, 'backoff_seconds' => [2]],
                 'start_to_close_timeout' => 20,
                 'schedule_to_close_timeout' => 120,
             ]);
