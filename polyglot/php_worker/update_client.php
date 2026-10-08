@@ -7,8 +7,8 @@ use DurableWorkflow\Exception\ServerException;
 
 require __DIR__.'/vendor/autoload.php';
 
-if ($argc !== 4) {
-    throw new InvalidArgumentException('Expected workflow ID, request ID and update name.');
+if ($argc !== 4 && $argc !== 5) {
+    throw new InvalidArgumentException('Expected workflow ID, request ID, update name and optional increment delta.');
 }
 $client = new Client(
     (string) getenv('DURABLE_WORKFLOW_SERVER_URL'),
@@ -16,6 +16,13 @@ $client = new Client(
     namespace: (string) getenv('DURABLE_WORKFLOW_NAMESPACE'),
 );
 $request = ['caller' => 'php', 'request_id' => $argv[2], 'value' => 'hello', 'nested' => ['enabled' => true, 'count' => 42]];
+if ($argv[3] === 'increment') {
+    $delta = filter_var($argv[4] ?? null, FILTER_VALIDATE_INT);
+    if ($delta === false) {
+        throw new InvalidArgumentException('An increment requires an integer delta.');
+    }
+    $request['delta'] = $delta;
+}
 try {
     $result = $client->updateWorkflow($argv[1], $argv[3], [$request], requestId: $argv[2]);
 } catch (ServerException $exception) {

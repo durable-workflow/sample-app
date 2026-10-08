@@ -204,6 +204,60 @@ class SnapshotObservationTest(unittest.IsolatedAsyncioTestCase):
                 await updates.snapshot(client)
 
 
+class StatefulMutationObservationTest(unittest.TestCase):
+    def setUp(self):
+        self.request_id = "example-increment-python-rust"
+        self.state = {"counter": 3, "mutations": ["example-increment-php-rust", self.request_id]}
+        self.request = updates.increment_request("python", self.request_id, 2)
+        self.result = {"handler_runtime": "rust", "request": self.request, "state": self.state}
+        self.history = {"events": [
+            {"event_type": kind, "payload": {"update_id": "original", "update_name": "increment",
+                "arguments": serializer.envelope([self.request])}}
+            for kind in ("UpdateAccepted", "UpdateApplied")
+        ] + [{"event_type": "UpdateCompleted", "payload": {"update_id": "original",
+                "result": serializer.envelope(self.result)}}]}
+
+    def verify(self, history):
+        return updates.verify_increment(history, self.request_id, "rust", "python", 2, self.state)
+
+    def test_accumulated_state_retains_its_original_applied_identity(self):
+        self.assertEqual(self.verify(self.history)[0], "original")
+
+    def test_reset_double_count_or_reordered_state_is_rejected(self):
+        for state in ({"counter": 2, "mutations": [self.request_id]},
+                      {"counter": 5, "mutations": self.state["mutations"] + [self.request_id]},
+                      {"counter": 3, "mutations": list(reversed(self.state["mutations"]))},
+                      {"counter": 3.0, "mutations": self.state["mutations"]}):
+            with self.subTest(state=state):
+                history = copy.deepcopy(self.history)
+                history["events"][-1]["payload"]["result"] = serializer.envelope({**self.result, "state": state})
+                with self.assertRaisesRegex(RuntimeError, "accumulated state"):
+                    self.verify(history)
+
+    def test_missing_repeated_or_out_of_order_application_is_rejected(self):
+        for events in ([self.history["events"][0], self.history["events"][-1]],
+                       self.history["events"] + [self.history["events"][1]],
+                       [self.history["events"][1], self.history["events"][0], self.history["events"][-1]]):
+            with self.subTest(events=events), self.assertRaises(RuntimeError):
+                self.verify({"events": events})
+
+    def test_changed_durable_delta_or_handler_is_rejected(self):
+        for index in (0, 1):
+            history = copy.deepcopy(self.history)
+            history["events"][index]["payload"]["arguments"] = serializer.envelope([{**self.request, "delta": 200}])
+            with self.subTest(index=index), self.assertRaisesRegex(RuntimeError, "original request"):
+                self.verify(history)
+        history = copy.deepcopy(self.history)
+        history["events"][1]["payload"]["update_name"] = "echo"
+        with self.assertRaisesRegex(RuntimeError, "original request"):
+            self.verify(history)
+
+    def test_failed_mutation_is_not_a_successful_state_change(self):
+        self.history["events"][-1]["payload"]["failure_id"] = "failed"
+        with self.assertRaisesRegex(RuntimeError, "accumulated state"):
+            self.verify(self.history)
+
+
 class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):
     async def test_observer_reads_later_pages(self):
         client = types.SimpleNamespace(

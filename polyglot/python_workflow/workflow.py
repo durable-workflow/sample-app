@@ -89,10 +89,22 @@ class PythonTimerWorkflow:
 class PythonUpdatesWorkflow:
     def __init__(self):
         self.done = False
+        self.counter = 0
+        self.mutations = []
 
     @workflow.update("echo")
     def echo(self, request):
         return {"handler_runtime": "python", "request": request}
+
+    @workflow.update("increment")
+    def increment(self, request):
+        self.counter += request["delta"]
+        self.mutations.append(request["request_id"])
+        return {"handler_runtime": "python", "request": request, "state": self.current_counter()}
+
+    @workflow.query("counter")
+    def current_counter(self):
+        return {"counter": self.counter, "mutations": list(self.mutations)}
 
     @workflow.signal("updates-finish")
     def finish(self):
@@ -100,7 +112,7 @@ class PythonUpdatesWorkflow:
 
     def run(self, ctx, request):
         yield ctx.wait_condition(lambda: self.done, key="updates-finish")
-        return {"workflow_runtime": "python", "request": request}
+        return {"workflow_runtime": "python", "request": request, "state": self.current_counter()}
 
 
 @workflow.defn(name="polyglot.python-to-php.greeter")

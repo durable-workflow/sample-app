@@ -444,17 +444,58 @@ function signalQueryWorkflow(): Closure
     };
 }
 
+/** @param list<list<mixed>> $increments */
+function incrementState(array $increments): array
+{
+    $counter = 0;
+    $mutations = [];
+    foreach ($increments as [$request]) {
+        if (! is_array($request) || ! is_int($request['delta'] ?? null) || ! is_string($request['request_id'] ?? null)) {
+            throw new InvalidArgumentException('An increment needs an integer delta and request identity.');
+        }
+        $counter += $request['delta'];
+        $mutations[] = $request['request_id'];
+    }
+
+    return ['counter' => $counter, 'mutations' => $mutations];
+}
+
+function appliedIncrementState(QueryContext $context, PayloadCodec $codec): array
+{
+    $increments = [];
+    $seen = [];
+    foreach ($context->events('UpdateApplied') as $event) {
+        $payload = $event['payload'];
+        if (($payload['update_name'] ?? null) !== 'increment' || isset($seen[$payload['update_id']])) {
+            continue;
+        }
+        $seen[$payload['update_id']] = true;
+        $increments[] = decodeArguments($codec, $payload['arguments']);
+    }
+
+    return incrementState($increments);
+}
+
 function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 {
     $worker->registerWorkflow('polyglot.php.updates', static function (WorkflowContext $context, string $request): array {
         $context->waitCondition(static fn (): bool => $context->signals('updates-finish') !== [], 'updates-finish');
 
-        return ['workflow_runtime' => 'php', 'request' => $request];
+        return ['workflow_runtime' => 'php', 'request' => $request,
+            'state' => incrementState($context->updates('increment'))];
     });
     $worker->declareSignal('polyglot.php.updates', 'updates-finish', static fn (): mixed => null);
     $worker->registerUpdate('polyglot.php.updates', 'echo', static function (QueryContext $context, array $request): array {
         return ['handler_runtime' => 'php', 'request' => $request];
     });
+    $worker->registerUpdate('polyglot.php.updates', 'increment', static function (QueryContext $context, array $request) use ($codec): array {
+        $state = appliedIncrementState($context, $codec);
+        $state['counter'] += $request['delta'];
+        $state['mutations'][] = $request['request_id'];
+
+        return ['handler_runtime' => 'php', 'request' => $request, 'state' => $state];
+    });
+    $worker->registerQuery('polyglot.php.updates', 'counter', static fn (QueryContext $context): array => appliedIncrementState($context, $codec));
 
     $worker->registerWorkflow('polyglot.php.timer', static function (WorkflowContext $context, string $request): array {
         $context->sleep(30);
