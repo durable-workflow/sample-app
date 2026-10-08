@@ -104,9 +104,10 @@ def verify_increment(history, request_id, runtime, caller, delta, state):
                     or not same_result(serializer.decode_envelope(event["payload"]["arguments"], codec="avro"),
                                        [expected["request"]])):
                 raise RuntimeError("Accepted and applied mutation arguments differ from the original request.")
-    if (completed["payload"].get("failure_id")
-            or not same_result(serializer.decode_envelope(completed["payload"]["result"], codec="avro"), expected)):
-        raise RuntimeError("Persisted mutation does not retain the expected accumulated state.")
+    actual = serializer.decode_envelope(completed["payload"]["result"], codec="avro")
+    if completed["payload"].get("failure_id") or not same_result(actual, expected):
+        raise RuntimeError(f"Persisted mutation does not retain the expected accumulated state: "
+                           f"update_id={update_id}, expected={expected!r}, actual={actual!r}")
     return update_id, related, expected
 
 
@@ -195,6 +196,7 @@ async def state_matrix(client):
     results = records("DURABLE_WORKFLOW_STATE_RESULTS")
     if len(results) != len(DIRECTIONS):
         raise RuntimeError("Not all nine state mutation directions executed.")
+    emit(scenario="stateful-sdk-client-observations", results=results)
     for caller, runtime in DIRECTIONS:
         request_id = increment_id(runtime, caller)
         matches = [record for record in results if record.get("request_id") == request_id and record.get("caller") == caller]
