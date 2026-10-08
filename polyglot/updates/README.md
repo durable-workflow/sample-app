@@ -17,9 +17,8 @@ each of the three handler languages. These are client-to-handler directions.
 The Server's existing update experiment separately covers its embedded probe,
 PHP process boundary, Python SDK surface fixtures, validators and diagnostics.
 
-Rust update workers require SDK 3.3.0 or later. Their registration includes the
-handler argument contracts and declared completion signal Server records when
-starting a run.
+The Rust worker's registration includes handler argument contracts and declared
+signals that Server records when starting a run.
 
 Each call checks the named handler's result through the real SDK client and
 persisted `UpdateAccepted`/`UpdateCompleted` history. It then kills the Rust
@@ -32,6 +31,13 @@ finish once after a signal.
 The Python client must raise `UpdateFailed` with the handler's message and
 matching workflow, run, update and failure IDs. Repeating that failed request
 must return the same error identities with one durable failed completion.
+
+A Rust query and update inspect the same original workflow input and committed
+signals before and after worker replacement, including a map argument, one nested
+array argument and no arguments. The update result must also match
+its persisted completion. This exercises the immutable state snapshot that a
+stateful handler uses to reconstruct its input and prior signal deliveries.
+The Rust workflow consumes these three signals before waiting for completion.
 
 Rust does not support synchronous pre-accept update validators. The installed
 crate must return `UnsupportedUpdateValidators` for a contract claiming one.

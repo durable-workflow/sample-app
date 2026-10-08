@@ -1,19 +1,37 @@
-use durable_workflow::{json, Client, Error, Result, Worker};
+use durable_workflow::{json, Client, Error, QueryContext, Result, Value, Worker};
+
+fn snapshot(ctx: QueryContext) -> Value {
+    json!({
+        "workflow_id": ctx.workflow_id,
+        "run_id": ctx.run_id,
+        "workflow_input": ctx.workflow_input(),
+        "signals": ctx.signals("updates-touch"),
+    })
+}
 
 pub fn register(worker: &mut Worker) {
     worker.register_workflow("polyglot.rust.updates", |ctx, input| async move {
         let request = super::first_argument(&input);
+        for _ in 0..3 {
+            ctx.wait_signal("updates-touch").await?;
+        }
         ctx.wait_signal("updates-finish").await?;
         Ok(json!({"workflow_runtime": "rust", "request": request}))
     });
     worker
-        .declare_workflow_signals("polyglot.rust.updates", &["updates-finish"])
+        .declare_workflow_signals("polyglot.rust.updates", &["updates-finish", "updates-touch"])
         .expect("declare the update workflow's completion signal");
     worker.register_update("polyglot.rust.updates", "echo", |_ctx, input| async move {
         Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input)}))
     });
     worker.register_update("polyglot.rust.updates", "fail", |_ctx, _input| async move {
         Err(Error::Codec("update-probe-failure".into()))
+    });
+    worker.register_query("polyglot.rust.updates", "snapshot", |ctx, _input| async move {
+        Ok(snapshot(ctx))
+    });
+    worker.register_update("polyglot.rust.updates", "snapshot", |ctx, _input| async move {
+        Ok(snapshot(ctx))
     });
 }
 

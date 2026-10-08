@@ -171,6 +171,54 @@ async def replacement(client):
     emit(scenario="replacement-and-duplicate", runtime="rust", update_id=update_id,
          run_id=execution.run_id, result=expected, events=related)
     await matrix(client)
+    await snapshot(client, "replacement")
+
+
+async def snapshot(client, stage="initial"):
+    request_id = f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-snapshot-{stage}"
+    signal = {"request_id": f"{required('DURABLE_WORKFLOW_UPDATE_ID')}-touch", "delta": 7}
+    signal_arguments = [[signal], [[1, 2]], []]
+    if stage == "initial":
+        for arguments in signal_arguments:
+            await client.get_workflow_handle(workflow_id("rust")).signal("updates-touch", args=arguments)
+    execution, history = await observe(client, "rust")
+    deliveries = [event for event in history["events"] if event["event_type"] == "SignalReceived"
+                  and event["payload"].get("signal_name") == "updates-touch"]
+    if (len(deliveries) != len(signal_arguments) or not same_result(
+            [serializer.decode_envelope(event["payload"]["arguments"], codec="avro") for event in deliveries],
+            signal_arguments)):
+        raise RuntimeError("The original snapshot signals were not durably recorded once each.")
+    expected = {"workflow_id": execution.workflow_id, "run_id": execution.run_id,
+                "workflow_input": [workflow_id("rust")], "signals": signal_arguments}
+    query = await client.query_workflow(execution.workflow_id, "snapshot")
+    response = await client.update_workflow(execution.workflow_id, "snapshot",
+                    args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+    result = serializer.decode_envelope(response["result_envelope"], codec="avro")
+    execution, history = await observe(client, "rust")
+    update_id, related = update_events(history, request_id)
+    completed = [event for event in related if event["event_type"] == "UpdateCompleted"]
+    if (response.get("update_status") != "completed" or response.get("update_id") != update_id
+            or len(completed) != 1 or completed[0]["payload"].get("failure_id")
+            or not same_result(serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro"), result)):
+        fields = ("signal_id", "signal_name", "workflow_command_id", "update_id", "sequence", "failure_id", "message")
+        emit(scenario="rust-update-snapshot-incomplete", stage=stage, expected=expected,
+             query=query.get("result"), update=result,
+             response={key: response.get(key) for key in ("update_id", "update_status", "ordering_state",
+                       "queued_behind_command_id", "queued_behind_command_type")},
+             history=[{"event_type": event["event_type"], "sequence": event.get("sequence"),
+                       "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
+                      for event in history["events"]])
+        raise RuntimeError("Snapshot update did not retain its one original completion.")
+    applied = [event for event in history["events"] if event["event_type"] == "SignalApplied"
+               and event["payload"].get("signal_name") == "updates-touch"]
+    signal_ids = {event["payload"].get("signal_id") for event in deliveries}
+    if (len(applied) != len(deliveries) or None in signal_ids or len(signal_ids) != len(deliveries)
+            or {event["payload"].get("signal_id") for event in applied} != signal_ids):
+        raise RuntimeError("Snapshot signals were not applied once each.")
+    emit(scenario="rust-update-snapshot", stage=stage, expected=expected,
+         query=query.get("result"), update=result, run_id=execution.run_id, update_id=update_id)
+    if not same_result(query.get("result"), expected) or not same_result(result, expected):
+        raise RuntimeError("Query and update must expose the original workflow input and committed signal snapshot.")
 
 
 async def failure(client):
@@ -232,7 +280,7 @@ async def finish(client):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "failure", "finish"])
+    parser.add_argument("phase", choices=["start", "call", "matrix", "queued", "replacement", "snapshot", "failure", "finish"])
     parser.add_argument("arguments", nargs="*")
     args = parser.parse_args()
     async with Client(required("DURABLE_WORKFLOW_SERVER_URL"), token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),

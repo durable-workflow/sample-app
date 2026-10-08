@@ -158,6 +158,52 @@ class ClientResultTest(unittest.IsolatedAsyncioTestCase):
                         await updates.failure(client)
 
 
+class SnapshotObservationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_update_and_query_read_the_same_committed_snapshot(self):
+        signal = {"request_id": "example-touch", "delta": 7}
+        expected = {"workflow_id": "example-rust", "run_id": "original",
+                    "workflow_input": ["example-rust"], "signals": [[signal], [[1, 2]], []]}
+        execution = types.SimpleNamespace(workflow_id="example-rust", run_id="original")
+        history = {"events": [
+            {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
+                "signal_id": "map", "arguments": serializer.envelope([signal])}},
+            {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
+                "signal_id": "nested", "arguments": serializer.envelope([[1, 2]])}},
+            {"event_type": "SignalReceived", "payload": {"signal_name": "updates-touch",
+                "signal_id": "empty", "arguments": serializer.envelope([])}},
+            *[{"event_type": "SignalApplied", "payload": {"signal_name": "updates-touch", "signal_id": identity}}
+              for identity in ("map", "nested", "empty")],
+            {"event_type": "UpdateAccepted", "payload": {"update_id": "snapshot-update",
+                "arguments": serializer.envelope([updates.request("python", "example-snapshot-initial")])}},
+            {"event_type": "UpdateCompleted", "payload": {"update_id": "snapshot-update",
+                "result": serializer.envelope(expected)}},
+        ]}
+        client = types.SimpleNamespace(
+            get_workflow_handle=lambda _id: types.SimpleNamespace(signal=AsyncMock()),
+            query_workflow=AsyncMock(return_value={"result": expected}),
+            update_workflow=AsyncMock(return_value={"update_status": "completed",
+                "update_id": "snapshot-update", "result_envelope": serializer.envelope(expected)}),
+        )
+        with (patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example"}),
+              patch.object(updates, "observe", AsyncMock(return_value=(execution, history))),
+              patch.object(updates, "emit")):
+            await updates.snapshot(client)
+            for change in ({"workflow_input": None}, {"signals": []}, {"run_id": "replacement"}):
+                with self.subTest(change=change):
+                    result = {**expected, **change}
+                    client.update_workflow.return_value["result_envelope"] = serializer.envelope(result)
+                    history["events"][-1]["payload"]["result"] = serializer.envelope(result)
+                    with self.assertRaisesRegex(RuntimeError, "committed signal snapshot"):
+                        await updates.snapshot(client)
+            client.update_workflow.return_value["result_envelope"] = serializer.envelope(expected)
+            with self.assertRaisesRegex(RuntimeError, "original completion"):
+                await updates.snapshot(client)
+            history["events"][-1]["payload"]["result"] = serializer.envelope(expected)
+            history["events"][3]["payload"]["signal_id"] = "nested"
+            with self.assertRaisesRegex(RuntimeError, "applied once each"):
+                await updates.snapshot(client)
+
+
 class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):
     async def test_observer_reads_later_pages(self):
         client = types.SimpleNamespace(

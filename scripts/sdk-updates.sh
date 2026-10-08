@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-updates.sh' \
-    'Runs nine PHP/Python/Rust client/update-handler directions, Rust worker replacement, duplicate requests, handler failure and validator refusal.' \
+    'Runs nine PHP/Python/Rust client/update-handler directions, committed snapshots, Rust worker replacement, duplicate requests, handler failure and validator refusal.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_UPDATES_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -75,6 +75,7 @@ for direction in php:php php:python php:rust python:php python:python python:rus
   DURABLE_WORKFLOW_UPDATE_RESULTS+="${result}"$'\n'
 done
 observer matrix
+observer snapshot
 
 "${compose[@]}" kill --signal SIGKILL rust-workflow-worker
 DURABLE_WORKFLOW_UPDATE_QUEUED="$(observer queued)"
