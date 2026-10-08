@@ -200,6 +200,14 @@ async def snapshot(client, stage="initial"):
     if (response.get("update_status") != "completed" or response.get("update_id") != update_id
             or len(completed) != 1 or completed[0]["payload"].get("failure_id")
             or not same_result(serializer.decode_envelope(completed[0]["payload"]["result"], codec="avro"), result)):
+        fields = ("signal_id", "signal_name", "workflow_command_id", "update_id", "sequence", "failure_id", "message")
+        emit(scenario="rust-update-snapshot-incomplete", stage=stage, expected=expected,
+             query=query.get("result"), update=result,
+             response={key: response.get(key) for key in ("update_id", "update_status", "ordering_state",
+                       "queued_behind_command_id", "queued_behind_command_type")},
+             history=[{"event_type": event["event_type"], "sequence": event["sequence"],
+                       "payload": {key: event["payload"][key] for key in fields if key in event["payload"]}}
+                      for event in history["events"]])
         raise RuntimeError("Snapshot update did not retain its one original completion.")
     emit(scenario="rust-update-snapshot", stage=stage, expected=expected,
          query=query.get("result"), update=result, run_id=execution.run_id, update_id=update_id)
