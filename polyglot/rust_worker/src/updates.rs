@@ -86,8 +86,9 @@ pub fn register(worker: &mut Worker) {
     });
     worker.register_update("polyglot.rust.updates", "increment", |ctx, input| async move {
         let mut counter = applied_counter(&ctx)?;
-        counter.apply(&input)?;
-        Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input), "state": counter.value()}))
+        let request = super::first_argument(&input);
+        counter.apply(std::slice::from_ref(&request))?;
+        Ok(json!({"handler_runtime": "rust", "request": request, "state": counter.value()}))
     });
     worker.register_replayed_query::<Counter, _, _>(
         "polyglot.rust.updates",
