@@ -28,6 +28,7 @@ RUN test -n "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
     && ! composer show laravel/framework
 
 COPY worker.php ./
+COPY child_workflows.php ./
 COPY php_created_rust_schedule.php ./
 COPY update_client.php ./
 COPY task_codec_rejection_probe.php ./

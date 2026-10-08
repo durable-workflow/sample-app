@@ -5,6 +5,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, Value, Worker};
 
 mod updates;
+mod children;
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
@@ -59,6 +60,7 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
         .poll_timeout(Duration::from_secs(5));
 
     updates::register(&mut worker);
+    children::register(&mut worker, None);
 
     worker.register_activity("polyglot.rust.echo", |_ctx, args| async move {
         Ok(runtime_echo(first_argument(&args)))

@@ -1,0 +1,29 @@
+name: published SDK children
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-children-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  children:
+    name: SDK children (PHP/Python/Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SDK_CHILDREN_COMPOSE_PROJECT_NAME: sample-app-sdk-children-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Run the documented child experiment
+        run: scripts/sdk-children.sh

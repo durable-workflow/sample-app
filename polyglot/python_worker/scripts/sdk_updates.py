@@ -323,7 +323,8 @@ async def snapshot(client, stage="initial"):
                 "workflow_input": [workflow_id("rust")], "signals": signal_arguments}
     query = await client.query_workflow(execution.workflow_id, "snapshot")
     response = await client.update_workflow(execution.workflow_id, "snapshot",
-                    args=[request("python", request_id)], wait_for="completed", request_id=request_id)
+                    args=[request("python", request_id)], wait_for="completed", wait_timeout_seconds=45,
+                    request_id=request_id)
     result = serializer.decode_envelope(response["result_envelope"], codec="avro")
     execution, history = await observe(client, "rust")
     update_id, related = update_events(history, request_id)

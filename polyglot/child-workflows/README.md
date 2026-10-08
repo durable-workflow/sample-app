@@ -1,5 +1,41 @@
 # Cross-language child workflows
 
+## Published failure and recovery qualification
+
+Run this command from the prepared Sample App development container:
+
+```bash
+scripts/playground doctor
+while IFS= read -r assignment; do export "$assignment"; done \
+  < <(scripts/resolve-current-artifacts.sh)
+SDK_CHILDREN_COMPOSE_PROJECT_NAME=sample-app-sdk-children scripts/sdk-children.sh
+```
+
+It builds the existing PHP, Python and Rust workers from the frozen published
+tuple, starts an isolated Server/MySQL/Redis stack and runs all nine successful
+parent/child directions. For the five directions involving Rust, it also
+requires a typed child failure matched to durable history and a cold recovery.
+The child waits for a declared signal. All three workers are SIGKILLed, then the
+signal is acknowledged while they are absent. Fresh worker processes must
+complete the original parent and child runs with one schedule, start and
+completion, without duplicating work. Results and failures must match the
+persisted parent and child histories, including their original relationship.
+
+The command prints the tuple, digest, UTC interval, results and original
+identities. Its exit trap removes the task stack, volumes and fixture images on
+success or failure. After an external interruption, remove the same project:
+
+```bash
+COMPOSE_PROJECT_NAME=sample-app-sdk-children \
+  docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
+```
+
+Child cancellation and process loss during an external side effect require
+separate scenarios. Report the executed directions and exact tuple on the
+owning issue.
+
+## Run the authoring examples manually
+
 This example runs a parent and child in every PHP, Python, and Rust direction
 against one isolated, published Server. It uses the Sample App's existing
 Composer install, Python SDK in the prepared development image, and the Rust
@@ -59,9 +95,10 @@ worker or type-name mismatch fails the run instead of being counted as a pass.
 Record the actual Server, Waterline, CLI, PHP, Python, and Rust versions from
 the playground output and installed package/lockfiles with the run's UTC time
 and nine results on the owning GitHub issue. A published artifact that merely
-installed is not evidence of an executed direction. This example proves only
-successful child completion; restart, replay, failure, cancellation, and saga
-compensation require separate experiments.
+installed is not evidence of an executed direction. The manual client checks
+successful child completion. The automated command above adds the five
+Rust-involving typed failure and worker-recovery cases. Cancellation and saga
+compensation have separate experiments.
 
 Stop the workers, then remove only this local stack and its volumes:
 
