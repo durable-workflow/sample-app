@@ -322,9 +322,20 @@ async def snapshot(client, stage="initial"):
     expected = {"workflow_id": execution.workflow_id, "run_id": execution.run_id,
                 "workflow_input": [workflow_id("rust")], "signals": signal_arguments}
     query = await client.query_workflow(execution.workflow_id, "snapshot")
+    completion_deadline = asyncio.get_running_loop().time() + 90
     response = await client.update_workflow(execution.workflow_id, "snapshot",
                     args=[request("python", request_id)], wait_for="completed", wait_timeout_seconds=45,
                     request_id=request_id)
+    if response.get("update_status") == "accepted":
+        while asyncio.get_running_loop().time() < completion_deadline:
+            _, pending_history = await observe(client, "rust")
+            _, pending_events = update_events(pending_history, request_id)
+            if any(event["event_type"] == "UpdateCompleted" for event in pending_events):
+                response = await client.update_workflow(execution.workflow_id, "snapshot",
+                    args=[request("python", request_id)], wait_for="completed", wait_timeout_seconds=1,
+                    request_id=request_id)
+                break
+            await asyncio.sleep(.25)
     result = serializer.decode_envelope(response["result_envelope"], codec="avro")
     execution, history = await observe(client, "rust")
     update_id, related = update_events(history, request_id)

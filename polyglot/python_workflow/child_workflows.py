@@ -11,12 +11,13 @@ def cleanup(context, cancelled, role):
     if cancellation is None or cancellation is not cancelled.context:
         raise RuntimeError("Child cancellation lacks its committed workflow context.")
     with context.cancellation_shield():
-        yield context.side_effect(lambda: {"role": role, "stage": "entry", "runtime": "python",
-            "context": cancellation.to_dict(), "remaining": cancellation.remaining()})
+        entry = {"role": role, "stage": "entry", "runtime": "python",
+                 "context": cancellation.to_dict(), "remaining": cancellation.remaining()}
+        yield context.side_effect(lambda: entry)
         yield context.start_timer(10 if role == "child" else 1)
-        yield context.side_effect(lambda: {"role": role, "stage": "finished", "runtime": "python",
-            "context": cancellation.to_dict(), "remaining": cancellation.remaining()})
-    raise cancelled
+        finished = {"role": role, "stage": "finished", "runtime": "python",
+                    "context": cancellation.to_dict(), "remaining": cancellation.remaining()}
+        yield context.side_effect(lambda: finished)
 
 
 def child_queue(runtime):
@@ -36,6 +37,7 @@ def child_result(context, runtime, value, behavior):
         return {"parent_runtime": "python", "child_result": result}
     except WorkflowCancelled as cancelled:
         yield from cleanup(context, cancelled, "parent")
+        return {"cleanup": "finished"}
     except ChildWorkflowFailed as failure:
         return {"parent_runtime": "python", "child_failure": {
             "type": "ChildWorkflowFailed", "message": str(failure),

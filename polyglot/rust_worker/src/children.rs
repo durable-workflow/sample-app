@@ -36,9 +36,9 @@ pub fn register(worker: &mut Worker, common_queue: Option<String>) {
                     )))
                 }
                 "wait" | "cancel" => match context.wait_signal("child-finish").await {
-                    Err(error @ Error::CooperativeCancellationRequested(_)) => {
+                    Err(Error::CooperativeCancellationRequested(_)) => {
                         cleanup(&context, "child").await?;
-                        return Err(error);
+                        return Ok(json!({"cleanup": "finished"}));
                     }
                     outcome => {
                         outcome?;
@@ -74,9 +74,9 @@ pub fn register(worker: &mut Worker, common_queue: Option<String>) {
                 match context.start_child_workflow(child_type, options,
                                                   json!([value, behavior])).await {
                     Ok(child) => Ok(json!({"parent_runtime": "rust", "child_result": child.result})),
-                    Err(error @ Error::CooperativeCancellationRequested(_)) => {
+                    Err(Error::CooperativeCancellationRequested(_)) => {
                         cleanup(&context, "parent").await?;
-                        Err(error)
+                        Ok(json!({"cleanup": "finished"}))
                     }
                     Err(Error::ChildWorkflowFailed(failure)) => Ok(json!({"parent_runtime": "rust", "child_failure": {
                         "type": "ChildWorkflowFailed", "message": failure.message, "child_type": failure.child_workflow_type,
