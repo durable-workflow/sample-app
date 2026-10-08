@@ -1,0 +1,38 @@
+name: published SDK search attributes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-search-attributes-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  search-attributes:
+    name: Rust typed search attributes and cold recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SDK_SEARCH_ATTRIBUTES_COMPOSE_PROJECT_NAME: sample-app-search-attributes-${{ github.run_id }}-${{ github.run_attempt }}
+      SDK_SEARCH_ATTRIBUTES_RESULT_DIR: ${{ runner.temp }}/sdk-search-attributes-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Run the documented search attribute experiment
+        run: scripts/sdk-search-attributes.sh
+      - name: Retain actual observations and physical worker loss
+        if: always()
+        uses: actions/upload-artifact@043fb58c3a6a4125c64b9a9ed5c3e9bea9d1a3fd # v7.0.0
+        with:
+          name: sdk-search-attributes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdk-search-attributes-proof
+          if-no-files-found: warn
+          retention-days: 30

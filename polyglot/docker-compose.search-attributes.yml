@@ -1,0 +1,32 @@
+x-search-observer: &search-observer
+  user: "${SEARCH_ATTRIBUTES_UID:?set the invoking UID}:${SEARCH_ATTRIBUTES_GID:?set the invoking GID}"
+  mem_limit: 256m
+  cpus: 0.5
+  volumes:
+    - "${SEARCH_ATTRIBUTES_PROOF_DIR:?set the disposable proof directory}:/proof"
+
+services:
+  rust-search-worker:
+    init: true
+    user: "${SEARCH_ATTRIBUTES_UID}:${SEARCH_ATTRIBUTES_GID}"
+    image: "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest"
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+      DURABLE_WORKFLOW_AUTH_TOKEN: test-token
+      DURABLE_WORKFLOW_NAMESPACE: default
+      POLYGLOT_RUST_MODE: search-attribute-worker
+    depends_on:
+      server:
+        condition: service_healthy
+
+  smoke:
+    <<: *search-observer
+    environment:
+      SEARCH_ATTRIBUTES_PROOF: /proof
+
+  php-workflow-worker:
+    <<: *search-observer
+    environment:
+      SEARCH_ATTRIBUTES_PROOF: /proof
