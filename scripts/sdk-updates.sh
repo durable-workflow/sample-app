@@ -39,8 +39,8 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke "${workers[@]}"
-"${compose[@]}" pull --policy always bootstrap server
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
+"${compose[@]}" pull --policy always bootstrap server timer-queue
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
 observer() {

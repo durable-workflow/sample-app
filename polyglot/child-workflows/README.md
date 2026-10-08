@@ -12,7 +12,7 @@ SDK_CHILDREN_COMPOSE_PROJECT_NAME=sample-app-sdk-children scripts/sdk-children.s
 ```
 
 It builds the existing PHP, Python and Rust workers from the frozen published
-tuple, starts an isolated Server/MySQL/Redis stack and runs all nine successful
+tuple, starts an isolated Server/MySQL/Redis stack with its queue consumer and runs all nine successful
 parent/child directions. For the five directions involving Rust, it also
 requires a typed child failure matched to durable history and a cold recovery.
 The child waits for a declared signal. All three workers are SIGKILLed, then the
@@ -20,6 +20,16 @@ signal is acknowledged while they are absent. Fresh worker processes must
 complete the original parent and child runs with one schedule, start and
 completion, without duplicating work. Results and failures must match the
 persisted parent and child histories, including their original relationship.
+
+Those five directions also use cooperative cancellation with
+`WAIT_CANCELLATION_COMPLETED` and `RequestCancellation`. Each request gets one
+30-second cleanup budget. The child records its cancellation context and starts
+a shielded cleanup timer. All workers are killed during that timer. Duplicate
+requests while workers are absent must return the original identity and
+deadline. Replacement workers must replay the original delivery and timer,
+finish child and parent cleanup, and close both original runs as Cancelled
+before that deadline. The published CLI and Server API must explain the same
+complete cascade with its original lineage and completed cleanup.
 
 The command prints the tuple, digest, UTC interval, results and original
 identities. Its exit trap removes the task stack, volumes and fixture images on
@@ -30,9 +40,8 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-children \
   docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
 ```
 
-Child cancellation and process loss during an external side effect require
-separate scenarios. Report the executed directions and exact tuple on the
-owning issue.
+Process loss during an external side effect requires a separate scenario.
+Report the executed directions and exact tuple on the owning issue.
 
 ## Run the authoring examples manually
 
@@ -97,8 +106,8 @@ the playground output and installed package/lockfiles with the run's UTC time
 and nine results on the owning GitHub issue. A published artifact that merely
 installed is not evidence of an executed direction. The manual client checks
 successful child completion. The automated command above adds the five
-Rust-involving typed failure and worker-recovery cases. Cancellation and saga
-compensation have separate experiments.
+Rust-involving typed failure, worker recovery and cooperative cancellation
+cases. Saga compensation has a separate experiment.
 
 Stop the workers, then remove only this local stack and its volumes:
 

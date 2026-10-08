@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-children.sh' \
-    'Runs nine PHP/Python/Rust child directions and five Rust-involving typed failure/recovery directions.' \
+    'Runs nine PHP/Python/Rust child directions and five Rust-involving typed failure, recovery and cancellation directions.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_CHILDREN_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -39,8 +39,8 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke "${workers[@]}"
-"${compose[@]}" pull --policy always bootstrap server
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
+"${compose[@]}" pull --policy always bootstrap server timer-queue
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
 observer() {
@@ -61,4 +61,17 @@ printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
 observer release
 "${compose[@]}" up -d --wait --no-build "${workers[@]}"
 observer recovery
+export POLYGLOT_TIMER_COOPERATIVE=1
+"${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
+for phase in cancellation_start cancellation_request cancellation_park; do
+  if ! DURABLE_WORKFLOW_CHILD_RUNS="$(observer "$phase")"; then
+    printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS" >&2
+    exit 1
+  fi
+  printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
+done
+"${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+observer cancellation_duplicate
+"${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
+observer cancellation_verify
 printf 'SDK children pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

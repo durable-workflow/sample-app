@@ -5,8 +5,32 @@ declare(strict_types=1);
 use DurableWorkflow\Attribute\Signal;
 use DurableWorkflow\Attribute\Workflow;
 use DurableWorkflow\Exception\ChildWorkflowFailed;
+use DurableWorkflow\Exception\WorkflowCancelled;
 use DurableWorkflow\Worker;
+use DurableWorkflow\Worker\CancellationPolicy;
+use DurableWorkflow\Worker\ParentClosePolicy;
 use DurableWorkflow\Worker\WorkflowContext;
+
+function phpChildCleanup(WorkflowContext $context, WorkflowCancelled $cancelled, string $role): void
+{
+    $cancellation = $context->cancellationContext();
+    if ($cancellation === null || $cancellation !== $cancelled->context) {
+        throw new LogicException('Child cancellation lacks its committed workflow context.');
+    }
+    $context->cancellationShield(function () use ($context, $cancellation, $role): void {
+        $entry = [
+            'role' => $role, 'stage' => 'entry', 'runtime' => 'php',
+            'context' => $cancellation->toArray(), 'remaining' => $cancellation->remaining(),
+        ];
+        $context->sideEffect(static fn (): array => $entry);
+        $context->sleep($role === 'child' ? 10 : 1);
+        $finished = [
+            'role' => $role, 'stage' => 'finished', 'runtime' => 'php',
+            'context' => $cancellation->toArray(), 'remaining' => $cancellation->remaining(),
+        ];
+        $context->sideEffect(static fn (): array => $finished);
+    });
+}
 
 function phpChildQueue(string $runtime): string
 {
@@ -18,11 +42,18 @@ function phpChildQueue(string $runtime): string
 function phpChildResult(WorkflowContext $context, string $runtime, string $value, string $behavior): array
 {
     try {
-        $result = $context->childWorkflow('sample-app.child-matrix.'.$runtime.'.child', [$value, $behavior], [
-            'queue' => phpChildQueue($runtime),
-        ]);
+        $options = ['queue' => phpChildQueue($runtime)];
+        if ($behavior === 'cancel') {
+            $options['cancellation_policy'] = CancellationPolicy::WaitCancellationCompleted;
+            $options['parent_close_policy'] = ParentClosePolicy::RequestCancellation;
+        }
+        $result = $context->childWorkflow('sample-app.child-matrix.'.$runtime.'.child', [$value, $behavior], $options);
 
         return ['parent_runtime' => 'php', 'child_result' => $result];
+    } catch (WorkflowCancelled $cancelled) {
+        phpChildCleanup($context, $cancelled, 'parent');
+
+        return ['cleanup' => 'finished'];
     } catch (ChildWorkflowFailed $failure) {
         return ['parent_runtime' => 'php', 'child_failure' => [
             'type' => 'ChildWorkflowFailed',
@@ -40,8 +71,12 @@ final class PhpChildWorkflow
         if ($behavior === 'fail') {
             throw new RuntimeException('child-probe-failure: '.$value);
         }
-        if ($behavior === 'wait') {
-            $context->waitCondition(static fn (): bool => $context->signals('child-finish') !== [], 'child-finish');
+        if ($behavior === 'wait' || $behavior === 'cancel') {
+            try {
+                $context->waitCondition(static fn (): bool => $context->signals('child-finish') !== [], 'child-finish');
+            } catch (WorkflowCancelled $cancelled) {
+                phpChildCleanup($context, $cancelled, 'child');
+            }
         } elseif ($behavior !== 'complete') {
             throw new InvalidArgumentException('Unknown child behavior.');
         }
