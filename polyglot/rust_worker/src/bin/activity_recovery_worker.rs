@@ -71,13 +71,14 @@ async fn main() -> Result<()> {
                 let runtime = request["activity_runtime"]
                     .as_str()
                     .expect("activity runtime");
+                let total_deadline = request["scenario"] == "total-deadline";
                 let options = ActivityOptions::new()
                     .task_queue(format!("activity-recovery-activity-{runtime}"))
                     .retry_policy(
                         ActivityRetryPolicy::new(2).backoff_intervals([Duration::from_secs(2)]),
                     )
-                    .start_to_close_timeout(Duration::from_secs(20))
-                    .schedule_to_close_timeout(Duration::from_secs(120));
+                    .start_to_close_timeout(Duration::from_secs(if total_deadline { 60 } else { 20 }))
+                    .schedule_to_close_timeout(Duration::from_secs(if total_deadline { 30 } else { 120 }));
                 let result = ctx
                     .activity_with_options(
                         format!("sample-app.activity-recovery.{runtime}.work"),
@@ -107,12 +108,15 @@ async fn main() -> Result<()> {
             fs::rename(temporary, path).expect("publish claim");
             if ctx.attempt_number == 1 {
                 gate(case_id, ".first-release").await?;
-                if request["scenario"] == "retry" {
+                if request["scenario"] != "worker-loss" {
                     return Err(Error::WorkerLoop("injected first-attempt failure".into()));
                 }
                 return Err(Error::WorkerLoop("first attempt was not killed".into()));
             }
             gate(case_id, ".release").await?;
+            if request["scenario"] == "retry-exhaustion" {
+                return Err(Error::WorkerLoop("injected second-attempt failure".into()));
+            }
             Ok(receipt)
         });
     } else {
