@@ -1,0 +1,93 @@
+x-recovery: &recovery
+  init: true
+  user: "1000:1000"
+  mem_limit: 256m
+  cpus: 0.5
+  volumes:
+    - "${ACTIVITY_RECOVERY_PROOF_DIR:?set the disposable proof directory}:/proof"
+  depends_on:
+    server:
+      condition: service_healthy
+
+x-recovery-env: &recovery-env
+  DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+  DURABLE_WORKFLOW_AUTH_TOKEN: test-token
+  ACTIVITY_RECOVERY_PROOF: /proof
+
+services:
+  recovery-workflow-php:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest"
+    command: ["php", "/app/activity_recovery_worker.php"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: workflow
+
+  recovery-activity-php:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest"
+    command: ["php", "/app/activity_recovery_worker.php"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: activity
+
+  recovery-workflow-python:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-smoke:latest"
+    command: ["python", "/app/scripts/activity_recovery_worker.py"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: workflow
+
+  recovery-activity-python:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-smoke:latest"
+    command: ["python", "/app/scripts/activity_recovery_worker.py"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: activity
+
+  recovery-workflow-rust:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest"
+    entrypoint: ["/usr/local/bin/activity-recovery-worker"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: workflow
+
+  recovery-activity-rust:
+    <<: *recovery
+    image: "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest"
+    entrypoint: ["/usr/local/bin/activity-recovery-worker"]
+    environment:
+      <<: *recovery-env
+      ACTIVITY_RECOVERY_MODE: activity
+
+  recovery-timeouts:
+    init: true
+    image: "${DURABLE_SERVER_IMAGE:?resolve the published Server}"
+    command: ["sh", "-c", "while true; do php artisan activity:timeout-enforce --limit=100 || exit; sleep 1; done"]
+    environment:
+      APP_NAME: Durable Workflow Server
+      APP_ENV: testing
+      APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
+      APP_DEBUG: "false"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_DATABASE: durable_workflow
+      DB_USERNAME: workflow
+      DB_PASSWORD: workflow
+      REDIS_HOST: redis
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      DW_SERVER_PROCESS_CLASS: scheduler_node
+    depends_on:
+      server:
+        condition: service_healthy
+
+  smoke:
+    volumes:
+      - "${ACTIVITY_RECOVERY_PROOF_DIR}:/proof"
+    environment:
+      ACTIVITY_RECOVERY_PROOF: /proof
+      DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION: "1.20"

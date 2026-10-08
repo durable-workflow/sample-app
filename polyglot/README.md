@@ -55,6 +55,7 @@ different isolated project name.
 | [`timers/`](timers/README.md) | PHP/Python/Rust timer completion, worker SIGKILL and cold replay, Server restart and cooperative cancellation |
 | [`updates/`](updates/README.md) | Nine PHP/Python/Rust SDK client/update-handler directions, Rust replacement and duplicate requests |
 | [`namespaces/`](namespaces/README.md) | Published Rust namespace-bound clients/workers, role credentials, denied cross-namespace operations and cold recovery |
+| [`activities/`](activities/README.md) | Five Rust-involving SDK directions with retry, activity worker SIGKILL, original deadlines and stale completion refusal |
 | `python_workflow/` | Python-authored workflow examples |
 | `laravel/` | Waterline image used to inspect standalone runs |
 | `docker-compose.yml` | Complete service-mode topology |
