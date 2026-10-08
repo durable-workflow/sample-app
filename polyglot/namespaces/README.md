@@ -4,7 +4,8 @@ Run published Rust clients and workers in two namespaces with the same queue,
 workflow type, activity type, and stable workflow ID.
 
 ```bash
-eval "$(scripts/resolve-current-artifacts.sh)"
+while IFS= read -r assignment; do export "$assignment"; done \
+  < <(scripts/resolve-current-artifacts.sh)
 SDK_NAMESPACES_COMPOSE_PROJECT_NAME=sample-app-sdk-namespaces scripts/sdk-namespaces.sh
 ```
 
@@ -13,6 +14,15 @@ published Server digest. The command builds the existing Rust and observation
 images, starts an isolated MySQL/Redis/Server stack, and removes project
 containers, networks, volumes and fixture images on exit. Use a fresh project
 name for concurrent runs. No product source overlay or customer runtime is used.
+
+After an interruption that prevents the exit trap from running, remove the same
+project with both Compose files:
+
+```bash
+COMPOSE_PROJECT_NAME=sample-app-sdk-namespaces docker compose \
+  -f polyglot/docker-compose.yml -f polyglot/docker-compose.namespaces.yml \
+  down --volumes --remove-orphans
+```
 
 The public Server API creates two disposable namespaces and namespace-bound
 operator and worker credentials. Rust clients start four runs, including an
