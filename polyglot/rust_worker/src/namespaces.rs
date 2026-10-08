@@ -102,12 +102,12 @@ pub async fn call(client: Client) -> Result<()> {
         }
         "deny-describe" | "missing-describe" => {
             let status = if phase == "missing-describe" {404} else {403};
-            let reason = if status == 404 {"not_found"} else {"forbidden"};
+            let reason = if status == 404 {"instance_not_found"} else {"forbidden"};
             record["diagnostic"] = refused(client.describe_workflow(&id).await, status, reason)?;
         }
         "deny-signal" | "missing-signal" => {
             let status = if phase == "missing-signal" {404} else {403};
-            let reason = if status == 404 {"not_found"} else {"forbidden"};
+            let reason = if status == 404 {"instance_not_found"} else {"forbidden"};
             record["diagnostic"] = refused(client.signal_workflow(&id, SIGNAL, json!([request])).await, status, reason)?;
         }
         "deny-start" => {
