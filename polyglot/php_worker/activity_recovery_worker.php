@@ -28,7 +28,7 @@ $cooperative = $mode === 'activity' && getenv('ACTIVITY_RECOVERY_COOPERATIVE_CAN
 $queue = 'activity-recovery-'.$mode.'-php';
 $client = new Client((string) getenv('DURABLE_WORKFLOW_SERVER_URL'),
     token: (string) getenv('DURABLE_WORKFLOW_AUTH_TOKEN'), namespace: 'default',
-    workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL_VERSION);
+    workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL);
 $worker = new Worker($client, $queue, $queue.'-'.getenv('HOSTNAME'), enableCooperativeCancellation: $cooperative);
 if ($mode === 'workflow') {
     $worker->registerWorkflow('sample-app.activity-recovery.php',
