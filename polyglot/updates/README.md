@@ -36,7 +36,7 @@ and one application of each signal. Actions runs ten repetitions. This probes
 the replay window without waiting for an extra query or signal-wait checkpoint.
 It uses the same published packages and isolated stack.
 
-A result error prints the current run, complete history and registered workers
+A result error prints the current run, complete history, API diagnostics and registered workers
 before cleanup. These bounded observations retain the original error and help
 distinguish an undelivered task from failed replay or an absent worker.
 

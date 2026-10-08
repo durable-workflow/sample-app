@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 from dataclasses import asdict
+from urllib.parse import quote
 
 from durable_workflow import Client, UpdateFailed, serializer
 
@@ -429,10 +430,12 @@ async def failure_diagnostics(client, handle, runtime, error, phase):
         async with asyncio.timeout(10):
             execution = await handle.describe()
             history = await history_for(client, execution.workflow_id, execution.run_id)
+            debug = await client._request("GET", f"/workflows/{quote(execution.workflow_id, safe='')}"
+                                          f"/runs/{quote(execution.run_id, safe='')}/debug")
             workers = await client.list_workers(task_queue=execution.task_queue)
             emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
                  error={"type": type(error).__name__, "message": str(error)},
-                 execution=asdict(execution), history=history,
+                 execution=asdict(execution), history=history, debug=debug,
                  workers=[worker.raw for worker in workers.workers])
     except Exception as diagnostic_error:
         emit(scenario="workflow-observation-error", runtime=runtime, phase=phase,
@@ -462,7 +465,9 @@ async def finish_race(client):
         expected_update = {"handler_runtime": "rust",
                            "request": increment_request("python", request_id, 1), "state": state}
         if response.get("update_status") != "completed":
-            raise RuntimeError(f"Finish race mutation did not complete: {response!r}")
+            error = RuntimeError(f"Finish race mutation did not complete: {response!r}")
+            await failure_diagnostics(client, handle, "rust", error, "finish_race_update")
+            raise error
         actual_update = serializer.decode_envelope(response["result_envelope"], codec="avro")
         if not same_result(actual_update, expected_update):
             raise RuntimeError(f"Finish race mutation changed its result: {actual_update!r}")
