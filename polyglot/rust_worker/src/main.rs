@@ -7,6 +7,7 @@ use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, Result, 
 mod updates;
 mod children;
 mod namespaces;
+mod search_attributes;
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
@@ -60,6 +61,7 @@ async fn main() -> Result<()> {
         "validator-refusal" => updates::validator_refusal(client).await,
         "namespace-worker" => namespaces::worker(client).await,
         "namespace-client" => namespaces::call(client).await,
+        "search-attribute-worker" => search_attributes::worker(client).await,
         other => panic!("unsupported POLYGLOT_RUST_MODE {other:?}; expected workflow, activity, update-client, validator-refusal, namespace-worker or namespace-client"),
     }
 }
