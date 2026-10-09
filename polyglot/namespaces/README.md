@@ -133,12 +133,30 @@ cannot substitute for a successful mutation. This exercises actual published
 Rust client and worker calls with transport-level injection. It does not add a
 custom-header SDK API or use raw HTTP as a replacement Rust implementation.
 
+## Operator visibility
+
+The published native CLI reads every original completed, failed and cancelled
+Rust run in both JSON and human table formats. Its complete history must match
+Server's preserved events, with each actor displayed on the correct table row.
+
+An isolated Laravel host installs the frozen published Waterline and PHP SDK
+packages. Waterline uses its read-only remote backend with the namespace's
+rotated operator credential, then no credential in the anonymous phase.
+Its selected-run API must preserve the original instance, run, namespace,
+terminal status, complete timeline and command actors. The host cannot reach
+Server's database. An installed-artifact probe records the actual package
+versions, and history reads before and after inspection must be identical.
+Raw JSON views and CLI tables join the retained scenario evidence.
+
+These checks exercise the CLI and Waterline API against actual Rust executions.
+They do not exercise Waterline's rendered browser interface.
+
 Set `SDK_NAMESPACES_RESULT_DIR` to retain raw histories, gateway receipts and
 physical worker-loss records. The hosted job retains these for 30 days. Runtime
 containers, fixture images, volumes, networks and the disposable proof directory
 are removed on exit. This focused case covers named runtime credentials,
 start/signal/completion/query/failure/terminal-cancellation attribution,
 credential rotation and cold replay.
-Cooperative-cancellation attribution and CLI/Waterline
-visibility remain separate principal-contract cases. The focused query case
+Cooperative-cancellation attribution remains a separate principal-contract case.
+The focused query case
 observes Server's response metadata without adding a Rust raw-response API.
