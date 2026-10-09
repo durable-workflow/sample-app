@@ -3,7 +3,8 @@ import unittest
 
 from durable_workflow import serializer
 from principal_gateway import BODY_FIELDS, HEADERS
-from sdk_namespaces import IDENTITIES, parked_identity, verify_gateway, verify_history, verify_principals, verify_rotation
+from sdk_namespaces import (IDENTITIES, parked_identity, verify_gateway, verify_history,
+                            verify_operation_history, verify_principals, verify_query_receipt, verify_rotation)
 
 
 def envelope(value):
@@ -161,6 +162,86 @@ class NamespaceHistoryChecks(unittest.TestCase):
                 changed[target][key] = "replaced"
                 with self.subTest(target=target, key=key), self.assertRaises(RuntimeError):
                     verify_rotation(*changed)
+
+    def operation_fixture(self, terminal):
+        namespace = "rust-namespace-a"
+        operator = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-operator", "label": "Operator"}
+        worker = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-worker", "label": "Worker"}
+        events = [{"event_type": "WorkflowStarted", "payload": {"workflow_run_id": "original"}, "principal": operator}]
+        waiting = None
+        if terminal == "WorkflowCancelled":
+            events.append({"event_type": "SignalWaitOpened", "payload": {"signal_wait_id": "original-wait"}, "principal": None})
+            waiting = {"history": {"events": copy.deepcopy(events)}}
+        events.append({"event_type": terminal, "payload": {"message": "principal-fixture-failure"},
+                       "principal": worker if terminal == "WorkflowFailed" else operator})
+        return {"events": events}, namespace, {"run_id": "original"}, terminal, waiting
+
+    def test_real_operation_actor_shapes_pass(self):
+        for terminal in ("WorkflowFailed", "WorkflowCancelled"):
+            self.assertEqual(verify_operation_history(*self.operation_fixture(terminal))["event_type"], terminal)
+
+    def test_operation_cannot_change_run_actor_or_terminal_boundary(self):
+        for terminal in ("WorkflowFailed", "WorkflowCancelled"):
+            fixture = self.operation_fixture(terminal)
+            for mutation in ("run", "actor", "missing", "duplicate", "wrong-status"):
+                changed = copy.deepcopy(fixture)
+                events = changed[0]["events"]
+                if mutation == "run":
+                    events[0]["payload"]["workflow_run_id"] = "replacement"
+                elif mutation == "actor":
+                    events[-1]["principal"] = {"id": "mallory", "type": "attacker"}
+                elif mutation == "missing":
+                    events.pop()
+                elif mutation == "duplicate":
+                    events.append(copy.deepcopy(events[-1]))
+                else:
+                    events[-1]["event_type"] = "WorkflowCompleted"
+                with self.subTest(terminal=terminal, mutation=mutation), self.assertRaises(RuntimeError):
+                    verify_operation_history(*changed)
+
+    def test_terminal_cancel_cannot_rewrite_wait_or_resume(self):
+        for mutation in ("wait", "signal", "applied"):
+            fixture = self.operation_fixture("WorkflowCancelled")
+            if mutation == "wait":
+                fixture[0]["events"][1]["payload"]["signal_wait_id"] = "replacement"
+            else:
+                fixture[0]["events"].insert(2, {"event_type": "SignalReceived" if mutation == "signal" else "SignalApplied", "payload": {}})
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                verify_operation_history(*fixture)
+
+    def query_fixture(self):
+        result = {"workflow_id": "original-workflow", "run_id": "original-run",
+                  "principal": {"type": "attacker", "id": "mallory"}}
+        record = {"namespace": "rust-namespace-a", **result, "result": result}
+        receipt = {"response_principal": {"type": "auth:runtime-token", "id": "fixture-rust-namespace-a-operator", "label": "Operator"},
+                   "response_run_id": "original-run", "status": 200, "headers": HEADERS,
+                   "body_fields": BODY_FIELDS, "result_envelope": envelope(result)}
+        history = {"events": [{"event_type": "WorkflowCompleted", "payload": {"output": envelope("original-result")}}]}
+        return receipt, record, history, copy.deepcopy(history)
+
+    def test_query_result_principal_is_distinct_from_authenticated_audit_identity(self):
+        review = verify_query_receipt(*self.query_fixture())
+        self.assertNotEqual(review["audit_principal"], review["application_principal"])
+
+    def test_query_cannot_claim_workflow_supplied_principal_or_change_history(self):
+        for mutation in ("missing-actor", "fake-actor", "run", "header", "body", "envelope", "history"):
+            fixture = self.query_fixture()
+            if mutation == "missing-actor":
+                fixture[0]["response_principal"] = None
+            elif mutation == "fake-actor":
+                fixture[0]["response_principal"] = fixture[1]["result"]["principal"]
+            elif mutation == "run":
+                fixture[0]["response_run_id"] = "replacement"
+            elif mutation == "header":
+                fixture[0]["headers"] = {}
+            elif mutation == "body":
+                fixture[0]["body_fields"] = {}
+            elif mutation == "envelope":
+                fixture[0]["result_envelope"] = None
+            else:
+                fixture[3]["events"].append({"event_type": "WorkflowCompleted", "payload": {}})
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                verify_query_receipt(*fixture)
 
 
 if __name__ == "__main__":

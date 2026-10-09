@@ -151,6 +151,47 @@ def verify_gateway(receipts):
     return successful
 
 
+def verify_operation_history(history, namespace, started, terminal, waiting=None):
+    if one(history, "WorkflowStarted")["payload"]["workflow_run_id"] != started["run_id"]:
+        raise RuntimeError("Principal operation changed its original run.")
+    terminals = [row for row in history["events"] if row["event_type"] in TERMINAL]
+    if len(terminals) != 1 or terminals[0]["event_type"] != terminal:
+        raise RuntimeError("Principal operation has a missing, duplicate or wrong terminal event.")
+    for kind, role in (("WorkflowStarted", "operator"), (terminal, "worker" if terminal == "WorkflowFailed" else "operator")):
+        expected = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+        if one(history, kind).get("principal") != expected:
+            raise RuntimeError("Principal operation recorded a missing, forged or wrong-role actor.")
+    if terminal == "WorkflowFailed":
+        if "principal-fixture-failure" not in json.dumps(terminals[0]["payload"]):
+            raise RuntimeError("Workflow failure did not come from the actual Rust fixture handler.")
+    if waiting is not None:
+        before = waiting["history"]["events"]
+        if before != history["events"][:len(before)]:
+            raise RuntimeError("Terminal cancellation rewrote the original wait history.")
+        one(history, "SignalWaitOpened")
+        if any(row["event_type"] in {"SignalReceived", "SignalApplied", "WorkflowCompleted", "WorkflowFailed"}
+               for row in history["events"]):
+            raise RuntimeError("Terminal cancellation resumed the fixture workflow.")
+    return terminals[0]
+
+
+def verify_query_receipt(receipt, record, history_before, history_after):
+    expected = {"type": "auth:runtime-token", "id": f"fixture-{record['namespace']}-operator", "label": "Operator"}
+    if (receipt.get("response_principal") != expected or receipt.get("response_run_id") != record["run_id"]
+            or receipt.get("status") != 200 or receipt.get("headers") != HEADERS or receipt.get("body_fields") != BODY_FIELDS):
+        raise RuntimeError("Query lost its server-controlled audit actor, selected run or injected execution.")
+    if not isinstance(receipt.get("result_envelope"), dict):
+        raise RuntimeError("Query response has no published Avro result envelope.")
+    result = serializer.decode_envelope(receipt["result_envelope"], codec="avro")
+    if (result != record["result"] or result.get("principal") != {"type": "attacker", "id": "mallory"}
+            or result["workflow_id"] != record["workflow_id"] or result["run_id"] != record["run_id"]):
+        raise RuntimeError("Query result does not match the actual Rust-selected run or forged application field.")
+    if history_before != history_after:
+        raise RuntimeError("Read-only query mutated the completed workflow's committed history.")
+    return {"audit_principal": receipt["response_principal"], "application_principal": result["principal"],
+            "original_run_id": record["run_id"], "history_unchanged": True}
+
+
 def parked_identity(history):
     started = one(history, "WorkflowStarted")["payload"]
     scheduled = one(history, "ActivityScheduled")["payload"]
@@ -284,13 +325,70 @@ async def inspect(phase):
             await client.aclose()
 
 
+async def inspect_operations(phase):
+    proof = Path(os.environ["NAMESPACE_PROOF_DIR"])
+    receipts = [json.loads(line) for line in (proof / "gateway.jsonl").read_text().splitlines()]
+    for namespace in NAMESPACES:
+        client = Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token="test-token", namespace=namespace)
+        try:
+            cancelled_id = f"principal-cancel-{namespace}"
+            if phase == "operations-park":
+                deadline = asyncio.get_running_loop().time() + 90
+                while asyncio.get_running_loop().time() < deadline:
+                    description, history = await observe(client, cancelled_id)
+                    if description.status == "waiting" and any(row["event_type"] == "SignalWaitOpened" for row in history["events"]):
+                        one(history, "SignalWaitOpened")
+                        retain(f"principal-park-{cancelled_id}", {"run_id": description.run_id, "history": history})
+                        break
+                    if description.status in {"failed", "completed", "cancelled", "terminated"}:
+                        raise RuntimeError("Cancellation probe closed before its declared wait.")
+                    await asyncio.sleep(.25)
+                else:
+                    raise RuntimeError("Cancellation probe never reached its declared wait.")
+                continue
+            query = json.loads((proof / f"{namespace}-query.json").read_text())
+            before = json.loads((proof / f"verify-{query['workflow_id']}.json").read_text())["history"]
+            _, after = await observe(client, query["workflow_id"])
+            path = f"/api/workflows/{query['workflow_id']}/runs/{query['run_id']}/query/namespace-principal"
+            matches = [row for row in receipts if row["kind"] == "query" and row["path"] == path and row["namespace"] == namespace]
+            if len(matches) != 1:
+                raise RuntimeError("Actual selected-run Rust query gateway receipt is missing or duplicated.")
+            query_review = verify_query_receipt(matches[0], query, before, after)
+            outcomes = []
+            for workflow_id, terminal in ((f"principal-failure-{namespace}", "WorkflowFailed"), (cancelled_id, "WorkflowCancelled")):
+                started = json.loads((proof / f"start-{workflow_id}.json").read_text())
+                description, history = await observe(client, workflow_id)
+                waiting = json.loads((proof / f"principal-park-{workflow_id}.json").read_text()) if terminal == "WorkflowCancelled" else None
+                end = verify_operation_history(history, namespace, started, terminal, waiting)
+                kind = "cancel" if terminal == "WorkflowCancelled" else "workflow-task-complete"
+                mutations = [row for row in receipts if row["kind"] == kind and row["namespace"] == namespace
+                             and 200 <= row["status"] < 300 and
+                             (row["path"] == f"/api/workflows/{workflow_id}/cancel" if kind == "cancel" else "fail_workflow" in row["commands"])]
+                starts = [row for row in receipts if row["kind"] == "start" and row["workflow_id"] == workflow_id
+                          and row["namespace"] == namespace and row["status"] == 201]
+                if len(mutations) != 1 or len(starts) != 1:
+                    raise RuntimeError("Actual Rust principal operation start/terminal mutation did not reach Server once.")
+                for mutation in (*mutations, *starts):
+                    if mutation["headers"] != HEADERS or mutation["body_fields"] != BODY_FIELDS:
+                        raise RuntimeError("A principal operation bypassed the forged identity matrix.")
+                outcome = {"workflow_id": workflow_id, "run_id": description.run_id, "terminal": terminal, "principal": end["principal"]}
+                retain(f"principal-verify-{workflow_id}", {"history": history, **outcome})
+                outcomes.append(outcome)
+            retain(f"principal-operations-{namespace}", {"query": query_review, "terminals": outcomes})
+            emit(scenario="rust-principal-operations-pass", namespace=namespace, query=query_review, terminals=outcomes)
+        finally:
+            await client.aclose()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("setup", "rotate", "park", "released", "verify"))
+    parser.add_argument("phase", choices=("setup", "rotate", "park", "released", "verify", "operations-park", "operations-verify"))
     phase = parser.parse_args().phase
     if phase == "setup":
         setup()
     elif phase == "rotate":
         rotate()
+    elif phase.startswith("operations-"):
+        asyncio.run(inspect_operations(phase))
     else:
         asyncio.run(inspect(phase))
