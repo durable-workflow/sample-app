@@ -8,6 +8,7 @@ if [[ "${1:-}" == --help ]]; then
     'Requires authenticated history principals despite forged identity fields on real SDK requests.' \
     'Rotates operator/worker credentials during process absence and rejects the old credentials through Rust SDK calls.' \
     'A final isolated auth-disabled phase requires anonymous Rust actors and actual credential-free requests.' \
+    'Checks actual original histories through native CLI JSON/tables and the published Waterline remote API.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.' \
     'SDK_NAMESPACES_RESULT_DIR optionally retains actual histories, gateway receipts and process-loss records.'
@@ -39,7 +40,7 @@ cleanup() {
   fi
   "${compose[@]}" down --volumes --remove-orphans || return 1
   local suffix image
-  for suffix in rust-workflow-worker smoke; do
+  for suffix in rust-workflow-worker smoke waterline; do
     image="${COMPOSE_PROJECT_NAME}-${suffix}:latest"
     if docker image inspect "$image" >/dev/null 2>&1; then docker image rm --no-prune "$image" || return 1; fi
   done
@@ -53,17 +54,28 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
-"${compose[@]}" build smoke rust-workflow-worker
+"${compose[@]}" build smoke rust-workflow-worker waterline
 "${compose[@]}" run --rm --no-deps smoke \
   python -m unittest discover -s /app/scripts -p test_sdk_namespaces.py
 "${compose[@]}" run --rm --no-deps smoke \
   python -m unittest discover -s /app/scripts -p test_principal_gateway.py
+"${compose[@]}" run --rm --no-deps smoke \
+  python -m unittest discover -s /app/scripts -p test_principal_operators.py
 "${compose[@]}" pull --policy always bootstrap server timer-queue
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 observer() {
   "${compose[@]}" run --rm --no-deps -e DURABLE_WORKFLOW_NAMESPACE_RUNS \
     smoke python /app/scripts/sdk_namespaces.py "$@"
+}
+operator_views() {
+  export NAMESPACE_WATERLINE_NAMESPACE="$1" NAMESPACE_WATERLINE_TOKEN=""
+  if [[ "$1" != default ]]; then
+    NAMESPACE_WATERLINE_TOKEN="dwr_fixture_operator_${1//-/_}_0123456789_rotated"
+  fi
+  "${compose[@]}" up -d --wait --no-build --force-recreate waterline
+  "${compose[@]}" run --rm --no-deps -e "PRINCIPAL_OPERATOR_NAMESPACE=$1" \
+    smoke python /app/scripts/principal_operators.py
 }
 caller() {
   local namespace="$1" credential_namespace="$2" role="$3" phase="$4" id="$5"
@@ -187,6 +199,7 @@ for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator verify-cancelled "principal-cancel-$namespace"
 done
 observer operations-verify
+for namespace in rust-namespace-a rust-namespace-b; do operator_views "$namespace"; done
 # Finish every authenticated assertion before reconfiguring this disposable Server.
 caller default default anonymous revoked-describe namespace-run-rust-namespace-a \
   | tee "$NAMESPACE_PROOF_DIR/anonymous-token-driver-refusal.json"
@@ -207,4 +220,5 @@ caller default default anonymous cancel principal-cancel-default | tee "$NAMESPA
 caller default default anonymous verify-failed principal-failure-default
 caller default default anonymous verify-cancelled principal-cancel-default
 observer anonymous-operations-verify
+operator_views default
 printf 'SDK namespaces pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

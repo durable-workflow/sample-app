@@ -9,6 +9,20 @@ services:
       DW_RUNTIME_CREDENTIALS_ENABLED: "true"
       DW_AUTH_DRIVER: ${NAMESPACE_AUTH_DRIVER:-token}
 
+  waterline:
+    init: true
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      WATERLINE_BACKEND: service
+      WATERLINE_SERVER_ENDPOINT: http://server:8080
+      WATERLINE_SERVER_TOKEN: ${NAMESPACE_WATERLINE_TOKEN-test-token}
+      WATERLINE_NAMESPACE: ${NAMESPACE_WATERLINE_NAMESPACE:-default}
+      WATERLINE_ACCESS_MODE: read_only
+      # Any accidental embedded read fails rather than borrowing Server's database.
+      DB_HOST: unavailable.invalid
+      SHARED_DB_HOST: unavailable.invalid
+
   rust-namespace-a:
     <<: *namespace-process
     init: true
