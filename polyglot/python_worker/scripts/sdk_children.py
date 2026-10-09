@@ -7,9 +7,11 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote
 
 from durable_workflow import Client, serializer
+from principal_gateway import BODY_FIELDS, HEADERS
 
 RUNTIMES = ("php", "python", "rust")
 DIRECTIONS = tuple((parent, child) for parent in RUNTIMES for child in RUNTIMES)
@@ -18,6 +20,7 @@ PARENT_EVENTS = {"WorkflowStarted", "ChildWorkflowScheduled", "ChildRunStarted",
                  "ChildRunCompleted", "ChildRunFailed", "ChildRunCancelled", "ChildRunTerminated",
                  "WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated"}
 TERMINAL_EVENTS = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated"}
+CANCELLATION_ACTOR = {"id": "legacy-token", "label": "Admin", "type": "auth:token"}
 
 
 def required(name):
@@ -29,6 +32,9 @@ def required(name):
 
 def emit(**record):
     print(json.dumps(record, sort_keys=True), flush=True)
+    if os.environ.get("CHILD_PROOF_DIR") and all(record.get(key) for key in ("scenario", "parent", "child")):
+        path = Path(os.environ["CHILD_PROOF_DIR"]) / f"{record['scenario']}-{record['parent']}-{record['child']}.json"
+        path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n")
 
 
 def records():
@@ -255,8 +261,17 @@ def markers(history, role, runtime):
     return values
 
 
+def cancellation_actor(history, role):
+    event = one(history, "CooperativeCancellationRequested")
+    context = event["payload"]["cancellation"]
+    if ("principal" not in event or event["principal"] != (CANCELLATION_ACTOR if role == "parent" else None)
+            or context.get("requester") != CANCELLATION_ACTOR or context.get("source") != "control_plane"):
+        raise RuntimeError("Cooperative cancellation lost its authenticated requester or internal propagation classification.")
+    return context
+
+
 def cancellation_context(history, record, role):
-    context = one(history, "CooperativeCancellationRequested")["payload"]["cancellation"]
+    context = cancellation_actor(history, role)
     root = record["root_request"]
     expected_run = record["parent_run_id"] if role == "parent" else record["child_workflow_run_id"]
     expected_workflow = record["parent_workflow_id"] if role == "parent" else record["child_workflow_instance_id"]
@@ -331,6 +346,9 @@ async def cancellation_duplicate(client):
         root = response["cancellation_request"]
         if not response.get("duplicate") or any(root.get(key) != record["root_request"][key] for key in ("request_id", "requested_at", "cleanup_deadline_at")):
             raise RuntimeError("Duplicate cancellation replaced the original identity or deadline.")
+        _, parent = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
+        if cancellation_context(parent, record, "parent") != record["root_context"]:
+            raise RuntimeError("Duplicate cancellation replaced its original authenticated requester or context.")
         _, child = await observe(client, record["child_workflow_instance_id"], record["child_workflow_run_id"])
         if (one(child, "CooperativeCancellationDelivered") != record["child_delivery"]
                 or markers(child, "child", record["child"]) != [record["child_cleanup_entry"]]
@@ -353,6 +371,10 @@ def verify_cancelled(parent, child, record):
             raise RuntimeError("Original run did not terminate as Cancelled exactly once.")
         context = cancellation_context(history, record, role)
         delivery = one(history, "CooperativeCancellationDelivered")
+        if ("principal" not in delivery or delivery["principal"] is not None
+                or "principal" not in terminal[0] or terminal[0]["principal"] is not None
+                or delivery["payload"]["cancellation"] != context):
+            raise RuntimeError("Cleanup changed its committed requester or internal event classification.")
         values = markers(history, role, runtime)
         if (len(values) != 2 or any(value["context"] != context for value in values)
                 or not 0 < values[1]["remaining"] < values[0]["remaining"] <= 30
@@ -374,6 +396,13 @@ def verify_cancelled(parent, child, record):
     settled = one(parent, "ChildRunCancelled")["payload"]
     if any(settled.get(key) != record[key] for key in ("child_workflow_instance_id", "child_workflow_run_id", "workflow_link_id", "child_call_id")):
         raise RuntimeError("Cancellation settled a different child relationship.")
+
+
+def verify_cascade_request(actual, context):
+    # Published cascade metadata uses graph edges for lineage.
+    expected = {key: value for key, value in context.items() if key != "lineage"}
+    if actual != expected:
+        raise RuntimeError("Cascade request metadata changed its original requester, identity or budget.")
 
 
 async def inspect_cascade(record, parent, child):
@@ -399,6 +428,9 @@ async def inspect_cascade(record, parent, child):
         raise
     if process.returncode or json.loads(output)["cancellation_cascade"] != view:
         raise RuntimeError(f"Published CLI differs from the Server cancellation cascade: {errors.decode()}")
+    emit(scenario="child-cancellation-cascade-observed", parent=record["parent"], child=record["child"],
+         cancellation_cascade=view)
+    verify_cascade_request(view["root"], record["root_context"])
     if (view.get("schema") != "durable-workflow.cancellation-cascade/v1"
             or view.get("selected_run_id") != record["parent_run_id"]
             or view.get("inspection_complete") is not True or view.get("truncated") is not False
@@ -407,10 +439,11 @@ async def inspect_cascade(record, parent, child):
             or view["root"]["cleanup_deadline_at"] != record["root_request"]["cleanup_deadline_at"]):
         raise RuntimeError("Operator view does not explain the complete original cancellation cascade.")
     nodes = {node["run_id"]: node for node in view["runs"]}
-    for run_id, history in ((record["parent_run_id"], parent), (record["child_workflow_run_id"], child)):
+    for role, run_id, history in (("parent", record["parent_run_id"], parent), ("child", record["child_workflow_run_id"], child)):
         node = nodes[run_id]
         delivery = one(history, "CooperativeCancellationDelivered")["payload"]
         cleanup = one(history, "WorkflowCancelled")["payload"]["cancellation_cleanup"]
+        verify_cascade_request(node["request"], cancellation_context(history, record, role))
         if (node["lifecycle"] != "cancelled" or node["same_root_budget"] is not True
                 or node["cleanup"] != cleanup or node["delivery"]["sequence"] != delivery["sequence"]
                 or node["delivery"]["history_event_id"] != cleanup["delivery_history_event_id"]):
@@ -419,6 +452,26 @@ async def inspect_cascade(record, parent, child):
     if edge["parent_run_id"] != record["parent_run_id"] or edge["child_run_id"] != record["child_workflow_run_id"]:
         raise RuntimeError("Operator view links different original runs.")
     return view
+
+
+def verify_cancellation_transport(pending, receipts):
+    selected = [row for row in receipts if row["kind"] == "cooperative-cancel"]
+    expected_paths = {f"/api/workflows/{quote(row['parent_workflow_id'], safe='')}/runs/{quote(row['parent_run_id'], safe='')}/request-cancellation"
+                      for row in pending}
+    if (len(selected) != len(pending) * 2 or {row["path"] for row in selected} != expected_paths
+            or any(sum(row["path"] == path for row in selected) != 2 for path in expected_paths)
+            or any(row["status"] not in (200, 202) or row["namespace"] != "default" or row["authorization_present"] is not True
+                   or row["body_fields"] != BODY_FIELDS or row["headers"] != HEADERS for row in selected)):
+        raise RuntimeError("Original and duplicate cancellation lack actual successful forged-metadata request receipts.")
+    for record in pending:
+        path = f"/api/workflows/{quote(record['parent_workflow_id'], safe='')}/runs/{quote(record['parent_run_id'], safe='')}/request-cancellation"
+        pair = [row for row in selected if row["path"] == path]
+        if ([(row["status"], row.get("response_duplicate")) for row in pair] != [(202, False), (200, True)]
+                or any(any(row.get("response_cancellation_request", {}).get(key) != record["root_request"][key]
+                           for key in ("request_id", "requested_at", "cleanup_deadline_at")) for row in pair)):
+            raise RuntimeError("Transport responses replaced the original cooperative identity or deadline.")
+    return {"directions": len(pending), "original_and_duplicate_requests": len(selected),
+            "body_fields": len(BODY_FIELDS), "headers": len(HEADERS), "authenticated_requester": CANCELLATION_ACTOR}
 
 
 async def cancellation_verify(client):
@@ -439,6 +492,9 @@ async def cancellation_verify(client):
         emit(scenario="child-cancellation-worker-recovery", **record, parent_events=parent["events"], child_events=child["events"],
              cancellation_cascade=view, elapsed_seconds=(instant(one(parent, "WorkflowCancelled")["timestamp"])
                  - instant(record["root_request"]["requested_at"])).total_seconds())
+    proof = Path(required("CHILD_PROOF_DIR"))
+    receipts = [json.loads(line) for line in (proof / "gateway.jsonl").read_text().splitlines()]
+    emit(scenario="child-cooperative-principal-transport-pass", **verify_cancellation_transport(records(), receipts))
 
 
 async def main():

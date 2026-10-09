@@ -42,6 +42,8 @@ def mutation_kind(method, path):
         return "query"
     if path.startswith("/api/workflows/") and path.endswith("/cancel"):
         return "cancel"
+    if path.startswith("/api/workflows/") and path.endswith("/request-cancellation"):
+        return "cooperative-cancel"
     if path.startswith("/api/worker/workflow-tasks/") and path.endswith("/complete"):
         return "workflow-task-complete"
     if path.startswith("/api/worker/activity-tasks/") and path.endswith("/complete"):
@@ -106,6 +108,10 @@ class Gateway(BaseHTTPRequestHandler):
                     receipt["response_principal"] = result_payload.get("principal")
                     receipt["response_run_id"] = result_payload.get("run_id")
                     receipt["result_envelope"] = result_payload.get("result_envelope")
+                if kind == "cooperative-cancel" and response.status in (200, 202):
+                    result_payload = json.loads(result)
+                    receipt["response_duplicate"] = result_payload.get("duplicate")
+                    receipt["response_cancellation_request"] = result_payload.get("cancellation_request")
                 with RECEIPT_LOCK, self.receipt_path.open("a") as stream:
                     stream.write(json.dumps(receipt, sort_keys=True) + "\n")
             self.send_response(response.status)
