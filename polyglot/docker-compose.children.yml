@@ -1,0 +1,26 @@
+services:
+  smoke:
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - "${CHILD_PROOF_DIR:?set the disposable proof directory}:/proof"
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: http://principal-gateway:8083
+      CHILD_PROOF_DIR: /proof
+
+  principal-gateway:
+    init: true
+    user: "${CHILD_UID:?set the invoking UID}:${CHILD_GID:?set the invoking GID}"
+    mem_limit: 256m
+    cpus: 0.5
+    image: ${COMPOSE_PROJECT_NAME}-smoke:latest
+    command: ["python", "/app/scripts/principal_gateway.py"]
+    volumes:
+      - "${CHILD_PROOF_DIR}:/proof"
+    environment:
+      NAMESPACE_PROOF_DIR: /proof
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8083/health', timeout=2).read()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

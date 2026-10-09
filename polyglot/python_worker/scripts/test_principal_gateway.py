@@ -71,6 +71,7 @@ class GatewayForwardingChecks(unittest.TestCase):
                 {"type": "complete_workflow", "result": {"codec": "avro", "blob": "opaque-result"}}]}),
             ("/api/worker/activity-tasks/task/complete", {"activity_attempt_id": "original-attempt", "result": {"codec": "avro", "blob": "opaque-activity"}}),
             ("/api/workflows/original/cancel", {"reason": "original-reason", "request_id": "original-request"}),
+            ("/api/workflows/original/runs/original-run/request-cancellation", {"reason": "cleanup", "cleanup_timeout_seconds": 30}),
         ):
             actual = self.send(path, body)
             self.assertEqual(actual["path"], path)
@@ -83,8 +84,8 @@ class GatewayForwardingChecks(unittest.TestCase):
         text = Path(self.temp.name, "gateway.jsonl").read_text()
         self.assertNotIn("fixture-real-secret", text)
         rows = [json.loads(line) for line in text.splitlines()]
-        self.assertEqual(len(rows), 5)
-        self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete", "cancel"})
+        self.assertEqual(len(rows), 6)
+        self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete", "cancel", "cooperative-cancel"})
         self.assertTrue(all(row["status"] == 201 for row in rows))
         self.assertTrue(all(row["authorization_present"] is True for row in rows))
 
