@@ -48,12 +48,14 @@ class GatewayForwardingChecks(unittest.TestCase):
             thread.join()
         self.temp.cleanup()
 
-    def send(self, path, body):
+    def send(self, path, body, *, anonymous=False):
         connection = http.client.HTTPConnection(*self.gateway.server_address, timeout=3)
         try:
-            connection.request("POST", path, body=json.dumps(body), headers={
-                "Authorization": "Bearer fixture-real-secret", "X-Namespace": "rust-namespace-a",
-                "X-Durable-Workflow-Control-Plane-Version": "2", "Content-Type": "application/json"})
+            headers = {"X-Namespace": "default" if anonymous else "rust-namespace-a",
+                       "X-Durable-Workflow-Control-Plane-Version": "2", "Content-Type": "application/json"}
+            if not anonymous:
+                headers["Authorization"] = "Bearer fixture-real-secret"
+            connection.request("POST", path, body=json.dumps(body), headers=headers)
             response = connection.getresponse()
             self.assertEqual(response.status, 201)
             self.assertEqual(json.loads(response.read()), {"upstream": True})
@@ -84,6 +86,16 @@ class GatewayForwardingChecks(unittest.TestCase):
         self.assertEqual(len(rows), 5)
         self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete", "cancel"})
         self.assertTrue(all(row["status"] == 201 for row in rows))
+        self.assertTrue(all(row["authorization_present"] is True for row in rows))
+
+    def test_anonymous_request_stays_credential_free_despite_forged_headers(self):
+        actual = self.send("/api/workflows", {"workflow_id": "anonymous-original"}, anonymous=True)
+        self.assertIsNone(actual["headers"].get("Authorization"))
+        self.assertEqual(actual["headers"]["Authorization-Override"], HEADERS["Authorization-Override"])
+        receipt = json.loads(Path(self.temp.name, "gateway.jsonl").read_text())
+        self.assertIs(receipt["authorization_present"], False)
+        self.assertEqual(receipt["namespace"], "default")
+        self.assertEqual(receipt["body_fields"], BODY_FIELDS)
 
     def test_poll_body_is_preserved_and_cannot_stand_in_for_a_mutation(self):
         body = {"worker_id": "worker", "task_queue": "queue", "timeout_seconds": 0}
@@ -122,6 +134,7 @@ class GatewayForwardingChecks(unittest.TestCase):
             self.assertEqual(receipt["response_principal"], payload["principal"])
             self.assertNotEqual(receipt["response_principal"], payload["result"]["principal"])
             self.assertEqual(receipt["response_run_id"], "original-run")
+            self.assertIs(receipt["authorization_present"], False)
             self.assertEqual(receipt["result_envelope"], payload["result_envelope"])
         finally:
             connection.close()

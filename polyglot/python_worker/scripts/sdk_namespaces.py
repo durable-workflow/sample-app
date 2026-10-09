@@ -106,7 +106,12 @@ def rotate():
          duplicate_rotation_preserved=True)
 
 
-def verify_principals(history, namespace, *, completed=False):
+def expected_principal(namespace, role, *, anonymous=False):
+    return ({"type": "server", "id": "anonymous", "label": "Admin"} if anonymous else
+            {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()})
+
+
+def verify_principals(history, namespace, *, completed=False, anonymous=False):
     roles = {"WorkflowStarted": "operator"}
     if any(row["event_type"] == "SignalReceived" for row in history["events"]):
         roles["SignalReceived"] = "operator"
@@ -114,7 +119,7 @@ def verify_principals(history, namespace, *, completed=False):
         roles["WorkflowCompleted"] = "worker"
     observed = {}
     for kind, role in roles.items():
-        expected = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+        expected = expected_principal(namespace, role, anonymous=anonymous)
         actual = one(history, kind).get("principal")
         if actual != expected:
             raise RuntimeError(f"{kind} principal expected {expected!r}, got {actual!r}.")
@@ -122,7 +127,7 @@ def verify_principals(history, namespace, *, completed=False):
     # Every supplied principal, including optional events, must belong to this namespace.
     for row in history["events"]:
         if row.get("principal") is not None and row["principal"] not in (
-            {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+            expected_principal(namespace, role, anonymous=anonymous)
             for role in ("operator", "worker")
         ):
             raise RuntimeError("History includes a forged or foreign principal.")
@@ -151,14 +156,14 @@ def verify_gateway(receipts):
     return successful
 
 
-def verify_operation_history(history, namespace, started, terminal, waiting=None):
+def verify_operation_history(history, namespace, started, terminal, waiting=None, *, anonymous=False):
     if one(history, "WorkflowStarted")["payload"]["workflow_run_id"] != started["run_id"]:
         raise RuntimeError("Principal operation changed its original run.")
     terminals = [row for row in history["events"] if row["event_type"] in TERMINAL]
     if len(terminals) != 1 or terminals[0]["event_type"] != terminal:
         raise RuntimeError("Principal operation has a missing, duplicate or wrong terminal event.")
     for kind, role in (("WorkflowStarted", "operator"), (terminal, "worker" if terminal == "WorkflowFailed" else "operator")):
-        expected = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+        expected = expected_principal(namespace, role, anonymous=anonymous)
         if one(history, kind).get("principal") != expected:
             raise RuntimeError("Principal operation recorded a missing, forged or wrong-role actor.")
     if terminal == "WorkflowFailed":
@@ -172,14 +177,18 @@ def verify_operation_history(history, namespace, started, terminal, waiting=None
         if any(row["event_type"] in {"SignalReceived", "SignalApplied", "WorkflowCompleted", "WorkflowFailed"}
                for row in history["events"]):
             raise RuntimeError("Terminal cancellation resumed the fixture workflow.")
+    if anonymous:
+        verify_principals(history, namespace, anonymous=True)
     return terminals[0]
 
 
-def verify_query_receipt(receipt, record, history_before, history_after):
-    expected = {"type": "auth:runtime-token", "id": f"fixture-{record['namespace']}-operator", "label": "Operator"}
+def verify_query_receipt(receipt, record, history_before, history_after, *, anonymous=False):
+    expected = expected_principal(record["namespace"], "operator", anonymous=anonymous)
     if (receipt.get("response_principal") != expected or receipt.get("response_run_id") != record["run_id"]
             or receipt.get("status") != 200 or receipt.get("headers") != HEADERS or receipt.get("body_fields") != BODY_FIELDS):
         raise RuntimeError("Query lost its server-controlled audit actor, selected run or injected execution.")
+    if anonymous and receipt.get("authorization_present") is not False:
+        raise RuntimeError("Anonymous query supplied a credential or lacks its transport observation.")
     if not isinstance(receipt.get("result_envelope"), dict):
         raise RuntimeError("Query response has no published Avro result envelope.")
     result = serializer.decode_envelope(receipt["result_envelope"], codec="avro")
@@ -325,11 +334,60 @@ async def inspect(phase):
             await client.aclose()
 
 
-async def inspect_operations(phase):
+def verify_anonymous_transport(receipts):
+    successful = [row for row in receipts if row["namespace"] == "default" and 200 <= row["status"] < 300]
+    if not successful or any(row.get("authorization_present") is not False or row["headers"] != HEADERS
+                             or row["body_fields"] != BODY_FIELDS for row in successful):
+        raise RuntimeError("Anonymous execution supplied credentials or bypassed the forged metadata matrix.")
+    for kind, count in (("start", 3), ("signal", 1), ("activity-complete", 1), ("query", 1), ("cancel", 1)):
+        if sum(row["kind"] == kind for row in successful) != count:
+            raise RuntimeError("An actual anonymous principal operation is missing or duplicated.")
+    commands = [command for row in successful for command in row["commands"]]
+    if commands.count("complete_workflow") != 1 or commands.count("fail_workflow") != 1:
+        raise RuntimeError("Anonymous workflow completion or authored failure did not execute once.")
+    return successful
+
+
+async def inspect_anonymous(phase):
+    workflow_id = "namespace-run-default"
+    client = Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], namespace="default")
+    try:
+        if phase == "anonymous-park":
+            deadline = asyncio.get_running_loop().time() + 90
+            while asyncio.get_running_loop().time() < deadline:
+                description, history = await observe(client, workflow_id)
+                if any(row["event_type"] in TERMINAL for row in history["events"]):
+                    raise RuntimeError("Anonymous workflow closed before its declared wait.")
+                if description.status == "waiting" and any(row["event_type"] == "SignalWaitOpened" for row in history["events"]):
+                    identity = parked_identity(history)
+                    if identity["run_id"] != description.run_id:
+                        raise RuntimeError("Anonymous description and history selected different runs.")
+                    principals = verify_principals(history, "default", anonymous=True)
+                    retain(f"park-{workflow_id}", {"namespace": "default", "workflow_id": workflow_id,
+                           "history": history, "principals": principals, **identity})
+                    break
+                await asyncio.sleep(.25)
+            else:
+                raise RuntimeError("Anonymous workflow did not reach its declared wait.")
+        else:
+            before = json.loads(Path(os.environ["NAMESPACE_PROOF_DIR"], f"park-{workflow_id}.json").read_text())
+            description, history = await observe(client, workflow_id)
+            if (description.status != "completed" or description.run_id != before["run_id"]
+                    or before["history"]["events"] != history["events"][:len(before["history"]["events"])]):
+                raise RuntimeError("Anonymous completion changed its original run or committed wait history.")
+            result = verify_history(history, before)
+            principals = verify_principals(history, "default", completed=True, anonymous=True)
+            retain(f"verify-{workflow_id}", {**before, "history": history, "result": result, "principals": principals})
+            emit(scenario="rust-anonymous-completed", workflow_id=workflow_id, run_id=description.run_id, principals=principals)
+    finally:
+        await client.aclose()
+
+
+async def inspect_operations(phase, *, anonymous=False):
     proof = Path(os.environ["NAMESPACE_PROOF_DIR"])
     receipts = [json.loads(line) for line in (proof / "gateway.jsonl").read_text().splitlines()]
-    for namespace in NAMESPACES:
-        client = Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token="test-token", namespace=namespace)
+    for namespace in (("default",) if anonymous else NAMESPACES):
+        client = Client(os.environ["DURABLE_WORKFLOW_SERVER_URL"], token=None if anonymous else "test-token", namespace=namespace)
         try:
             cancelled_id = f"principal-cancel-{namespace}"
             if phase == "operations-park":
@@ -353,13 +411,13 @@ async def inspect_operations(phase):
             matches = [row for row in receipts if row["kind"] == "query" and row["path"] == path and row["namespace"] == namespace]
             if len(matches) != 1:
                 raise RuntimeError("Actual selected-run Rust query gateway receipt is missing or duplicated.")
-            query_review = verify_query_receipt(matches[0], query, before, after)
+            query_review = verify_query_receipt(matches[0], query, before, after, anonymous=anonymous)
             outcomes = []
             for workflow_id, terminal in ((f"principal-failure-{namespace}", "WorkflowFailed"), (cancelled_id, "WorkflowCancelled")):
                 started = json.loads((proof / f"start-{workflow_id}.json").read_text())
                 description, history = await observe(client, workflow_id)
                 waiting = json.loads((proof / f"principal-park-{workflow_id}.json").read_text()) if terminal == "WorkflowCancelled" else None
-                end = verify_operation_history(history, namespace, started, terminal, waiting)
+                end = verify_operation_history(history, namespace, started, terminal, waiting, anonymous=anonymous)
                 kind = "cancel" if terminal == "WorkflowCancelled" else "workflow-task-complete"
                 mutations = [row for row in receipts if row["kind"] == kind and row["namespace"] == namespace
                              and 200 <= row["status"] < 300 and
@@ -375,19 +433,28 @@ async def inspect_operations(phase):
                 retain(f"principal-verify-{workflow_id}", {"history": history, **outcome})
                 outcomes.append(outcome)
             retain(f"principal-operations-{namespace}", {"query": query_review, "terminals": outcomes})
-            emit(scenario="rust-principal-operations-pass", namespace=namespace, query=query_review, terminals=outcomes)
+            if anonymous:
+                successful = verify_anonymous_transport(receipts)
+                retain("anonymous-transport", {"auth_driver": "none", "authorization_absent": True,
+                       "successful_requests": len(successful)})
+            emit(scenario="rust-principal-operations-pass", namespace=namespace, anonymous=anonymous, query=query_review, terminals=outcomes)
         finally:
             await client.aclose()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("setup", "rotate", "park", "released", "verify", "operations-park", "operations-verify"))
+    parser.add_argument("phase", choices=("setup", "rotate", "park", "released", "verify", "operations-park", "operations-verify",
+                        "anonymous-park", "anonymous-verify", "anonymous-operations-park", "anonymous-operations-verify"))
     phase = parser.parse_args().phase
     if phase == "setup":
         setup()
     elif phase == "rotate":
         rotate()
+    elif phase.startswith("anonymous-operations-"):
+        asyncio.run(inspect_operations(phase.removeprefix("anonymous-"), anonymous=True))
+    elif phase.startswith("anonymous-"):
+        asyncio.run(inspect_anonymous(phase))
     elif phase.startswith("operations-"):
         asyncio.run(inspect_operations(phase))
     else:

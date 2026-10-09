@@ -7,6 +7,7 @@ if [[ "${1:-}" == --help ]]; then
     'Checks role credentials, denied reads/mutations/polls and original-run recovery after SIGKILL.' \
     'Requires authenticated history principals despite forged identity fields on real SDK requests.' \
     'Rotates operator/worker credentials during process absence and rejects the old credentials through Rust SDK calls.' \
+    'A final isolated auth-disabled phase requires anonymous Rust actors and actual credential-free requests.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.' \
     'SDK_NAMESPACES_RESULT_DIR optionally retains actual histories, gateway receipts and process-loss records.'
@@ -19,6 +20,7 @@ export COMPOSE_PROJECT_NAME="${SDK_NAMESPACES_COMPOSE_PROJECT_NAME:-sample-app-s
 export NAMESPACE_UID="$(id -u)" NAMESPACE_GID="$(id -g)"
 export RUST_NAMESPACE_A_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_a_0123456789
 export RUST_NAMESPACE_B_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_b_0123456789
+export NAMESPACE_AUTH_DRIVER=token
 export NAMESPACE_PROOF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sdk-namespaces.XXXXXX")"
 compose=(docker compose --project-directory "$repo_root/polyglot" \
   -f "$repo_root/polyglot/docker-compose.yml" -f "$repo_root/polyglot/docker-compose.namespaces.yml")
@@ -185,4 +187,24 @@ for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator verify-cancelled "principal-cancel-$namespace"
 done
 observer operations-verify
+# Finish every authenticated assertion before reconfiguring this disposable Server.
+caller default default anonymous revoked-describe namespace-run-rust-namespace-a \
+  | tee "$NAMESPACE_PROOF_DIR/anonymous-token-driver-refusal.json"
+"${compose[@]}" stop "${workers[@]}"
+export NAMESPACE_AUTH_DRIVER=none
+"${compose[@]}" up -d --wait --no-build --force-recreate server
+"${compose[@]}" up -d --wait --no-build rust-anonymous
+caller default default anonymous start namespace-run-default
+observer anonymous-park
+caller default default anonymous release namespace-run-default
+caller default default anonymous verify namespace-run-default
+observer anonymous-verify
+caller default default anonymous query namespace-run-default | tee "$NAMESPACE_PROOF_DIR/default-query.json"
+caller default default anonymous start-failure principal-failure-default | tee "$NAMESPACE_PROOF_DIR/start-principal-failure-default.json"
+caller default default anonymous start-cancel principal-cancel-default | tee "$NAMESPACE_PROOF_DIR/start-principal-cancel-default.json"
+observer anonymous-operations-park
+caller default default anonymous cancel principal-cancel-default | tee "$NAMESPACE_PROOF_DIR/default-cancel.json"
+caller default default anonymous verify-failed principal-failure-default
+caller default default anonymous verify-cancelled principal-cancel-default
+observer anonymous-operations-verify
 printf 'SDK namespaces pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

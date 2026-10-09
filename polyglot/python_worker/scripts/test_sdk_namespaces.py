@@ -3,7 +3,7 @@ import unittest
 
 from durable_workflow import serializer
 from principal_gateway import BODY_FIELDS, HEADERS
-from sdk_namespaces import (IDENTITIES, parked_identity, verify_gateway, verify_history,
+from sdk_namespaces import (IDENTITIES, parked_identity, verify_anonymous_transport, verify_gateway, verify_history,
                             verify_operation_history, verify_principals, verify_query_receipt, verify_rotation)
 
 
@@ -242,6 +242,63 @@ class NamespaceHistoryChecks(unittest.TestCase):
                 fixture[3]["events"].append({"event_type": "WorkflowCompleted", "payload": {}})
             with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
                 verify_query_receipt(*fixture)
+
+    def test_anonymous_terminal_actors_cannot_be_null_named_or_forged(self):
+        for terminal in ("WorkflowFailed", "WorkflowCancelled"):
+            fixture = self.operation_fixture(terminal)
+            for row in fixture[0]["events"]:
+                if row.get("principal") is not None:
+                    row["principal"] = {"type": "server", "id": "anonymous", "label": "Admin"}
+            if fixture[4] is not None:
+                fixture[4]["history"]["events"] = copy.deepcopy(fixture[0]["events"][:-1])
+            self.assertEqual(verify_operation_history(*fixture, anonymous=True)["event_type"], terminal)
+            for actor in (None, {"type": "attacker", "id": "mallory"}, {"type": "auth:runtime-token", "id": "named"}):
+                changed = copy.deepcopy(fixture)
+                changed[0]["events"][-1]["principal"] = actor
+                with self.subTest(terminal=terminal, actor=actor), self.assertRaises(RuntimeError):
+                    verify_operation_history(*changed, anonymous=True)
+
+    def test_anonymous_query_requires_server_actor_and_observed_absent_credentials(self):
+        fixture = self.query_fixture()
+        fixture[0]["response_principal"] = {"type": "server", "id": "anonymous", "label": "Admin"}
+        fixture[0]["authorization_present"] = False
+        verify_query_receipt(*fixture, anonymous=True)
+        for mutation in ("credential", "missing-transport", "forged-actor"):
+            changed = copy.deepcopy(fixture)
+            if mutation == "credential":
+                changed[0]["authorization_present"] = True
+            elif mutation == "missing-transport":
+                changed[0].pop("authorization_present")
+            else:
+                changed[0]["response_principal"] = {"type": "attacker", "id": "mallory"}
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                verify_query_receipt(*changed, anonymous=True)
+
+    def test_anonymous_transport_requires_all_actual_operations_without_credentials(self):
+        kinds = ["start"] * 3 + ["signal", "activity-complete", "query", "cancel"] + ["workflow-task-complete"] * 5
+        receipts = [{"kind": kind, "namespace": "default", "status": 200, "headers": HEADERS,
+                     "body_fields": BODY_FIELDS, "authorization_present": False, "commands": []} for kind in kinds]
+        receipts[-1]["commands"] = ["complete_workflow"]
+        receipts[-2]["commands"] = ["fail_workflow"]
+        self.assertEqual(len(verify_anonymous_transport(receipts)), 12)
+        for mutation in ("credential", "missing-transport", "missing-start", "duplicate-start", "failure", "headers", "namespace"):
+            changed = copy.deepcopy(receipts)
+            if mutation == "credential":
+                changed[0]["authorization_present"] = True
+            elif mutation == "missing-transport":
+                changed[0].pop("authorization_present")
+            elif mutation == "missing-start":
+                changed.pop(0)
+            elif mutation == "duplicate-start":
+                changed.append(copy.deepcopy(changed[0]))
+            elif mutation == "failure":
+                changed[-2]["commands"] = []
+            elif mutation == "headers":
+                changed[0]["headers"] = {}
+            else:
+                changed[0]["namespace"] = "missing"
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                verify_anonymous_transport(changed)
 
 
 if __name__ == "__main__":
