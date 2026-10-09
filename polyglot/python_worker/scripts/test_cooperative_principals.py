@@ -4,7 +4,7 @@ import copy
 import unittest
 
 from principal_gateway import BODY_FIELDS, HEADERS
-from sdk_children import CANCELLATION_ACTOR, cancellation_actor, verify_cancellation_transport
+from sdk_children import CANCELLATION_ACTOR, cancellation_actor, verify_cancellation_transport, verify_cascade_request
 
 
 def history(role):
@@ -26,6 +26,19 @@ def transport():
 
 
 class CooperativePrincipalChecks(unittest.TestCase):
+    def test_cascade_projection_preserves_request_metadata_and_uses_edges_for_lineage(self):
+        context = {**transport()[0][0]["root_request"], "requester": CANCELLATION_ACTOR,
+                   "source": "control_plane", "lineage": [{"request_id": "original-request"}]}
+        metadata = {"request_id": "original-request", "requested_at": "2026-10-09T00:00:00Z",
+                    "cleanup_deadline_at": "2026-10-09T00:00:30Z", "requester": CANCELLATION_ACTOR,
+                    "source": "control_plane"}
+        verify_cascade_request(metadata, context)
+        for key in metadata:
+            changed = copy.deepcopy(metadata)
+            changed[key] = "replacement"
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                verify_cascade_request(changed, context)
+
     def test_root_and_internal_propagation_preserve_authenticated_requester(self):
         for role in ("parent", "child"):
             self.assertEqual(CANCELLATION_ACTOR, cancellation_actor(history(role), role)["requester"])

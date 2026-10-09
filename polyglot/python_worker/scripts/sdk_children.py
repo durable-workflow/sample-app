@@ -398,6 +398,13 @@ def verify_cancelled(parent, child, record):
         raise RuntimeError("Cancellation settled a different child relationship.")
 
 
+def verify_cascade_request(actual, context):
+    # Published cascade metadata uses graph edges for lineage.
+    expected = {key: value for key, value in context.items() if key != "lineage"}
+    if actual != expected:
+        raise RuntimeError("Cascade request metadata changed its original requester, identity or budget.")
+
+
 async def inspect_cascade(record, parent, child):
     import httpx
     base = required("DURABLE_WORKFLOW_SERVER_URL").rstrip("/")
@@ -421,23 +428,25 @@ async def inspect_cascade(record, parent, child):
         raise
     if process.returncode or json.loads(output)["cancellation_cascade"] != view:
         raise RuntimeError(f"Published CLI differs from the Server cancellation cascade: {errors.decode()}")
+    emit(scenario="child-cancellation-cascade-observed", parent=record["parent"], child=record["child"],
+         cancellation_cascade=view)
+    verify_cascade_request(view["root"], record["root_context"])
     if (view.get("schema") != "durable-workflow.cancellation-cascade/v1"
             or view.get("selected_run_id") != record["parent_run_id"]
             or view.get("inspection_complete") is not True or view.get("truncated") is not False
             or view.get("findings") != [] or len(view.get("runs", [])) != 2 or len(view.get("edges", [])) != 1
             or view["root"]["root_request_id"] != record["root_request"]["request_id"]
-            or view["root"]["cleanup_deadline_at"] != record["root_request"]["cleanup_deadline_at"]
-            or view["root"] != record["root_context"]):
+            or view["root"]["cleanup_deadline_at"] != record["root_request"]["cleanup_deadline_at"]):
         raise RuntimeError("Operator view does not explain the complete original cancellation cascade.")
     nodes = {node["run_id"]: node for node in view["runs"]}
     for role, run_id, history in (("parent", record["parent_run_id"], parent), ("child", record["child_workflow_run_id"], child)):
         node = nodes[run_id]
         delivery = one(history, "CooperativeCancellationDelivered")["payload"]
         cleanup = one(history, "WorkflowCancelled")["payload"]["cancellation_cleanup"]
+        verify_cascade_request(node["request"], cancellation_context(history, record, role))
         if (node["lifecycle"] != "cancelled" or node["same_root_budget"] is not True
                 or node["cleanup"] != cleanup or node["delivery"]["sequence"] != delivery["sequence"]
-                or node["delivery"]["history_event_id"] != cleanup["delivery_history_event_id"]
-                or node["request"] != cancellation_context(history, record, role)):
+                or node["delivery"]["history_event_id"] != cleanup["delivery_history_event_id"]):
             raise RuntimeError("Operator view contradicts a durable cancellation outcome or delivery.")
     edge = view["edges"][0]
     if edge["parent_run_id"] != record["parent_run_id"] or edge["child_run_id"] != record["child_workflow_run_id"]:
