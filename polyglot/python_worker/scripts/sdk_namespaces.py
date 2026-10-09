@@ -80,14 +80,14 @@ def one(history, kind):
 
 
 def verify_rotation(before, after, repeated):
-    for key in ("id", "subject", "roles", "tenant", "claims", "created_at"):
+    for key in ("id", "subject", "roles", "tenant", "claims", "created_at", "expires_at"):
         if before[key] != after[key] or after[key] != repeated[key]:
             raise RuntimeError("Rotation changed the authenticated identity, authority or namespace.")
-    if (not after.get("rotated_at") or after.get("revoked_at") is not None
+    if (not after.get("rotated_at") or after.get("revoked_at") is not None or repeated.get("revoked_at") is not None
             or after["rotated_at"] != repeated.get("rotated_at")
             or before.get("rotated_at") is not None):
         raise RuntimeError("Rotation or its duplicate lost the original stable rotation boundary.")
-    return {key: after[key] for key in ("id", "subject", "roles", "tenant", "claims", "created_at", "rotated_at")}
+    return {key: after[key] for key in ("id", "subject", "roles", "tenant", "claims", "created_at", "expires_at", "rotated_at")}
 
 
 def rotate():
