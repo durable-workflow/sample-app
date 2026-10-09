@@ -1,0 +1,95 @@
+"""Exercise the real forwarding path, not a simulated injection receipt."""
+
+import http.client
+import json
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from principal_gateway import BODY_FIELDS, HEADERS, Gateway
+
+
+class GatewayForwardingChecks(unittest.TestCase):
+    def setUp(self):
+        self.received = []
+        received = self.received
+
+        class Upstream(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                received.append({"path": self.path, "headers": self.headers,
+                                 "body": json.loads(self.rfile.read(int(self.headers["Content-Length"])) )})
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"upstream": true}')
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        class TestGateway(Gateway):
+            upstream = self.upstream.server_address
+            receipt_path = Path(self.temp.name, "gateway.jsonl")
+
+        self.gateway = ThreadingHTTPServer(("127.0.0.1", 0), TestGateway)
+        self.threads = [threading.Thread(target=server.serve_forever, daemon=True)
+                        for server in (self.upstream, self.gateway)]
+        for thread in self.threads:
+            thread.start()
+
+    def tearDown(self):
+        for server in (self.gateway, self.upstream):
+            server.shutdown()
+            server.server_close()
+        for thread in self.threads:
+            thread.join()
+        self.temp.cleanup()
+
+    def send(self, path, body):
+        connection = http.client.HTTPConnection(*self.gateway.server_address, timeout=3)
+        try:
+            connection.request("POST", path, body=json.dumps(body), headers={
+                "Authorization": "Bearer fixture-real-secret", "X-Namespace": "rust-namespace-a",
+                "X-Durable-Workflow-Control-Plane-Version": "2", "Content-Type": "application/json"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 201)
+            self.assertEqual(json.loads(response.read()), {"upstream": True})
+        finally:
+            connection.close()
+        return self.received[-1]
+
+    def test_start_signal_and_worker_payloads_reach_upstream_with_credentials_unchanged(self):
+        for path, body in (
+            ("/api/workflows", {"workflow_id": "original", "input": {"codec": "avro", "blob": "opaque-input"}}),
+            ("/api/workflows/original/signal/namespace-finish", {"input": {"codec": "avro", "blob": "opaque-signal"}}),
+            ("/api/worker/workflow-tasks/task/complete", {"lease_owner": "original-worker", "commands": [
+                {"type": "complete_workflow", "result": {"codec": "avro", "blob": "opaque-result"}}]}),
+            ("/api/worker/activity-tasks/task/complete", {"activity_attempt_id": "original-attempt", "result": {"codec": "avro", "blob": "opaque-activity"}}),
+        ):
+            actual = self.send(path, body)
+            self.assertEqual(actual["path"], path)
+            self.assertEqual(actual["body"], {**body, **BODY_FIELDS})
+            for key, value in HEADERS.items():
+                self.assertEqual(actual["headers"][key], value)
+            self.assertEqual(actual["headers"]["Authorization"], "Bearer fixture-real-secret")
+            self.assertEqual(actual["headers"]["X-Namespace"], "rust-namespace-a")
+            self.assertEqual(actual["headers"]["X-Durable-Workflow-Control-Plane-Version"], "2")
+        text = Path(self.temp.name, "gateway.jsonl").read_text()
+        self.assertNotIn("fixture-real-secret", text)
+        rows = [json.loads(line) for line in text.splitlines()]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete"})
+        self.assertTrue(all(row["status"] == 201 for row in rows))
+
+    def test_poll_body_is_preserved_and_cannot_stand_in_for_a_mutation(self):
+        body = {"worker_id": "worker", "task_queue": "queue", "timeout_seconds": 0}
+        actual = self.send("/api/worker/workflow-tasks/poll", body)
+        self.assertEqual(actual["body"], body)
+        self.assertFalse(Path(self.temp.name, "gateway.jsonl").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

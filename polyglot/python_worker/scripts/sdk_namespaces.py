@@ -6,10 +6,12 @@ import argparse
 import asyncio
 import json
 import os
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from durable_workflow import Client, serializer
+from principal_gateway import BODY_FIELDS, HEADERS
 
 NAMESPACES = ("rust-namespace-a", "rust-namespace-b")
 IDENTITIES = tuple((namespace, workflow_id)
@@ -20,6 +22,10 @@ TERMINAL = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "Workflo
 
 def emit(**record):
     print(json.dumps(record, sort_keys=True), flush=True)
+
+
+def retain(name, record):
+    Path(os.environ["NAMESPACE_PROOF_DIR"], name + ".json").write_text(json.dumps(record, sort_keys=True, indent=2) + "\n")
 
 
 def api(path, *, method="GET", body=None, namespace="default", status=200):
@@ -63,6 +69,51 @@ def one(history, kind):
     if len(found) != 1:
         raise RuntimeError(f"Expected one {kind}, got {len(found)}.")
     return found[0]
+
+
+def verify_principals(history, namespace, *, completed=False):
+    roles = {"WorkflowStarted": "operator"}
+    if any(row["event_type"] == "SignalReceived" for row in history["events"]):
+        roles["SignalReceived"] = "operator"
+    if completed:
+        roles["WorkflowCompleted"] = "worker"
+    observed = {}
+    for kind, role in roles.items():
+        expected = {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+        actual = one(history, kind).get("principal")
+        if actual != expected:
+            raise RuntimeError(f"{kind} principal expected {expected!r}, got {actual!r}.")
+        observed[kind] = actual
+    # Every supplied principal, including optional events, must belong to this namespace.
+    for row in history["events"]:
+        if row.get("principal") is not None and row["principal"] not in (
+            {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()}
+            for role in ("operator", "worker")
+        ):
+            raise RuntimeError("History includes a forged or foreign principal.")
+    return observed
+
+
+def verify_gateway(receipts):
+    successful = [row for row in receipts if 200 <= row["status"] < 300]
+    for row in successful:
+        if row["headers"] != HEADERS or row["body_fields"] != BODY_FIELDS:
+            raise RuntimeError("A successful gateway mutation omitted the forged identity matrix.")
+    for namespace, workflow_id in IDENTITIES:
+        starts = [row for row in successful if row["kind"] == "start" and row["namespace"] == namespace
+                  and row["workflow_id"] == workflow_id]
+        signals = [row for row in successful if row["kind"] == "signal" and row["namespace"] == namespace
+                   and row["path"] == f"/api/workflows/{workflow_id}/signal/namespace-finish"]
+        if len(starts) != 1 or len(signals) != 1:
+            raise RuntimeError("Original Rust start or signal did not execute through the spoofing gateway once.")
+    for namespace in NAMESPACES:
+        completions = [row for row in successful if row["kind"] == "workflow-task-complete"
+                       and row["namespace"] == namespace and "complete_workflow" in row["commands"]]
+        activities = [row for row in successful if row["kind"] == "activity-complete"
+                      and row["namespace"] == namespace]
+        if len(completions) != 2 or len(activities) != 2 or len({row["activity_attempt_id"] for row in activities}) != 2:
+            raise RuntimeError("Both Rust worker completions and original activity attempts must reach the gateway.")
+    return successful
 
 
 def parked_identity(history):
@@ -153,9 +204,12 @@ async def inspect(phase):
                         if "SignalReceived" in kinds:
                             raise RuntimeError("Denied cross-namespace signaling mutated a workflow.")
                         identity = parked_identity(history)
+                        principals = verify_principals(history, namespace)
                         if identity["run_id"] != description.run_id:
                             raise RuntimeError("Description and history selected different runs.")
                         emit(scenario="rust-namespace-parked", namespace=namespace, workflow_id=workflow_id, **identity)
+                        retain(f"park-{workflow_id}", {"namespace": namespace, "workflow_id": workflow_id,
+                                                      "history": history, "principals": principals, **identity})
                         break
                     await asyncio.sleep(.25)
                 else:
@@ -167,17 +221,25 @@ async def inspect(phase):
                     raise RuntimeError("A replacement run hid failed recovery.")
                 if phase == "released":
                     one(history, "SignalReceived")
+                    verify_principals(history, namespace)
                     if any(event["event_type"] in TERMINAL | {"SignalApplied"} for event in history["events"]):
                         raise RuntimeError("A killed worker applied the signal or completed the workflow.")
                     if parked_identity(history)["wait_id"] != record["wait_id"]:
                         raise RuntimeError("Acknowledgment replaced the original wait.")
+                    retain(f"released-{workflow_id}", {"history": history, **record})
                 else:
                     if description.status != "completed":
                         raise RuntimeError("Public namespace workflow status is not completed.")
                     result = verify_history(history, record)
+                    principals = verify_principals(history, namespace, completed=True)
                     emit(scenario="rust-namespace-recovered", **{key: value for key, value in record.items() if key != "scenario"},
-                         result=result, events=[event["event_type"] for event in history["events"]])
+                         result=result, principals=principals, events=[event["event_type"] for event in history["events"]])
+                    retain(f"verify-{workflow_id}", {"history": history, "result": result, "principals": principals, **record})
         if phase == "verify":
+            receipts = [json.loads(line) for line in Path(os.environ["NAMESPACE_PROOF_DIR"], "gateway.jsonl").read_text().splitlines()]
+            successful = verify_gateway(receipts)
+            emit(scenario="rust-principal-spoofing-refused", workflows=len(IDENTITIES),
+                 successful_mutations=len(successful), body_fields=list(BODY_FIELDS), headers=list(HEADERS))
             for namespace in (*NAMESPACES, "default"):
                 rejected = api("/workflows/denied-cross-namespace-start", namespace=namespace, status=404)
                 if rejected.get("reason") != "instance_not_found":

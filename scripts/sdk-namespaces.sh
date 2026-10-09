@@ -5,46 +5,59 @@ if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-namespaces.sh' \
     'Runs published Rust clients/workers in two namespaces with identical queue and type names.' \
     'Checks role credentials, denied reads/mutations/polls and original-run recovery after SIGKILL.' \
+    'Requires authenticated history principals despite forged identity fields on real SDK requests.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
-    'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.'
+    'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.' \
+    'SDK_NAMESPACES_RESULT_DIR optionally retains actual histories, gateway receipts and process-loss records.'
   exit 0
 fi
 [[ $# == 0 ]] || exit 2
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_NAMESPACES_COMPOSE_PROJECT_NAME:-sample-app-sdk-namespaces-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
+export NAMESPACE_UID="$(id -u)" NAMESPACE_GID="$(id -g)"
+export NAMESPACE_PROOF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sdk-namespaces.XXXXXX")"
 compose=(docker compose --project-directory "$repo_root/polyglot" \
   -f "$repo_root/polyglot/docker-compose.yml" -f "$repo_root/polyglot/docker-compose.namespaces.yml")
 workers=(rust-namespace-a rust-namespace-b)
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
+  rmdir "$NAMESPACE_PROOF_DIR"
   printf 'Choose a new isolated project. %s already has containers.\n' "$COMPOSE_PROJECT_NAME" >&2
   exit 2
 fi
 cleanup() {
   local code=$?
   if [[ "$code" != 0 ]]; then "${compose[@]}" logs --no-color --timestamps || true; fi
+  if [[ -n "${SDK_NAMESPACES_RESULT_DIR:-}" ]]; then
+    mkdir -p "$SDK_NAMESPACES_RESULT_DIR"
+    cp -R "$NAMESPACE_PROOF_DIR/." "$SDK_NAMESPACES_RESULT_DIR/"
+  fi
   "${compose[@]}" down --volumes --remove-orphans || return 1
   local suffix image
   for suffix in rust-workflow-worker smoke; do
     image="${COMPOSE_PROJECT_NAME}-${suffix}:latest"
     if docker image inspect "$image" >/dev/null 2>&1; then docker image rm --no-prune "$image" || return 1; fi
   done
+  find "$NAMESPACE_PROOF_DIR" -xdev -depth -delete
   return "$code"
 }
 trap cleanup EXIT
 printf 'SDK namespaces start: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'Runner commit: %s\n' "$(git -C "$repo_root" rev-parse HEAD)"
 for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke rust-workflow-worker
-"${compose[@]}" run --rm --no-deps --user 1000:1000 smoke \
+"${compose[@]}" run --rm --no-deps smoke \
   python -m unittest discover -s /app/scripts -p test_sdk_namespaces.py
+"${compose[@]}" run --rm --no-deps smoke \
+  python -m unittest discover -s /app/scripts -p test_principal_gateway.py
 "${compose[@]}" pull --policy always bootstrap server timer-queue
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 observer() {
-  "${compose[@]}" run --rm --no-deps --user 1000:1000 -e DURABLE_WORKFLOW_NAMESPACE_RUNS \
+  "${compose[@]}" run --rm --no-deps -e DURABLE_WORKFLOW_NAMESPACE_RUNS \
     smoke python /app/scripts/sdk_namespaces.py "$@"
 }
 caller() {
@@ -62,7 +75,8 @@ caller() {
   if [[ "$role" == operator-as-worker ]]; then
     worker="dwr_fixture_operator_${credential_namespace//-/_}_0123456789"
   fi
-  "${compose[@]}" run --rm --no-deps --user 1000:1000 \
+  "${compose[@]}" run --rm --no-deps --user "$NAMESPACE_UID:$NAMESPACE_GID" \
+    -e DURABLE_WORKFLOW_SERVER_URL=http://principal-gateway:8083 \
     -e DURABLE_WORKFLOW_AUTH_TOKEN= \
     -e "DURABLE_WORKFLOW_CONTROL_TOKEN=$control" -e "DURABLE_WORKFLOW_WORKER_TOKEN=$worker" \
     -e "DURABLE_WORKFLOW_NAMESPACE=$namespace" -e POLYGLOT_RUST_MODE=namespace-client \
@@ -70,6 +84,7 @@ caller() {
     rust-workflow-worker
 }
 observer setup
+"${compose[@]}" up -d --wait --no-build principal-gateway
 "${compose[@]}" up -d --wait --no-build "${workers[@]}"
 for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator start "namespace-run-$namespace"
@@ -105,13 +120,33 @@ if ! DURABLE_WORKFLOW_NAMESPACE_RUNS="$(observer park)"; then
 fi
 export DURABLE_WORKFLOW_NAMESPACE_RUNS
 printf '%s\n' "$DURABLE_WORKFLOW_NAMESPACE_RUNS"
+printf '%s\n' "$DURABLE_WORKFLOW_NAMESPACE_RUNS" | jq -s . > "$NAMESPACE_PROOF_DIR/runs.json"
+inspect_worker() {
+  docker inspect "$1" | jq '.[0] | {Id,State:{Pid:.State.Pid,StartedAt:.State.StartedAt,FinishedAt:.State.FinishedAt,ExitCode:.State.ExitCode,OOMKilled:.State.OOMKilled,Running:.State.Running}}'
+}
+declare -A original_workers
+for worker in "${workers[@]}"; do
+  original_workers[$worker]="$("${compose[@]}" ps -q "$worker")"
+  inspect_worker "${original_workers[$worker]}" > "$NAMESPACE_PROOF_DIR/$worker-before.json"
+  jq -e '.State.Running == true and .State.Pid > 0' "$NAMESPACE_PROOF_DIR/$worker-before.json" >/dev/null
+done
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "${original_workers[$worker]}" > "$NAMESPACE_PROOF_DIR/$worker-killed.json"
+  jq -e '.State.ExitCode == 137 and .State.OOMKilled == false and .State.Running == false' \
+    "$NAMESPACE_PROOF_DIR/$worker-killed.json" >/dev/null
+done
 for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator release "namespace-run-$namespace"
   caller "$namespace" "$namespace" operator release "only-$namespace"
 done
 observer released
 "${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "$("${compose[@]}" ps -q "$worker")" > "$NAMESPACE_PROOF_DIR/$worker-replacement.json"
+  jq -e --arg old "${original_workers[$worker]}" '.Id != $old and .State.Running == true and .State.Pid > 0' \
+    "$NAMESPACE_PROOF_DIR/$worker-replacement.json" >/dev/null
+done
 for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator verify "namespace-run-$namespace"
   caller "$namespace" "$namespace" operator verify "only-$namespace"

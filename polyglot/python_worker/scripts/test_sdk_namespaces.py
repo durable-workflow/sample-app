@@ -2,7 +2,8 @@ import copy
 import unittest
 
 from durable_workflow import serializer
-from sdk_namespaces import parked_identity, verify_history
+from principal_gateway import BODY_FIELDS, HEADERS
+from sdk_namespaces import IDENTITIES, NAMESPACES, parked_identity, verify_gateway, verify_history, verify_principals
 
 
 def envelope(value):
@@ -77,6 +78,69 @@ class NamespaceHistoryChecks(unittest.TestCase):
         history["events"][-1], history["events"][-2] = history["events"][-2], history["events"][-1]
         with self.assertRaises(RuntimeError):
             verify_history(history, record)
+
+    def principal_fixture(self):
+        history, record, _ = self.fixture()
+        for row in history["events"]:
+            role = {"WorkflowStarted": "operator", "SignalReceived": "operator", "WorkflowCompleted": "worker"}.get(row["event_type"])
+            row["principal"] = None if role is None else {
+                "type": "auth:runtime-token", "id": f"fixture-{record['namespace']}-{role}", "label": role.title()}
+        return history, record
+
+    def test_authenticated_principals_pass(self):
+        history, record = self.principal_fixture()
+        observed = verify_principals(history, record["namespace"], completed=True)
+        self.assertEqual(set(observed), {"WorkflowStarted", "SignalReceived", "WorkflowCompleted"})
+
+    def test_missing_forged_wrong_role_or_foreign_principals_fail(self):
+        history, record = self.principal_fixture()
+        for kind in ("WorkflowStarted", "SignalReceived", "WorkflowCompleted"):
+            for wrong in (None, {"id": "mallory", "type": "attacker"},
+                          {"id": "fixture-rust-namespace-b-worker", "type": "auth:runtime-token", "label": "Worker"},
+                          {"id": "fixture-rust-namespace-a-worker", "type": "auth:runtime-token", "label": "Operator"}):
+                changed = copy.deepcopy(history)
+                next(row for row in changed["events"] if row["event_type"] == kind)["principal"] = wrong
+                with self.subTest(kind=kind, principal=wrong), self.assertRaises(RuntimeError):
+                    verify_principals(changed, record["namespace"], completed=True)
+
+    def test_forged_optional_event_principal_fails(self):
+        history, record = self.principal_fixture()
+        history["events"][1]["principal"] = {"id": "mallory", "type": "attacker"}
+        with self.assertRaises(RuntimeError):
+            verify_principals(history, record["namespace"], completed=True)
+
+    def gateway_fixture(self):
+        records = []
+        for namespace, workflow_id in IDENTITIES:
+            common = {"status": 200, "namespace": namespace, "headers": HEADERS,
+                      "body_fields": BODY_FIELDS, "commands": []}
+            records.extend([
+                {**common, "kind": "start", "workflow_id": workflow_id},
+                {**common, "kind": "signal", "path": f"/api/workflows/{workflow_id}/signal/namespace-finish"},
+                {**common, "kind": "workflow-task-complete", "commands": ["complete_workflow"]},
+                {**common, "kind": "activity-complete", "activity_attempt_id": f"attempt-{workflow_id}"},
+            ])
+        return records
+
+    def test_actual_gateway_matrix_passes(self):
+        records = self.gateway_fixture()
+        self.assertEqual(verify_gateway(records), records)
+
+    def test_missing_duplicate_failed_or_uninjected_gateway_mutations_fail(self):
+        records = self.gateway_fixture()
+        for index in range(len(records)):
+            for change in ("missing", "duplicate", "failed", "header", "body"):
+                changed = copy.deepcopy(records)
+                if change == "missing":
+                    del changed[index]
+                elif change == "duplicate":
+                    changed.append(copy.deepcopy(changed[index]))
+                elif change == "failed":
+                    changed[index]["status"] = 403
+                else:
+                    changed[index]["headers" if change == "header" else "body_fields"] = {}
+                with self.subTest(index=index, change=change), self.assertRaises(RuntimeError):
+                    verify_gateway(changed)
 
 
 if __name__ == "__main__":
