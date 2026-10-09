@@ -97,6 +97,7 @@ class Gateway(BaseHTTPRequestHandler):
                 receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind,
                            "path": path, "namespace": self.headers.get("X-Namespace"),
                            "status": response.status, "body_fields": BODY_FIELDS, "headers": HEADERS,
+                           "authorization_present": bool(self.headers.get("Authorization")),
                            "workflow_id": payload.get("workflow_id"),
                            "activity_attempt_id": payload.get("activity_attempt_id"),
                            "commands": [row.get("type") for row in payload.get("commands", [])]}

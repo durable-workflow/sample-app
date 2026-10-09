@@ -7,6 +7,7 @@ services:
   server:
     environment:
       DW_RUNTIME_CREDENTIALS_ENABLED: "true"
+      DW_AUTH_DRIVER: ${NAMESPACE_AUTH_DRIVER:-token}
 
   rust-namespace-a:
     <<: *namespace-process
@@ -26,6 +27,18 @@ services:
       DURABLE_WORKFLOW_SERVER_URL: http://principal-gateway:8083
       DURABLE_WORKFLOW_NAMESPACE: rust-namespace-b
       DURABLE_WORKFLOW_WORKER_TOKEN: ${RUST_NAMESPACE_B_WORKER_TOKEN:-dwr_fixture_worker_rust_namespace_b_0123456789}
+      POLYGLOT_RUST_MODE: namespace-worker
+
+  rust-anonymous:
+    <<: *namespace-process
+    init: true
+    image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest
+    environment:
+      DURABLE_WORKFLOW_SERVER_URL: http://principal-gateway:8083
+      DURABLE_WORKFLOW_NAMESPACE: default
+      DURABLE_WORKFLOW_AUTH_TOKEN: ""
+      DURABLE_WORKFLOW_CONTROL_TOKEN: ""
+      DURABLE_WORKFLOW_WORKER_TOKEN: ""
       POLYGLOT_RUST_MODE: namespace-worker
 
   smoke:
