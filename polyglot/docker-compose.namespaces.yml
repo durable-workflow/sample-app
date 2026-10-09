@@ -1,22 +1,51 @@
+x-namespace-process: &namespace-process
+  user: "${NAMESPACE_UID:?set the invoking UID}:${NAMESPACE_GID:?set the invoking GID}"
+  mem_limit: 256m
+  cpus: 0.5
+
 services:
   server:
     environment:
       DW_RUNTIME_CREDENTIALS_ENABLED: "true"
 
   rust-namespace-a:
+    <<: *namespace-process
     init: true
     image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest
     environment:
-      DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+      DURABLE_WORKFLOW_SERVER_URL: http://principal-gateway:8083
       DURABLE_WORKFLOW_NAMESPACE: rust-namespace-a
       DURABLE_WORKFLOW_WORKER_TOKEN: dwr_fixture_worker_rust_namespace_a_0123456789
       POLYGLOT_RUST_MODE: namespace-worker
 
   rust-namespace-b:
+    <<: *namespace-process
     init: true
     image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest
     environment:
-      DURABLE_WORKFLOW_SERVER_URL: http://server:8080
+      DURABLE_WORKFLOW_SERVER_URL: http://principal-gateway:8083
       DURABLE_WORKFLOW_NAMESPACE: rust-namespace-b
       DURABLE_WORKFLOW_WORKER_TOKEN: dwr_fixture_worker_rust_namespace_b_0123456789
       POLYGLOT_RUST_MODE: namespace-worker
+
+  smoke:
+    <<: *namespace-process
+    volumes:
+      - "${NAMESPACE_PROOF_DIR:?set the disposable proof directory}:/proof"
+    environment:
+      NAMESPACE_PROOF_DIR: /proof
+
+  principal-gateway:
+    <<: *namespace-process
+    init: true
+    image: ${COMPOSE_PROJECT_NAME}-smoke:latest
+    command: ["python", "/app/scripts/principal_gateway.py"]
+    volumes:
+      - "${NAMESPACE_PROOF_DIR}:/proof"
+    environment:
+      NAMESPACE_PROOF_DIR: /proof
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8083/health', timeout=2).read()"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
