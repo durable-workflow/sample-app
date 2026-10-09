@@ -1,11 +1,14 @@
 use std::time::Duration;
 
-use durable_workflow::{json, Client, Error, Result, Value, Worker};
+use durable_workflow::{json, Client, Error, Result, Value, Worker, WorkflowCommandOptions};
 
 const WORKFLOW: &str = "sample-app.rust.namespace";
 const ACTIVITY: &str = "sample-app.rust.namespace.echo";
 const SIGNAL: &str = "namespace-finish";
 const QUEUE: &str = "shared-namespace-queue";
+const FAILURE_WORKFLOW: &str = "sample-app.rust.namespace.failure";
+const CANCEL_WORKFLOW: &str = "sample-app.rust.namespace.cancel";
+const QUERY: &str = "namespace-principal";
 
 fn required(name: &str) -> String {
     super::required_env(name)
@@ -46,6 +49,19 @@ pub async fn worker(client: Client) -> Result<()> {
         }
     });
     worker.declare_workflow_signals(WORKFLOW, &[SIGNAL])?;
+    worker.register_query(WORKFLOW, QUERY, |ctx, args| async move {
+        Ok(json!({"workflow_id": ctx.workflow_id, "run_id": ctx.run_id,
+                  "request": super::first_argument(&args),
+                  "principal": {"type": "attacker", "id": "mallory"}}))
+    });
+    worker.register_workflow(FAILURE_WORKFLOW, |_ctx, _input| async move {
+        Err(Error::Codec("principal-fixture-failure".into()))
+    });
+    worker.register_workflow(CANCEL_WORKFLOW, |ctx, _input| async move {
+        ctx.wait_signal(SIGNAL).await?;
+        Err(Error::Codec("terminal cancellation fixture unexpectedly resumed".into()))
+    });
+    worker.declare_workflow_signals(CANCEL_WORKFLOW, &[SIGNAL])?;
     worker.run().await
 }
 
@@ -81,15 +97,52 @@ pub async fn call(client: Client) -> Result<()> {
     let mut record = json!({"scenario": format!("rust-namespace-{phase}"),
                            "namespace": namespace, "workflow_id": id});
     match phase.as_str() {
-        "start" => {
+        "start" | "start-failure" | "start-cancel" => {
+            let workflow = match phase.as_str() {
+                "start-failure" => FAILURE_WORKFLOW,
+                "start-cancel" => CANCEL_WORKFLOW,
+                _ => WORKFLOW,
+            };
             let handle = client
-                .start_workflow(WORKFLOW, QUEUE, &id, json!([request]))
+                .start_workflow(workflow, QUEUE, &id, json!([request]))
                 .await?;
             check(
                 handle.workflow_id == id && handle.run_id.is_some(),
                 "start lost workflow/run identity",
             )?;
             record["run_id"] = json!(handle.run_id);
+        }
+        "query" => {
+            let description = client.describe_workflow(&id).await?;
+            let run_id = description.run_id.ok_or_else(|| Error::Codec("query needs original run identity".into()))?;
+            let result = client.query_workflow_run(&id, &run_id, QUERY, json!([request.clone()])).await?;
+            check(result == json!({"workflow_id": id, "run_id": run_id, "request": request,
+                                  "principal": {"type": "attacker", "id": "mallory"}}),
+                  "query changed its selected run or application result")?;
+            record["run_id"] = json!(run_id);
+            record["result"] = result;
+        }
+        "cancel" => {
+            let result = client.cancel_workflow(&id, WorkflowCommandOptions {
+                reason: Some("principal-fixture-cancel".into()),
+                request_id: Some(format!("principal-cancel-{id}")),
+            }).await?;
+            check(result.workflow_id == id, "terminal cancellation changed workflow identity")?;
+            record["run_id"] = json!(result.run_id);
+            record["acknowledgment"] = result.raw;
+        }
+        "verify-failed" | "verify-cancelled" => {
+            let expected = if phase == "verify-failed" { "failed" } else { "cancelled" };
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+            let description = loop {
+                let description = client.describe_workflow(&id).await?;
+                if description.is_terminal() { break description; }
+                check(tokio::time::Instant::now() < deadline, "principal operation did not close")?;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            };
+            check(description.status.as_deref() == Some(expected), "principal operation closed with wrong status")?;
+            record["run_id"] = json!(description.run_id);
+            record["status"] = json!(description.status);
         }
         "release" => {
             record["acknowledgment"] = client

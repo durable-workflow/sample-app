@@ -38,6 +38,10 @@ def mutation_kind(method, path):
         return "start"
     if path.startswith("/api/workflows/") and "/signal/" in path:
         return "signal"
+    if path.startswith("/api/workflows/") and "/query/" in path:
+        return "query"
+    if path.startswith("/api/workflows/") and path.endswith("/cancel"):
+        return "cancel"
     if path.startswith("/api/worker/workflow-tasks/") and path.endswith("/complete"):
         return "workflow-task-complete"
     if path.startswith("/api/worker/activity-tasks/") and path.endswith("/complete"):
@@ -96,6 +100,11 @@ class Gateway(BaseHTTPRequestHandler):
                            "workflow_id": payload.get("workflow_id"),
                            "activity_attempt_id": payload.get("activity_attempt_id"),
                            "commands": [row.get("type") for row in payload.get("commands", [])]}
+                if kind == "query" and response.status == 200:
+                    result_payload = json.loads(result)
+                    receipt["response_principal"] = result_payload.get("principal")
+                    receipt["response_run_id"] = result_payload.get("run_id")
+                    receipt["result_envelope"] = result_payload.get("result_envelope")
                 with RECEIPT_LOCK, self.receipt_path.open("a") as stream:
                     stream.write(json.dumps(receipt, sort_keys=True) + "\n")
             self.send_response(response.status)
