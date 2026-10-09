@@ -70,6 +70,25 @@ use the new worker credentials to finish the original runs. The original start
 actors and final signal/completion actors remain the same authenticated subjects.
 Rotation receipts contain identity and authority metadata, without tokens.
 
+## Query, cancellation and failed-workflow actors
+
+After the original runs complete, real Rust callers query a selected original
+run in each namespace. The result deliberately includes an application-supplied
+`principal` claiming to be Mallory. That value is ordinary application data. The
+gateway records Server's separate top-level audit principal from the actual
+query response. It must identify the authenticated operator, match the selected
+run and remain distinct from the forged application value. Queries must leave
+the completed run's entire history unchanged.
+
+Two additional Rust workflows fail deliberately, and two park at declared
+signal waits before terminal cancellation through `Client::cancel_workflow`.
+Failures must record the authenticated worker, and terminal cancellations the
+authenticated operator. Each original run closes once. Cancellation preserves
+the committed wait history and never resumes the workflow. Starts, queries,
+terminal decisions and cancellations require successful gateway receipts with
+the same forged metadata matrix. Cooperative cleanup and cancellation cascades
+are separate cases in the child-workflow and timer examples.
+
 ## Actor identity and forged metadata
 
 All Rust requests pass through an isolated fixture gateway. It retains the
@@ -96,6 +115,8 @@ Set `SDK_NAMESPACES_RESULT_DIR` to retain raw histories, gateway receipts and
 physical worker-loss records. The hosted job retains these for 30 days. Runtime
 containers, fixture images, volumes, networks and the disposable proof directory
 are removed on exit. This focused case covers named runtime credentials,
-start/signal/completion attribution, credential rotation and cold replay.
-Anonymous actors, query/cancellation/failure attribution and CLI/Waterline
-visibility remain separate principal-contract cases.
+start/signal/completion/query/failure/terminal-cancellation attribution,
+credential rotation and cold replay.
+Anonymous actors, cooperative-cancellation attribution and CLI/Waterline
+visibility remain separate principal-contract cases. The focused query case
+observes Server's response metadata without adding a Rust raw-response API.

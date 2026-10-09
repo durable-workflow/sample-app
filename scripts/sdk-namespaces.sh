@@ -169,4 +169,20 @@ for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator verify "only-$namespace"
 done
 observer verify
+for namespace in rust-namespace-a rust-namespace-b; do
+  caller "$namespace" "$namespace" operator query "namespace-run-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/$namespace-query.json"
+  caller "$namespace" "$namespace" operator start-failure "principal-failure-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/start-principal-failure-$namespace.json"
+  caller "$namespace" "$namespace" operator start-cancel "principal-cancel-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/start-principal-cancel-$namespace.json"
+done
+observer operations-park
+for namespace in rust-namespace-a rust-namespace-b; do
+  caller "$namespace" "$namespace" operator cancel "principal-cancel-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/$namespace-cancel.json"
+  caller "$namespace" "$namespace" operator verify-failed "principal-failure-$namespace"
+  caller "$namespace" "$namespace" operator verify-cancelled "principal-cancel-$namespace"
+done
+observer operations-verify
 printf 'SDK namespaces pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

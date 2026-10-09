@@ -68,6 +68,7 @@ class GatewayForwardingChecks(unittest.TestCase):
             ("/api/worker/workflow-tasks/task/complete", {"lease_owner": "original-worker", "commands": [
                 {"type": "complete_workflow", "result": {"codec": "avro", "blob": "opaque-result"}}]}),
             ("/api/worker/activity-tasks/task/complete", {"activity_attempt_id": "original-attempt", "result": {"codec": "avro", "blob": "opaque-activity"}}),
+            ("/api/workflows/original/cancel", {"reason": "original-reason", "request_id": "original-request"}),
         ):
             actual = self.send(path, body)
             self.assertEqual(actual["path"], path)
@@ -80,8 +81,8 @@ class GatewayForwardingChecks(unittest.TestCase):
         text = Path(self.temp.name, "gateway.jsonl").read_text()
         self.assertNotIn("fixture-real-secret", text)
         rows = [json.loads(line) for line in text.splitlines()]
-        self.assertEqual(len(rows), 4)
-        self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete"})
+        self.assertEqual(len(rows), 5)
+        self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete", "cancel"})
         self.assertTrue(all(row["status"] == 201 for row in rows))
 
     def test_poll_body_is_preserved_and_cannot_stand_in_for_a_mutation(self):
@@ -89,6 +90,44 @@ class GatewayForwardingChecks(unittest.TestCase):
         actual = self.send("/api/worker/workflow-tasks/poll", body)
         self.assertEqual(actual["body"], body)
         self.assertFalse(Path(self.temp.name, "gateway.jsonl").exists())
+
+    def test_query_receipt_uses_upstream_audit_field_instead_of_application_result(self):
+        # The real gateway records query audit metadata only after HTTP 200.
+        class QueryUpstream(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                payload = {"principal": {"id": "authenticated-actor", "type": "auth:runtime-token"},
+                           "run_id": "original-run", "result_envelope": {"codec": "avro", "blob": "opaque-result"},
+                           "result": {"principal": {"id": "mallory", "type": "attacker"}}}
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps(payload).encode())
+
+        backend = ThreadingHTTPServer(("127.0.0.1", 0), QueryUpstream)
+        thread = threading.Thread(target=backend.serve_forever, daemon=True)
+        thread.start()
+        self.gateway.RequestHandlerClass.upstream = backend.server_address
+        connection = http.client.HTTPConnection(*self.gateway.server_address, timeout=3)
+        try:
+            connection.request("POST", "/api/workflows/original/runs/original-run/query/current",
+                               body=json.dumps({"input": {"codec": "avro", "blob": "opaque-input"}}),
+                               headers={"Content-Type": "application/json", "X-Namespace": "rust-namespace-a"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            payload = json.loads(response.read())
+            receipt = json.loads(Path(self.temp.name, "gateway.jsonl").read_text())
+            self.assertEqual(receipt["response_principal"], payload["principal"])
+            self.assertNotEqual(receipt["response_principal"], payload["result"]["principal"])
+            self.assertEqual(receipt["response_run_id"], "original-run")
+            self.assertEqual(receipt["result_envelope"], payload["result_envelope"])
+        finally:
+            connection.close()
+            backend.shutdown()
+            backend.server_close()
+            thread.join()
 
 
 if __name__ == "__main__":
