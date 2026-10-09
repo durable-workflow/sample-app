@@ -107,7 +107,7 @@ def rotate():
 
 
 def expected_principal(namespace, role, *, anonymous=False):
-    return ({"type": "server", "id": "anonymous"} if anonymous else
+    return ({"type": "server", "id": "anonymous", "label": "Admin"} if anonymous else
             {"type": "auth:runtime-token", "id": f"fixture-{namespace}-{role}", "label": role.title()})
 
 

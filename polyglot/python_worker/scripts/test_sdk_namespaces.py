@@ -248,7 +248,7 @@ class NamespaceHistoryChecks(unittest.TestCase):
             fixture = self.operation_fixture(terminal)
             for row in fixture[0]["events"]:
                 if row.get("principal") is not None:
-                    row["principal"] = {"type": "server", "id": "anonymous"}
+                    row["principal"] = {"type": "server", "id": "anonymous", "label": "Admin"}
             if fixture[4] is not None:
                 fixture[4]["history"]["events"] = copy.deepcopy(fixture[0]["events"][:-1])
             self.assertEqual(verify_operation_history(*fixture, anonymous=True)["event_type"], terminal)
@@ -260,7 +260,7 @@ class NamespaceHistoryChecks(unittest.TestCase):
 
     def test_anonymous_query_requires_server_actor_and_observed_absent_credentials(self):
         fixture = self.query_fixture()
-        fixture[0]["response_principal"] = {"type": "server", "id": "anonymous"}
+        fixture[0]["response_principal"] = {"type": "server", "id": "anonymous", "label": "Admin"}
         fixture[0]["authorization_present"] = False
         verify_query_receipt(*fixture, anonymous=True)
         for mutation in ("credential", "missing-transport", "forged-actor"):

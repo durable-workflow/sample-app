@@ -103,6 +103,7 @@ signal wait, receives a signal and completes its original run once. Its query
 leaves history unchanged. Additional workflows fail deliberately or receive
 terminal cancellation after a declared wait. All caller-controlled history
 events and query audit metadata must record `{"type":"server","id":"anonymous"}`.
+The published response also labels the auth-disabled role `Admin`.
 The forged application query value remains ordinary data. Every successful
 operation still carries the forged body/header matrix, and the gateway observes
 that its actual Authorization header is absent without recording credential
