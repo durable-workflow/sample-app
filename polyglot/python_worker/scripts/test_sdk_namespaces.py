@@ -3,7 +3,7 @@ import unittest
 
 from durable_workflow import serializer
 from principal_gateway import BODY_FIELDS, HEADERS
-from sdk_namespaces import IDENTITIES, NAMESPACES, parked_identity, verify_gateway, verify_history, verify_principals
+from sdk_namespaces import IDENTITIES, parked_identity, verify_gateway, verify_history, verify_principals, verify_rotation
 
 
 def envelope(value):
@@ -141,6 +141,26 @@ class NamespaceHistoryChecks(unittest.TestCase):
                     changed[index]["headers" if change == "header" else "body_fields"] = {}
                 with self.subTest(index=index, change=change), self.assertRaises(RuntimeError):
                     verify_gateway(changed)
+
+    def rotation_fixture(self):
+        before = {"id": "stable-credential", "subject": "stable-actor", "roles": ["worker"],
+                  "tenant": "original-namespace", "claims": {}, "created_at": "original-created-at",
+                  "rotated_at": None, "revoked_at": None, "expires_at": None}
+        after = {**before, "rotated_at": "original-rotation-boundary"}
+        return before, after, copy.deepcopy(after)
+
+    def test_rotation_and_duplicate_preserve_identity(self):
+        before, after, repeated = self.rotation_fixture()
+        self.assertEqual(verify_rotation(before, after, repeated)["subject"], "stable-actor")
+
+    def test_rotation_cannot_change_actor_authority_or_duplicate_boundary(self):
+        before, after, repeated = self.rotation_fixture()
+        for target in (1, 2):
+            for key in ("id", "subject", "roles", "tenant", "claims", "created_at", "expires_at", "rotated_at", "revoked_at"):
+                changed = copy.deepcopy([before, after, repeated])
+                changed[target][key] = "replaced"
+                with self.subTest(target=target, key=key), self.assertRaises(RuntimeError):
+                    verify_rotation(*changed)
 
 
 if __name__ == "__main__":

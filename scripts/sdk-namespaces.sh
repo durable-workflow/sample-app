@@ -6,6 +6,7 @@ if [[ "${1:-}" == --help ]]; then
     'Runs published Rust clients/workers in two namespaces with identical queue and type names.' \
     'Checks role credentials, denied reads/mutations/polls and original-run recovery after SIGKILL.' \
     'Requires authenticated history principals despite forged identity fields on real SDK requests.' \
+    'Rotates operator/worker credentials during process absence and rejects the old credentials through Rust SDK calls.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.' \
     'SDK_NAMESPACES_RESULT_DIR optionally retains actual histories, gateway receipts and process-loss records.'
@@ -16,6 +17,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_NAMESPACES_COMPOSE_PROJECT_NAME:-sample-app-sdk-namespaces-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export NAMESPACE_UID="$(id -u)" NAMESPACE_GID="$(id -g)"
+export RUST_NAMESPACE_A_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_a_0123456789
+export RUST_NAMESPACE_B_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_b_0123456789
 export NAMESPACE_PROOF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sdk-namespaces.XXXXXX")"
 compose=(docker compose --project-directory "$repo_root/polyglot" \
   -f "$repo_root/polyglot/docker-compose.yml" -f "$repo_root/polyglot/docker-compose.namespaces.yml")
@@ -74,6 +77,10 @@ caller() {
   fi
   if [[ "$role" == operator-as-worker ]]; then
     worker="dwr_fixture_operator_${credential_namespace//-/_}_0123456789"
+  fi
+  if [[ "${namespace_credentials_rotated:-false}" == true && "$phase" != revoked-* ]]; then
+    [[ -z "$control" ]] || control="${control}_rotated"
+    [[ -z "$worker" ]] || worker="${worker}_rotated"
   fi
   "${compose[@]}" run --rm --no-deps --user "$NAMESPACE_UID:$NAMESPACE_GID" \
     -e DURABLE_WORKFLOW_SERVER_URL=http://principal-gateway:8083 \
@@ -135,6 +142,16 @@ for worker in "${workers[@]}"; do
   inspect_worker "${original_workers[$worker]}" > "$NAMESPACE_PROOF_DIR/$worker-killed.json"
   jq -e '.State.ExitCode == 137 and .State.OOMKilled == false and .State.Running == false' \
     "$NAMESPACE_PROOF_DIR/$worker-killed.json" >/dev/null
+done
+observer rotate
+namespace_credentials_rotated=true
+export RUST_NAMESPACE_A_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_a_0123456789_rotated
+export RUST_NAMESPACE_B_WORKER_TOKEN=dwr_fixture_worker_rust_namespace_b_0123456789_rotated
+for namespace in rust-namespace-a rust-namespace-b; do
+  caller "$namespace" "$namespace" operator revoked-describe "namespace-run-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/$namespace-revoked-describe.json"
+  caller "$namespace" "$namespace" worker revoked-poll "namespace-run-$namespace" \
+    | tee "$NAMESPACE_PROOF_DIR/$namespace-revoked-poll.json"
 done
 for namespace in rust-namespace-a rust-namespace-b; do
   caller "$namespace" "$namespace" operator release "namespace-run-$namespace"
