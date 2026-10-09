@@ -48,6 +48,14 @@ def api(path, *, method="GET", body=None, namespace="default", status=200):
 
 
 def setup():
+    contract = api("/cluster/info")["principal_attribution_contract"]
+    guards = contract["spoofing_guards"]
+    if (guards["request_body_field_values"] != BODY_FIELDS
+            or guards["request_header_values"] != HEADERS
+            or set(guards["request_body_fields"]) != set(BODY_FIELDS)
+            or set(guards["request_headers"]) != set(HEADERS)):
+        raise RuntimeError("Gateway injections differ from the published Server principal contract.")
+    retain("principal-contract", contract)
     for namespace in NAMESPACES:
         result = api("/namespaces", method="POST", status=201,
                      body={"name": namespace, "description": "Disposable published Rust namespace fixture",
