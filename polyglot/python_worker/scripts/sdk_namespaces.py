@@ -79,6 +79,33 @@ def one(history, kind):
     return found[0]
 
 
+def verify_rotation(before, after, repeated):
+    for key in ("id", "subject", "roles", "tenant", "claims", "created_at"):
+        if before[key] != after[key] or after[key] != repeated[key]:
+            raise RuntimeError("Rotation changed the authenticated identity, authority or namespace.")
+    if (not after.get("rotated_at") or after.get("revoked_at") is not None
+            or after["rotated_at"] != repeated.get("rotated_at")
+            or before.get("rotated_at") is not None):
+        raise RuntimeError("Rotation or its duplicate lost the original stable rotation boundary.")
+    return {key: after[key] for key in ("id", "subject", "roles", "tenant", "claims", "created_at", "rotated_at")}
+
+
+def rotate():
+    results = []
+    for namespace in NAMESPACES:
+        for role in ("operator", "worker"):
+            credential = f"fixture-{namespace}-{role}"
+            path = f"/runtime-credentials/{credential}"
+            before = api(path)
+            token = f"dwr_fixture_{role}_{namespace.replace('-', '_')}_0123456789_rotated"
+            after = api(path + "/rotate", method="POST", body={"token": token})
+            repeated = api(path + "/rotate", method="POST", body={"token": token})
+            results.append(verify_rotation(before, after, repeated))
+    retain("credential-rotation", {"credentials": results, "duplicate_rotation_preserved": True})
+    emit(scenario="rust-namespace-credentials-rotated", credentials=results,
+         duplicate_rotation_preserved=True)
+
+
 def verify_principals(history, namespace, *, completed=False):
     roles = {"WorkflowStarted": "operator"}
     if any(row["event_type"] == "SignalReceived" for row in history["events"]):
@@ -259,9 +286,11 @@ async def inspect(phase):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("setup", "park", "released", "verify"))
+    parser.add_argument("phase", choices=("setup", "rotate", "park", "released", "verify"))
     phase = parser.parse_args().phase
     if phase == "setup":
         setup()
+    elif phase == "rotate":
+        rotate()
     else:
         asyncio.run(inspect(phase))

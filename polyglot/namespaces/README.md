@@ -60,6 +60,16 @@ logs. A failed command includes project logs before cleanup. This covers Rust
 namespace selection, role credentials, execution and recovery. Namespace
 administration is performed by the public Server API, not a Rust CRUD API.
 
+The public credential API rotates all four existing operator/worker credentials
+while the Rust workers are absent. Credential IDs, actor subjects, roles,
+namespace bindings and claims must remain unchanged. Retrying the same rotation
+must preserve its original timestamp. Actual Rust clients using each old
+credential must receive HTTP 401 with `unauthorized` for a control read or worker
+poll. New operator credentials acknowledge the signals, and fresh Rust workers
+use the new worker credentials to finish the original runs. The original start
+actors and final signal/completion actors remain the same authenticated subjects.
+Rotation receipts contain identity and authority metadata, without tokens.
+
 ## Actor identity and forged metadata
 
 All Rust requests pass through an isolated fixture gateway. It retains the
@@ -86,6 +96,6 @@ Set `SDK_NAMESPACES_RESULT_DIR` to retain raw histories, gateway receipts and
 physical worker-loss records. The hosted job retains these for 30 days. Runtime
 containers, fixture images, volumes, networks and the disposable proof directory
 are removed on exit. This focused case covers named runtime credentials,
-start/signal/completion attribution and cold replay. Credential rotation,
-anonymous actors, query/cancellation/failure attribution and CLI/Waterline
+start/signal/completion attribution, credential rotation and cold replay.
+Anonymous actors, query/cancellation/failure attribution and CLI/Waterline
 visibility remain separate principal-contract cases.

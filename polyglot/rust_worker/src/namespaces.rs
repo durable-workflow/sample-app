@@ -167,6 +167,16 @@ pub async fn call(client: Client) -> Result<()> {
             };
             record["diagnostic"] = refused(client.describe_workflow(&id).await, status, reason)?;
         }
+        "revoked-describe" => {
+            record["diagnostic"] = refused(client.describe_workflow(&id).await, 401, "unauthorized")?;
+        }
+        "revoked-poll" => {
+            record["diagnostic"] = refused(
+                client.poll_workflow_task("rust-namespace-revoked", QUEUE, Duration::ZERO).await,
+                401,
+                "unauthorized",
+            )?;
+        }
         "deny-signal" | "missing-signal" => {
             let status = if phase == "missing-signal" { 404 } else { 403 };
             let reason = if status == 404 {
