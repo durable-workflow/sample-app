@@ -31,14 +31,38 @@ finish child and parent cleanup, and close both original runs as Cancelled
 before that deadline. The published CLI and Server API must explain the same
 complete cascade with its original lineage and completed cleanup.
 
+Original and duplicate requests from the published Python SDK pass through an
+isolated attribution gateway. It preserves the real token and protocol headers
+while injecting five forged identity body fields and eleven headers. Each
+direction requires successful HTTP 202/200 receipts with the original request
+identity and deadline. Root history must record the authenticated legacy token
+actor, and the same requester and control-plane source must remain in both
+cancellation contexts, cleanup markers and CLI/API cascade requests after replay.
+Propagation, delivery and cleanup are internal events with explicit null audit
+principals. They preserve the requester in the context. Worker inspection proves
+SIGKILL exit 137 without OOM and distinct replacement containers.
+
+This checks actual Rust-involving workflow execution with a Python cancellation
+caller. Named runtime-token roles, anonymous cooperative requests, Rust
+cancellation clients and browser rendering are separate cases.
+
 The command prints the tuple, digest, UTC interval, results and original
 identities. Its exit trap removes the task stack, volumes and fixture images on
 success or failure. After an external interruption, remove the same project:
 
 ```bash
-COMPOSE_PROJECT_NAME=sample-app-sdk-children \
-  docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
+export CHILD_UID="$(id -u)" CHILD_GID="$(id -g)"
+# Use the disposable proof directory printed at startup.
+export CHILD_PROOF_DIR=/path/to/disposable/proof
+COMPOSE_PROJECT_NAME=sample-app-sdk-children docker compose \
+  -f polyglot/docker-compose.yml -f polyglot/docker-compose.children.yml \
+  down --volumes --remove-orphans
 ```
+
+Set `SDK_CHILDREN_RESULT_DIR` to retain scenario histories, cascade output,
+actual injected request receipts and physical worker-loss records. Hosted
+checks retain these for 30 days. The disposable proof directory is removed by
+the exit trap independently of that evidence retention.
 
 Process loss during an external side effect requires a separate scenario.
 Report the executed directions and exact tuple on the owning issue.

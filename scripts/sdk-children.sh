@@ -44,6 +44,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'SDK children start: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'Disposable proof directory: %s\n' "$CHILD_PROOF_DIR"
 printf 'Runner commit: %s\n' "$(git -C "$repo_root" rev-parse HEAD)"
 for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFLOW_PYTHON_SDK_VERSION \
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
@@ -86,8 +87,27 @@ for phase in cancellation_start cancellation_request cancellation_park; do
   fi
   printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
 done
+inspect_worker() {
+  docker inspect "$1" | jq '.[0] | {Id,State:{Pid:.State.Pid,StartedAt:.State.StartedAt,FinishedAt:.State.FinishedAt,ExitCode:.State.ExitCode,OOMKilled:.State.OOMKilled,Running:.State.Running}}'
+}
+declare -A original_cancel_workers
+for worker in "${workers[@]}"; do
+  original_cancel_workers[$worker]="$("${compose[@]}" ps -q "$worker")"
+  inspect_worker "${original_cancel_workers[$worker]}" > "$CHILD_PROOF_DIR/$worker-before.json"
+  jq -e '.State.Running == true and .State.Pid > 0' "$CHILD_PROOF_DIR/$worker-before.json" >/dev/null
+done
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "${original_cancel_workers[$worker]}" > "$CHILD_PROOF_DIR/$worker-killed.json"
+  jq -e '.State.ExitCode == 137 and .State.OOMKilled == false and .State.Running == false' \
+    "$CHILD_PROOF_DIR/$worker-killed.json" >/dev/null
+done
 observer cancellation_duplicate
 "${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "$("${compose[@]}" ps -q "$worker")" > "$CHILD_PROOF_DIR/$worker-replacement.json"
+  jq -e --arg old "${original_cancel_workers[$worker]}" '.Id != $old and .State.Running == true and .State.Pid > 0' \
+    "$CHILD_PROOF_DIR/$worker-replacement.json" >/dev/null
+done
 observer cancellation_verify
 printf 'SDK children pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

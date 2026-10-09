@@ -18,7 +18,7 @@ with patch.dict(sys.modules, {"durable_workflow": types.SimpleNamespace(Client=o
 
 
 def event(kind, **payload):
-    return {"event_type": kind, "payload": payload}
+    return {"event_type": kind, "payload": payload, "principal": None}
 
 
 class CancellationIdentityTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class CancellationIdentityTest(unittest.TestCase):
         self.parent = {"schema": "durable-workflow.cancellation-context/v1", **self.root,
             "root_request_id": "root", "root_workflow_instance_id": "parent", "root_workflow_run_id": "parent-run",
             "parent_request_id": None, "reason": "SDK child cancellation conformance",
-            "requester": {"type": "auth:token", "id": "test", "label": "Test"}, "source": "control_plane",
+            "requester": children.CANCELLATION_ACTOR, "source": "control_plane",
             "lineage": [{"request_id": "root", "workflow_instance_id": "parent", "workflow_run_id": "parent-run"}]}
         self.child = {**self.parent, "request_id": "child-request", "parent_request_id": "root",
             "lineage": [*self.parent["lineage"], {"request_id": "child-request", "workflow_instance_id": "child",
@@ -39,6 +39,7 @@ class CancellationIdentityTest(unittest.TestCase):
     def test_original_parent_and_child_context_pass(self):
         for role, context in (("parent", self.parent), ("child", self.child)):
             history = {"events": [event("CooperativeCancellationRequested", cancellation=context)]}
+            history["events"][0]["principal"] = children.CANCELLATION_ACTOR if role == "parent" else None
             self.assertEqual(children.cancellation_context(history, self.record, role), context)
 
     def test_changed_child_identity_budget_or_metadata_fails(self):
