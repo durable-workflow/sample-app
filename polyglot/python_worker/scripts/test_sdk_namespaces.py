@@ -249,6 +249,8 @@ class NamespaceHistoryChecks(unittest.TestCase):
             for row in fixture[0]["events"]:
                 if row.get("principal") is not None:
                     row["principal"] = {"type": "server", "id": "anonymous"}
+            if fixture[4] is not None:
+                fixture[4]["history"]["events"] = copy.deepcopy(fixture[0]["events"][:-1])
             self.assertEqual(verify_operation_history(*fixture, anonymous=True)["event_type"], terminal)
             for actor in (None, {"type": "attacker", "id": "mallory"}, {"type": "auth:runtime-token", "id": "named"}):
                 changed = copy.deepcopy(fixture)
