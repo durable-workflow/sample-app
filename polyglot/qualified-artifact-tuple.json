@@ -6,7 +6,7 @@
     "cli": "2.2.0",
     "sdk-php": "2.2.6",
     "sdk-python": "2.5.1",
-    "sdk-rust": "3.4.1",
+    "sdk-rust": "3.4.2",
     "server": "2.5.16",
     "waterline": "2.9.0",
     "workflow": "2.5.6"
