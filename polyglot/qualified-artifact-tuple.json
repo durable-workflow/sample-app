@@ -8,7 +8,7 @@
     "sdk-python": "2.5.0",
     "sdk-rust": "3.4.1",
     "server": "2.5.16",
-    "waterline": "2.6.0",
+    "waterline": "2.7.0",
     "workflow": "2.5.6"
   }
 }
