@@ -840,16 +840,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.3.1",
+            "version": "2.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "bd2efba8e2afef590ff87960da6a1cdb41963704"
+                "reference": "8a093d3aca47e39d3f3bbd40f56875456733438b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/bd2efba8e2afef590ff87960da6a1cdb41963704",
-                "reference": "bd2efba8e2afef590ff87960da6a1cdb41963704",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/8a093d3aca47e39d3f3bbd40f56875456733438b",
+                "reference": "8a093d3aca47e39d3f3bbd40f56875456733438b",
                 "shasum": ""
             },
             "require": {
@@ -883,10 +883,10 @@
                     ]
                 },
                 "branch-alias": {
-                    "dev-main": "2.3.x-dev"
+                    "dev-main": "2.4.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.3.1",
+                    "product-train": "2.4.0",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -916,9 +916,9 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.3.1"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.4.0"
             },
-            "time": "2026-10-07T21:21:50+00:00"
+            "time": "2026-10-10T03:46:09+00:00"
         },
         {
             "name": "durable-workflow/workflow",
