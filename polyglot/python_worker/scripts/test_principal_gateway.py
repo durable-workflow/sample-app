@@ -20,6 +20,13 @@ class GatewayForwardingChecks(unittest.TestCase):
             def log_message(self, *_):
                 pass
 
+            def do_GET(self):
+                received.append({"path": self.path, "headers": self.headers})
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"reason": "unauthorized"}')
+
             def do_POST(self):
                 received.append({"path": self.path, "headers": self.headers,
                                  "body": json.loads(self.rfile.read(int(self.headers["Content-Length"])) )})
@@ -88,6 +95,25 @@ class GatewayForwardingChecks(unittest.TestCase):
         self.assertEqual({row["kind"] for row in rows}, {"start", "signal", "workflow-task-complete", "activity-complete", "cancel", "cooperative-cancel"})
         self.assertTrue(all(row["status"] == 201 for row in rows))
         self.assertTrue(all(row["authorization_present"] is True for row in rows))
+
+    def test_refused_discovery_keeps_forged_headers_and_no_authorization(self):
+        connection = http.client.HTTPConnection(*self.gateway.server_address, timeout=3)
+        try:
+            connection.request("GET", "/api/cluster/info", headers={"X-Namespace": "default"})
+            response = connection.getresponse()
+            self.assertEqual(401, response.status)
+            self.assertEqual({"reason": "unauthorized"}, json.loads(response.read()))
+        finally:
+            connection.close()
+        actual = self.received[-1]
+        self.assertIsNone(actual["headers"].get("Authorization"))
+        for key, value in HEADERS.items():
+            self.assertEqual(value, actual["headers"][key])
+        receipt = json.loads(Path(self.temp.name, "gateway.jsonl").read_text())
+        self.assertEqual("discovery", receipt["kind"])
+        self.assertEqual(401, receipt["status"])
+        self.assertFalse(receipt["authorization_present"])
+        self.assertEqual({}, receipt["body_fields"])
 
     def test_anonymous_request_stays_credential_free_despite_forged_headers(self):
         actual = self.send("/api/workflows", {"workflow_id": "anonymous-original"}, anonymous=True)

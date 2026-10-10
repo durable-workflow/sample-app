@@ -95,10 +95,11 @@ class Gateway(BaseHTTPRequestHandler):
             connection.request(self.command, self.path, body=body or None, headers=headers)
             response = connection.getresponse()
             result = response.read()
-            if kind and self.receipt_path:
-                receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind,
+            if self.receipt_path and (kind or (self.command == "GET" and path == "/api/cluster/info")):
+                payload = payload or {}
+                receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind or "discovery",
                            "path": path, "namespace": self.headers.get("X-Namespace"),
-                           "status": response.status, "body_fields": BODY_FIELDS, "headers": HEADERS,
+                           "status": response.status, "body_fields": BODY_FIELDS if kind else {}, "headers": HEADERS,
                            "authorization_present": bool(self.headers.get("Authorization")),
                            "workflow_id": payload.get("workflow_id"),
                            "activity_attempt_id": payload.get("activity_attempt_id"),
