@@ -114,6 +114,7 @@ class GatewayForwardingChecks(unittest.TestCase):
         receipt = json.loads(Path(self.temp.name, "gateway.jsonl").read_text())
         self.assertEqual("discovery", receipt["kind"])
         self.assertEqual(401, receipt["status"])
+        self.assertEqual("unauthorized", receipt["response_reason"])
         self.assertFalse(receipt["authorization_present"])
         self.assertEqual({}, receipt["body_fields"])
 

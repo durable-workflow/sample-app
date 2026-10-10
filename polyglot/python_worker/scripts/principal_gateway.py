@@ -113,6 +113,8 @@ class Gateway(BaseHTTPRequestHandler):
                     result_payload = json.loads(result)
                     receipt["response_duplicate"] = result_payload.get("duplicate")
                     receipt["response_cancellation_request"] = result_payload.get("cancellation_request")
+                if response.status in (401, 403):
+                    receipt["response_reason"] = json.loads(result).get("reason")
                 with RECEIPT_LOCK, self.receipt_path.open("a") as stream:
                     stream.write(json.dumps(receipt, sort_keys=True) + "\n")
             self.send_response(response.status)

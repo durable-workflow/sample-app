@@ -5,7 +5,7 @@ import json
 import os
 
 from durable_workflow import Client
-from durable_workflow.errors import ServerError
+from durable_workflow.errors import RuntimeDiscoveryUnavailable, ServerError, Unauthorized
 
 
 async def main():
@@ -23,6 +23,13 @@ async def main():
                 record["response"] = await handle.request_cancellation(
                     reason="duplicate must not replace original" if phase == "duplicate" else "SDK child cancellation conformance",
                     cleanup_timeout_seconds=60 if phase == "duplicate" else 30)
+            except RuntimeDiscoveryUnavailable as error:
+                if (phase != "deny-anonymous" or not isinstance(error.cause, Unauthorized)
+                        or error.operation != "Client.request_workflow_cancellation"):
+                    raise
+                record["refusal"] = {"status": 401, "reason": "unauthorized"}
+                record["sdk_exception"] = type(error).__name__
+                record["discovery_cause"] = type(error.cause).__name__
             except ServerError as error:
                 expected = {"deny-worker": 403, "deny-anonymous": 401}.get(phase)
                 status = getattr(error, "status", None)

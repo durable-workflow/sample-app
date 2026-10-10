@@ -342,12 +342,16 @@ async def cancellation_denied(client):
     if phase == "deny-anonymous":
         discovery = [row for row in receipts if row["kind"] == "discovery" and row["status"] == 401]
         if (len(discovery) != len(pending) or any(row["authorization_present"] or row["headers"] != HEADERS
+                or row.get("response_reason") != expected_reason
                 or row["body_fields"] != {} for row in discovery)):
             raise RuntimeError("Unauthenticated SDK requests lack actual refused capability-discovery receipts.")
     for record in pending:
         response = responses[(record["parent_workflow_id"], record["parent_run_id"])]
         if "response" in response or response.get("refusal") != {"status": expected_status, "reason": expected_reason}:
             raise RuntimeError("An unauthorized SDK cancellation was accepted or lost its diagnostic.")
+        if phase == "deny-anonymous" and response["caller"] == "python" and (
+                response.get("sdk_exception") != "RuntimeDiscoveryUnavailable" or response.get("discovery_cause") != "Unauthorized"):
+            raise RuntimeError("Python lost its typed discovery authorization cause.")
         _, history = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
         if any(row["event_type"].startswith("CooperativeCancellation") or row["event_type"] in TERMINAL_EVENTS
                for row in history["events"]):
@@ -358,6 +362,7 @@ async def cancellation_denied(client):
             if selected:
                 raise RuntimeError("SDK cancellation proceeded past refused capability discovery.")
         elif (len(selected) != 1 or selected[0]["authorization_present"] is not True
+                or selected[0].get("response_reason") != expected_reason
                 or selected[0]["body_fields"] != BODY_FIELDS or selected[0]["headers"] != HEADERS):
             raise RuntimeError("SDK refusal lacks its actual forged-metadata HTTP request receipt.")
     emit(scenario=f"child-cancellation-{phase}-pass", clients=list(RUNTIMES), requests=list(responses.values()),

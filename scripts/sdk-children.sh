@@ -58,6 +58,8 @@ done
   python -m unittest discover -s /app/scripts -p test_cooperative_principals.py
 "${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
   python -m unittest discover -s /app/scripts -p test_principal_gateway.py
+"${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
+  python -m unittest discover -s /app/scripts -p test_cancellation_client.py
 "${compose[@]}" pull --policy always bootstrap server timer-queue
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
 "${compose[@]}" up -d --wait --no-build principal-gateway
