@@ -261,17 +261,17 @@ def markers(history, role, runtime):
     return values
 
 
-def cancellation_actor(history, role):
+def cancellation_actor(history, role, expected=CANCELLATION_ACTOR):
     event = one(history, "CooperativeCancellationRequested")
     context = event["payload"]["cancellation"]
-    if ("principal" not in event or event["principal"] != (CANCELLATION_ACTOR if role == "parent" else None)
-            or context.get("requester") != CANCELLATION_ACTOR or context.get("source") != "control_plane"):
+    if ("principal" not in event or event["principal"] != (expected if role == "parent" else None)
+            or context.get("requester") != expected or context.get("source") != "control_plane"):
         raise RuntimeError("Cooperative cancellation lost its authenticated requester or internal propagation classification.")
     return context
 
 
 def cancellation_context(history, record, role):
-    context = cancellation_actor(history, role)
+    context = cancellation_actor(history, role, record.get("cancellation_actor", CANCELLATION_ACTOR))
     root = record["root_request"]
     expected_run = record["parent_run_id"] if role == "parent" else record["child_workflow_run_id"]
     expected_workflow = record["parent_workflow_id"] if role == "parent" else record["child_workflow_instance_id"]
@@ -302,14 +302,90 @@ async def cancellation_start(client):
     await park(client, "cancel")
 
 
+async def cancellation_credentials(client):
+    import httpx
+    async with httpx.AsyncClient(base_url="http://server:8080/api", timeout=15,
+            headers={"Authorization": "Bearer test-token", "X-Namespace": "default",
+                     "X-Durable-Workflow-Control-Plane-Version": "2"}) as transport:
+        for role in ("operator", "worker"):
+            subject = f"fixture-cancellation-{role}"
+            response = await transport.put(f"/runtime-credentials/{subject}", json={
+                "token": f"dwr_fixture_cancellation_{role}_0123456789", "subject": subject,
+                "roles": [role], "tenant": "default"})
+            if response.status_code != 201 or any(response.json().get(key) != value
+                    for key, value in {"subject": subject, "roles": [role], "tenant": "default"}.items()):
+                raise RuntimeError("Cancellation role credential did not retain its authority and namespace.")
+    emit(scenario="child-cancellation-role-credentials-provisioned", roles=["operator", "worker"])
+
+
+def caller_responses(pending, phase):
+    responses = [json.loads(line) for line in required("DURABLE_WORKFLOW_CANCELLATION_RESPONSES").splitlines()]
+    expected = {(row["parent_workflow_id"], row["parent_run_id"]):
+                row["child" if phase == "duplicate" else "parent"] for row in pending}
+    found = {}
+    for response in responses:
+        key = (response.get("workflow_id"), response.get("run_id"))
+        if key in found or key not in expected or response.get("caller") != expected[key] or response.get("phase") != phase:
+            raise RuntimeError("Cancellation caller responses omit, duplicate or replace an original run or SDK.")
+        found[key] = response
+    if found.keys() != expected.keys() or {row["caller"] for row in responses} != set(RUNTIMES):
+        raise RuntimeError("Cancellation did not execute all three published SDK clients.")
+    return found
+
+
+async def cancellation_denied(client):
+    pending = records()
+    phase = required("DURABLE_WORKFLOW_CANCELLATION_PHASE")
+    expected_status, expected_reason = {"deny-worker": (403, "forbidden"), "deny-anonymous": (401, "unauthorized")}[phase]
+    responses = caller_responses(pending, phase)
+    receipts = [json.loads(line) for line in (Path(required("CHILD_PROOF_DIR")).parent / "gateway.jsonl").read_text().splitlines()]
+    if phase == "deny-anonymous":
+        discovery = [row for row in receipts if row["kind"] == "discovery" and row["status"] == 401]
+        if (len(discovery) != len(pending) or any(row["authorization_present"] or row["headers"] != HEADERS
+                or row.get("response_reason") != expected_reason
+                or row["body_fields"] != {} for row in discovery)):
+            raise RuntimeError("Unauthenticated SDK requests lack actual refused capability-discovery receipts.")
+    for record in pending:
+        response = responses[(record["parent_workflow_id"], record["parent_run_id"])]
+        if "response" in response or response.get("refusal") != {"status": expected_status, "reason": expected_reason}:
+            raise RuntimeError("An unauthorized SDK cancellation was accepted or lost its diagnostic.")
+        if phase == "deny-anonymous" and response["caller"] == "python" and (
+                response.get("sdk_exception") != "RuntimeDiscoveryUnavailable" or response.get("discovery_cause") != "Unauthorized"):
+            raise RuntimeError("Python lost its typed discovery authorization cause.")
+        _, history = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
+        if any(row["event_type"].startswith("CooperativeCancellation") or row["event_type"] in TERMINAL_EVENTS
+               for row in history["events"]):
+            raise RuntimeError("A denied cancellation changed the durable workflow.")
+        path = f"/api/workflows/{quote(record['parent_workflow_id'], safe='')}/runs/{quote(record['parent_run_id'], safe='')}/request-cancellation"
+        selected = [row for row in receipts if row["path"] == path and row["status"] == expected_status]
+        if phase == "deny-anonymous":
+            if selected:
+                raise RuntimeError("SDK cancellation proceeded past refused capability discovery.")
+        elif (len(selected) != 1 or selected[0]["authorization_present"] is not True
+                or selected[0].get("response_reason") != expected_reason
+                or selected[0]["body_fields"] != BODY_FIELDS or selected[0]["headers"] != HEADERS):
+            raise RuntimeError("SDK refusal lacks its actual forged-metadata HTTP request receipt.")
+    emit(scenario=f"child-cancellation-{phase}-pass", clients=list(RUNTIMES), requests=list(responses.values()),
+         durable_cancellation_events=0)
+
+
 async def cancellation_request(client):
-    for record in records():
+    pending = records()
+    responses = caller_responses(pending, "request") if os.environ.get("DURABLE_WORKFLOW_CANCELLATION_RESPONSES") else None
+    for record in pending:
         handle = client.get_workflow_handle(record["parent_workflow_id"], run_id=record["parent_run_id"])
-        response = await handle.request_cancellation(reason="SDK child cancellation conformance", cleanup_timeout_seconds=30)
+        response = (responses[(record["parent_workflow_id"], record["parent_run_id"])]["response"] if responses else
+                    await handle.request_cancellation(reason="SDK child cancellation conformance", cleanup_timeout_seconds=30))
         root = response["cancellation_request"]
         if response.get("duplicate") or not root.get("request_id") or (instant(root["cleanup_deadline_at"]) - instant(root["requested_at"])).total_seconds() != 30:
             raise RuntimeError("Cancellation did not accept one original 30-second cleanup budget.")
         record["root_request"] = root
+        if responses:
+            record["cancellation_client"] = record["parent"]
+            record["cancellation_mode"] = required("DURABLE_WORKFLOW_CANCELLATION_MODE")
+            record["cancellation_actor"] = ({"type": "server", "id": "anonymous", "label": "Admin"}
+                if record["cancellation_mode"] == "anonymous" else
+                {"type": "auth:runtime-token", "id": "fixture-cancellation-operator", "label": "Operator"})
         emit(scenario="child-cancellation-requested", **record)
 
 
@@ -340,9 +416,12 @@ async def cancellation_park(client):
 
 
 async def cancellation_duplicate(client):
-    for record in records():
+    pending = records()
+    responses = caller_responses(pending, "duplicate") if os.environ.get("DURABLE_WORKFLOW_CANCELLATION_RESPONSES") else None
+    for record in pending:
         handle = client.get_workflow_handle(record["parent_workflow_id"], run_id=record["parent_run_id"])
-        response = await handle.request_cancellation(reason="duplicate must not replace original", cleanup_timeout_seconds=60)
+        response = (responses[(record["parent_workflow_id"], record["parent_run_id"])]["response"] if responses else
+                    await handle.request_cancellation(reason="duplicate must not replace original", cleanup_timeout_seconds=60))
         root = response["cancellation_request"]
         if not response.get("duplicate") or any(root.get(key) != record["root_request"][key] for key in ("request_id", "requested_at", "cleanup_deadline_at")):
             raise RuntimeError("Duplicate cancellation replaced the original identity or deadline.")
@@ -410,9 +489,11 @@ async def inspect_cascade(record, parent, child):
     base = required("DURABLE_WORKFLOW_SERVER_URL").rstrip("/")
     api = base if base.endswith("/api") else base + "/api"
     path = f"/workflows/{quote(record['parent_workflow_id'], safe='')}/runs/{quote(record['parent_run_id'], safe='')}/debug"
-    async with httpx.AsyncClient(timeout=15, headers={"Authorization": "Bearer " + required("DURABLE_WORKFLOW_AUTH_TOKEN"),
-            "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"), "Accept": "application/json",
-            "X-Durable-Workflow-Control-Plane-Version": "2"}) as client:
+    headers = {"X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"), "Accept": "application/json",
+               "X-Durable-Workflow-Control-Plane-Version": "2"}
+    if os.environ.get("DURABLE_WORKFLOW_AUTH_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["DURABLE_WORKFLOW_AUTH_TOKEN"]
+    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
         response = await client.get(api + path)
         response.raise_for_status()
         view = response.json()["cancellation_cascade"]
@@ -455,23 +536,28 @@ async def inspect_cascade(record, parent, child):
 
 
 def verify_cancellation_transport(pending, receipts):
-    selected = [row for row in receipts if row["kind"] == "cooperative-cancel"]
     expected_paths = {f"/api/workflows/{quote(row['parent_workflow_id'], safe='')}/runs/{quote(row['parent_run_id'], safe='')}/request-cancellation"
                       for row in pending}
+    selected = [row for row in receipts if row["kind"] == "cooperative-cancel" and row["path"] in expected_paths
+                and row["status"] in (200, 202)]
+    anonymous = all(row.get("cancellation_mode") == "anonymous" for row in pending)
     if (len(selected) != len(pending) * 2 or {row["path"] for row in selected} != expected_paths
             or any(sum(row["path"] == path for row in selected) != 2 for path in expected_paths)
-            or any(row["status"] not in (200, 202) or row["namespace"] != "default" or row["authorization_present"] is not True
+            or any(row["namespace"] != "default" or row["authorization_present"] != (not anonymous)
                    or row["body_fields"] != BODY_FIELDS or row["headers"] != HEADERS for row in selected)):
         raise RuntimeError("Original and duplicate cancellation lack actual successful forged-metadata request receipts.")
     for record in pending:
         path = f"/api/workflows/{quote(record['parent_workflow_id'], safe='')}/runs/{quote(record['parent_run_id'], safe='')}/request-cancellation"
         pair = [row for row in selected if row["path"] == path]
-        if ([(row["status"], row.get("response_duplicate")) for row in pair] != [(202, False), (200, True)]
+        statuses = [row["status"] for row in receipts if row["kind"] == "cooperative-cancel" and row["path"] == path]
+        if (statuses != ([403, 202, 200] if record.get("cancellation_mode") == "runtime" else [202, 200])
+                or [(row["status"], row.get("response_duplicate")) for row in pair] != [(202, False), (200, True)]
                 or any(any(row.get("response_cancellation_request", {}).get(key) != record["root_request"][key]
                            for key in ("request_id", "requested_at", "cleanup_deadline_at")) for row in pair)):
             raise RuntimeError("Transport responses replaced the original cooperative identity or deadline.")
     return {"directions": len(pending), "original_and_duplicate_requests": len(selected),
-            "body_fields": len(BODY_FIELDS), "headers": len(HEADERS), "authenticated_requester": CANCELLATION_ACTOR}
+            "body_fields": len(BODY_FIELDS), "headers": len(HEADERS),
+            "authenticated_requester": pending[0].get("cancellation_actor", CANCELLATION_ACTOR)}
 
 
 async def cancellation_verify(client):
@@ -493,16 +579,22 @@ async def cancellation_verify(client):
              cancellation_cascade=view, elapsed_seconds=(instant(one(parent, "WorkflowCancelled")["timestamp"])
                  - instant(record["root_request"]["requested_at"])).total_seconds())
     proof = Path(required("CHILD_PROOF_DIR"))
-    receipts = [json.loads(line) for line in (proof / "gateway.jsonl").read_text().splitlines()]
+    receipt_path = proof / "gateway.jsonl"
+    if not receipt_path.exists():
+        receipt_path = proof.parent / "gateway.jsonl"
+    receipts = [json.loads(line) for line in receipt_path.read_text().splitlines()]
     emit(scenario="child-cooperative-principal-transport-pass", **verify_cancellation_transport(records(), receipts))
 
 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", choices=["matrix", "failure", "park", "release", "recovery", "cancellation_start",
-        "cancellation_request", "cancellation_park", "cancellation_duplicate", "cancellation_verify"])
+        "cancellation_credentials", "cancellation_denied", "cancellation_request", "cancellation_park",
+        "cancellation_duplicate", "cancellation_verify"])
     args = parser.parse_args()
-    async with Client(required("DURABLE_WORKFLOW_SERVER_URL"), token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
+    token = (None if os.environ.get("DURABLE_WORKFLOW_CANCELLATION_MODE") == "anonymous" else
+             required("DURABLE_WORKFLOW_AUTH_TOKEN"))
+    async with Client(required("DURABLE_WORKFLOW_SERVER_URL"), token=token,
                       namespace=required("DURABLE_WORKFLOW_NAMESPACE"), timeout=60) as client:
         await globals()[args.phase](client)
 

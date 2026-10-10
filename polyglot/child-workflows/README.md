@@ -42,9 +42,20 @@ Propagation, delivery and cleanup are internal events with explicit null audit
 principals. They preserve the requester in the context. Worker inspection proves
 SIGKILL exit 137 without OOM and distinct replacement containers.
 
-This checks actual Rust-involving workflow execution with a Python cancellation
-caller. Named runtime-token roles, anonymous cooperative requests, Rust
-cancellation clients and browser rendering are separate cases.
+The command repeats the five cancellation directions with a named runtime-token
+operator and in explicitly configured anonymous mode. All three published SDKs
+make original requests, selected by the parent language. Duplicate requests use
+the child language. In token mode the duplicate uses the legacy administrator,
+so it must preserve the original operator requester despite that change of
+caller. Anonymous requests carry no Authorization header and must retain the
+documented `server` / `anonymous` requester. Each batch repeats the physical
+worker loss, cold cleanup replay and CLI/API cascade checks.
+
+Before the operator requests, all three SDKs must reject a worker credential
+with HTTP 403 `forbidden`, and a missing credential with HTTP 401 `unauthorized`.
+The missing credential is refused during capability discovery, before a
+cancellation POST. Actual gateway receipts and unchanged durable histories
+are required for both refusals. Browser rendering is a separate case.
 
 The command prints the tuple, digest, UTC interval, results and original
 identities. Its exit trap removes the task stack, volumes and fixture images on

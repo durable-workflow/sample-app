@@ -1,10 +1,12 @@
 """Reject forged requesters, misleading internal actors and incomplete receipts."""
 
 import copy
+import json
 import unittest
+from unittest.mock import patch
 
 from principal_gateway import BODY_FIELDS, HEADERS
-from sdk_children import CANCELLATION_ACTOR, cancellation_actor, verify_cancellation_transport, verify_cascade_request
+from sdk_children import CANCELLATION_ACTOR, cancellation_actor, caller_responses, verify_cancellation_transport, verify_cascade_request
 
 
 def history(role):
@@ -26,6 +28,49 @@ def transport():
 
 
 class CooperativePrincipalChecks(unittest.TestCase):
+    def test_each_actual_sdk_caller_and_original_run_is_required(self):
+        pending = [{"parent": parent, "child": child, "parent_workflow_id": parent,
+                    "parent_run_id": f"run-{parent}"}
+                   for parent, child in (("php", "python"), ("python", "rust"), ("rust", "php"))]
+        for phase in ("request", "duplicate", "deny-worker", "deny-anonymous"):
+            rows = [{"caller": run["child" if phase == "duplicate" else "parent"], "phase": phase,
+                     "workflow_id": run["parent_workflow_id"], "run_id": run["parent_run_id"]} for run in pending]
+            with patch.dict("os.environ", {"DURABLE_WORKFLOW_CANCELLATION_RESPONSES": "\n".join(map(json.dumps, rows))}):
+                self.assertEqual(3, len(caller_responses(pending, phase)))
+            for mutation in ("missing", "duplicate", "caller", "phase", "run"):
+                changed = copy.deepcopy(rows)
+                if mutation == "missing":
+                    changed.pop()
+                elif mutation == "duplicate":
+                    changed.append(copy.deepcopy(changed[0]))
+                else:
+                    changed[0][{"run": "run_id"}.get(mutation, mutation)] = "replacement"
+                with self.subTest(phase=phase, mutation=mutation), patch.dict("os.environ", {
+                        "DURABLE_WORKFLOW_CANCELLATION_RESPONSES": "\n".join(map(json.dumps, changed))}), self.assertRaises(RuntimeError):
+                    caller_responses(pending, phase)
+
+    def test_runtime_and_anonymous_requesters_keep_internal_events_unattributed(self):
+        for actor in ({"type": "auth:runtime-token", "id": "fixture-cancellation-operator", "label": "Operator"},
+                      {"type": "server", "id": "anonymous", "label": "Admin"}):
+            for role in ("parent", "child"):
+                value = history(role)
+                value["events"][0]["principal"] = actor if role == "parent" else None
+                value["events"][0]["payload"]["cancellation"]["requester"] = actor
+                self.assertEqual(actor, cancellation_actor(value, role, actor)["requester"])
+                value["events"][0]["payload"]["cancellation"]["requester"] = CANCELLATION_ACTOR
+                with self.subTest(actor=actor, role=role), self.assertRaises(RuntimeError):
+                    cancellation_actor(value, role, actor)
+
+    def test_anonymous_transport_really_has_no_authorization_header(self):
+        pending, receipts = transport()
+        pending[0].update(cancellation_mode="anonymous", cancellation_actor={"type": "server", "id": "anonymous", "label": "Admin"})
+        for row in receipts:
+            row["authorization_present"] = False
+        self.assertEqual(2, verify_cancellation_transport(pending, receipts)["original_and_duplicate_requests"])
+        receipts[1]["authorization_present"] = True
+        with self.assertRaises(RuntimeError):
+            verify_cancellation_transport(pending, receipts)
+
     def test_cascade_projection_preserves_request_metadata_and_uses_edges_for_lineage(self):
         context = {**transport()[0][0]["root_request"], "requester": CANCELLATION_ACTOR,
                    "source": "control_plane", "lineage": [{"request_id": "original-request"}]}

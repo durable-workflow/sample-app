@@ -1,4 +1,9 @@
 services:
+  server:
+    environment:
+      DW_RUNTIME_CREDENTIALS_ENABLED: "true"
+      DW_AUTH_DRIVER: ${CHILD_AUTH_DRIVER:-token}
+
   smoke:
     mem_limit: 256m
     cpus: 0.5

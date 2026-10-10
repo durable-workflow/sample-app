@@ -95,10 +95,11 @@ class Gateway(BaseHTTPRequestHandler):
             connection.request(self.command, self.path, body=body or None, headers=headers)
             response = connection.getresponse()
             result = response.read()
-            if kind and self.receipt_path:
-                receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind,
+            if self.receipt_path and (kind or (self.command == "GET" and path == "/api/cluster/info" and response.status == 401)):
+                payload = payload or {}
+                receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind or "discovery",
                            "path": path, "namespace": self.headers.get("X-Namespace"),
-                           "status": response.status, "body_fields": BODY_FIELDS, "headers": HEADERS,
+                           "status": response.status, "body_fields": BODY_FIELDS if kind else {}, "headers": HEADERS,
                            "authorization_present": bool(self.headers.get("Authorization")),
                            "workflow_id": payload.get("workflow_id"),
                            "activity_attempt_id": payload.get("activity_attempt_id"),
@@ -112,6 +113,8 @@ class Gateway(BaseHTTPRequestHandler):
                     result_payload = json.loads(result)
                     receipt["response_duplicate"] = result_payload.get("duplicate")
                     receipt["response_cancellation_request"] = result_payload.get("cancellation_request")
+                if response.status in (401, 403):
+                    receipt["response_reason"] = json.loads(result).get("reason")
                 with RECEIPT_LOCK, self.receipt_path.open("a") as stream:
                     stream.write(json.dumps(receipt, sort_keys=True) + "\n")
             self.send_response(response.status)
