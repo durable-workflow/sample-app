@@ -58,6 +58,7 @@ for name in DURABLE_SERVER_IMAGE DURABLE_SERVER_VERSION DURABLE_WORKFLOW_PHP_SDK
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
+printf 'DURABLE_SERVER_WORKFLOW_VERSION=%s\n' "${DURABLE_SERVER_WORKFLOW_VERSION:-$DURABLE_WORKFLOW_WORKFLOW_VERSION}"
 "${compose[@]}" build smoke php-same-workflow-worker rust-workflow-worker
 "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T smoke \
   python -m unittest discover -s /app/scripts -p test_sdk_activity_recovery.py
@@ -68,7 +69,7 @@ docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
 docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
   "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"
 [[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" == "$DURABLE_SERVER_VERSION" ]]
-[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.workflow.version"}}')" == "$DURABLE_WORKFLOW_WORKFLOW_VERSION" ]]
+[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.workflow.version"}}')" == "${DURABLE_SERVER_WORKFLOW_VERSION:-$DURABLE_WORKFLOW_WORKFLOW_VERSION}" ]]
 
 observer() {
   "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \

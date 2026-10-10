@@ -1,6 +1,9 @@
 {
   "schema": "durable-workflow.sample-app.polyglot-qualified-artifact-tuple",
   "schemaVersion": 1,
+  "serverComponents": {
+    "workflow": "2.5.6"
+  },
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
     "cli": "2.2.0",

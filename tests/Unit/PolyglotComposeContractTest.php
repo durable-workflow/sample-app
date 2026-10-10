@@ -36,6 +36,7 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertSame($tuple['artifacts']['sdk-python'], $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION']);
         $this->assertSame($tuple['artifacts']['sdk-rust'], $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
         $this->assertSame($tuple['artifacts']['workflow'], $assignments['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
+        $this->assertSame($tuple['serverComponents']['workflow'], $assignments['DURABLE_SERVER_WORKFLOW_VERSION']);
         $this->assertSame($tuple['artifacts']['waterline'], $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION']);
         $this->assertSame(
             'durable-workflow/sdk:'.$tuple['artifacts']['sdk-php'],
@@ -62,6 +63,32 @@ final class PolyglotComposeContractTest extends TestCase
 
         $this->assertFalse($process->isSuccessful());
         $this->assertStringContainsString('must be a stable 2.x or 3.x version', $process->getErrorOutput());
+    }
+
+    public function test_server_component_selection_preserves_frozen_workflow_overrides(): void
+    {
+        $frozen = $this->resolveArtifacts(['SAMPLE_APP_WORKFLOW_VERSION' => '2.5.5']);
+        $this->assertSame('2.5.5', $frozen['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
+        $this->assertSame('2.5.5', $frozen['DURABLE_SERVER_WORKFLOW_VERSION']);
+
+        $separate = $this->resolveArtifacts([
+            'SAMPLE_APP_WORKFLOW_VERSION' => '2.5.7',
+            'SAMPLE_APP_SERVER_WORKFLOW_VERSION' => '2.5.6',
+        ]);
+        $this->assertSame('2.5.7', $separate['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
+        $this->assertSame('2.5.6', $separate['DURABLE_SERVER_WORKFLOW_VERSION']);
+
+        $tuple = json_decode((string) file_get_contents($this->path('polyglot/qualified-artifact-tuple.json')), true, flags: JSON_THROW_ON_ERROR);
+        unset($tuple['serverComponents']);
+        $tuple['artifacts']['workflow'] = '2.5.6';
+        $legacyPath = tempnam(sys_get_temp_dir(), 'dw-legacy-tuple-');
+        try {
+            file_put_contents($legacyPath, json_encode($tuple, JSON_THROW_ON_ERROR));
+            $legacy = $this->resolveArtifacts(['DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $legacyPath]);
+            $this->assertSame('2.5.6', $legacy['DURABLE_SERVER_WORKFLOW_VERSION']);
+        } finally {
+            unlink($legacyPath);
+        }
     }
 
     public function test_polyglot_compose_uses_isolated_runtime_services_and_resolved_artifacts(): void

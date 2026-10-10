@@ -57,6 +57,16 @@ for (const key of keys) {
   }
   process.stdout.write(`${key}=${version}\n`);
 }
+
+const components = tuple.serverComponents;
+if (components !== undefined && (
+  !components || typeof components !== 'object' || Array.isArray(components)
+  || Object.keys(components).some(key => key !== 'workflow')
+  || typeof components.workflow !== 'string' || !stableV2.test(components.workflow)
+)) {
+  throw new Error(`${path} serverComponents must declare a stable workflow version`);
+}
+process.stdout.write(`server-workflow=${components?.workflow ?? artifacts.workflow}\n`);
 NODE
 }
 
@@ -141,6 +151,15 @@ workflow_version="$(stable_version DURABLE_WORKFLOW_WORKFLOW_VERSION \
   "${workflow_version:-${tuple[workflow]}}")"
 workflow_pin="${workflow_pin:-durable-workflow/workflow:${workflow_version}}"
 
+# Existing explicit Workflow overrides historically select the Server component
+# too. Preserve frozen cohorts unless a separate Server component is supplied.
+server_workflow_version="${tuple[server-workflow]}"
+if [[ -n "${SAMPLE_APP_WORKFLOW_PIN:-}${SAMPLE_APP_WORKFLOW_VERSION:-}" ]]; then
+  server_workflow_version="$workflow_version"
+fi
+server_workflow_version="$(stable_version SAMPLE_APP_SERVER_WORKFLOW_VERSION \
+  "${SAMPLE_APP_SERVER_WORKFLOW_VERSION:-$server_workflow_version}")"
+
 waterline_pin="${SAMPLE_APP_WATERLINE_PIN:-}"
 waterline_version="${SAMPLE_APP_WATERLINE_VERSION:-}"
 if [[ -z "$waterline_version" && -n "$waterline_pin" ]]; then
@@ -159,6 +178,7 @@ emit DURABLE_WORKFLOW_PHP_SDK_PIN "$php_pin"
 emit DURABLE_WORKFLOW_PYTHON_SDK_VERSION "$python_version"
 emit DURABLE_WORKFLOW_RUST_SDK_VERSION "$rust_version"
 emit DURABLE_WORKFLOW_WORKFLOW_VERSION "$workflow_version"
+emit DURABLE_SERVER_WORKFLOW_VERSION "$server_workflow_version"
 emit DURABLE_WORKFLOW_WORKFLOW_PIN "$workflow_pin"
 emit DURABLE_WORKFLOW_WATERLINE_VERSION "$waterline_version"
 emit DURABLE_WORKFLOW_WATERLINE_PIN "$waterline_pin"

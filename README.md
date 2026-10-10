@@ -38,6 +38,14 @@ PHP workflow sends an order calculation to a Python activity, then sends that
 result to a Rust activity that produces a receipt. The final result identifies
 all three runtimes and the artifact versions used for the run.
 
+The qualified tuple records independently released packages and the Server's
+bundled components separately. `artifacts.workflow` selects the embedded
+application's Composer package. `serverComponents.workflow` identifies the
+package inside the selected Server image. Use `SAMPLE_APP_SERVER_WORKFLOW_VERSION`
+when overriding that component separately from `SAMPLE_APP_WORKFLOW_VERSION`.
+Existing explicit Workflow overrides continue selecting both unless the Server
+component override is supplied.
+
 The isolated `sample-app-polyglot-demo` Compose project remains available for
 inspection. Stop it with:
 
