@@ -95,7 +95,7 @@ class Gateway(BaseHTTPRequestHandler):
             connection.request(self.command, self.path, body=body or None, headers=headers)
             response = connection.getresponse()
             result = response.read()
-            if self.receipt_path and (kind or (self.command == "GET" and path == "/api/cluster/info")):
+            if self.receipt_path and (kind or (self.command == "GET" and path == "/api/cluster/info" and response.status == 401)):
                 payload = payload or {}
                 receipt = {"at": datetime.now(timezone.utc).isoformat(), "kind": kind or "discovery",
                            "path": path, "namespace": self.headers.get("X-Namespace"),

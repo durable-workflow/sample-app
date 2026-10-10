@@ -17,12 +17,14 @@ class GatewayForwardingChecks(unittest.TestCase):
         received = self.received
 
         class Upstream(BaseHTTPRequestHandler):
+            discovery_status = 401
+
             def log_message(self, *_):
                 pass
 
             def do_GET(self):
                 received.append({"path": self.path, "headers": self.headers})
-                self.send_response(401)
+                self.send_response(self.discovery_status)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"reason": "unauthorized"}')
@@ -114,6 +116,18 @@ class GatewayForwardingChecks(unittest.TestCase):
         self.assertEqual(401, receipt["status"])
         self.assertFalse(receipt["authorization_present"])
         self.assertEqual({}, receipt["body_fields"])
+
+    def test_successful_discovery_does_not_enter_the_mutation_receipts(self):
+        self.upstream.RequestHandlerClass.discovery_status = 200
+        connection = http.client.HTTPConnection(*self.gateway.server_address, timeout=3)
+        try:
+            connection.request("GET", "/api/cluster/info", headers={"X-Namespace": "default"})
+            response = connection.getresponse()
+            self.assertEqual(200, response.status)
+            response.read()
+        finally:
+            connection.close()
+        self.assertFalse(Path(self.temp.name, "gateway.jsonl").exists())
 
     def test_anonymous_request_stays_credential_free_despite_forged_headers(self):
         actual = self.send("/api/workflows", {"workflow_id": "anonymous-original"}, anonymous=True)
