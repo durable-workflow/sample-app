@@ -68,7 +68,7 @@ final class VersionRangeRecoveryTest extends TestCase
             WorkflowServer::tool(DiagnoseWorkflowTool::class, ['workflow_id' => $instanceId, 'run_id' => $runId])
                 ->assertOk()
                 ->assertStructuredContent(fn (AssertableJson $json) => $json
-                    ->where('status', 'waiting')
+                    ->where('facts.status', 'waiting')
                     ->where('facts.liveness_state', 'workflow_replay_blocked')
                     ->where('facts.repair_attention', true)
                     ->where('latest_failure', null)
