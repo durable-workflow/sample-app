@@ -95,7 +95,8 @@ def verify_increment(history, request_id, runtime, caller, delta, state):
     update_id, related = update_events(history, request_id)
     types = [event["event_type"] for event in related]
     if any(types.count(kind) != 1 for kind in ("UpdateAccepted", "UpdateApplied", "UpdateCompleted")):
-        raise RuntimeError("A state mutation needs one accepted, applied and completed identity.")
+        raise RuntimeError(f"A state mutation needs one accepted, applied and completed identity: "
+                           f"update_id={update_id}, events={types!r}")
     if not types.index("UpdateAccepted") < types.index("UpdateApplied") < types.index("UpdateCompleted"):
         raise RuntimeError("State mutation history is out of order.")
     completed = next(event for event in related if event["event_type"] == "UpdateCompleted")
@@ -237,23 +238,54 @@ async def state_queued(client):
              run_id=execution.run_id, update_id=update_id)
 
 
+async def complete_queued_increment(client, runtime, request_id, update_id, timeout=90):
+    # SIGKILL can leave a task leased for the Server's normal 60-second lease.
+    # Keep the accepted identity while waiting within a bounded recovery budget.
+    deadline = asyncio.get_running_loop().time() + timeout
+    response = None
+    while True:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            _, history = await observe(client, runtime)
+            raise TimeoutError(f"Queued mutation did not recover within {timeout}s: "
+                               f"update_id={update_id}, response={response!r}, history={history!r}")
+        try:
+            response = await asyncio.wait_for(client.update_workflow(workflow_id(runtime), "increment",
+                        args=[increment_request("python", request_id, 5)], wait_for="completed",
+                        wait_timeout_seconds=min(10, max(1, int(remaining))), request_id=request_id),
+                        timeout=remaining)
+        except asyncio.TimeoutError as error:
+            raise TimeoutError(f"Queued mutation exceeded its {timeout}s recovery budget: "
+                               f"update_id={update_id}, last_response={response!r}") from error
+        if response.get("update_id") != update_id:
+            raise RuntimeError(f"Recovery changed the accepted update identity: {response!r}")
+        if response.get("update_status") == "completed":
+            return response
+        if response.get("update_status") != "accepted":
+            raise RuntimeError(f"Recovery returned an unexpected update outcome: {response!r}")
+        await asyncio.sleep(.25)
+
+
 async def state_replacement(client):
     queued = records("DURABLE_WORKFLOW_STATE_QUEUED")
     for runtime in RUNTIMES:
         request_id = increment_id(runtime, "queued")
-        response = await client.update_workflow(workflow_id(runtime), "increment",
-                    args=[increment_request("python", request_id, 5)], wait_for="completed", request_id=request_id)
+        original = [record for record in queued if record.get("runtime") == runtime]
+        if len(original) != 1:
+            raise RuntimeError("Recovery needs one original accepted mutation per runtime.")
+        started = asyncio.get_running_loop().time()
+        response = await complete_queued_increment(client, runtime, request_id, original[0]["update_id"])
         execution, history = await observe(client, runtime)
         update_id, related, expected = verify_increment(history, request_id, runtime, "python", 5,
                                                         counter_state(runtime, replaced=True))
-        original = [record for record in queued if record.get("runtime") == runtime]
         if (len(original) != 1 or original[0].get("update_id") != update_id
                 or original[0].get("run_id") != execution.run_id or response.get("update_status") != "completed"
                 or response.get("update_id") != update_id
                 or not same_result(serializer.decode_envelope(response["result_envelope"], codec="avro"), expected)):
             raise RuntimeError("Replacement worker lost mutation state or original accepted identity.")
         emit(scenario="stateful-replacement", runtime=runtime, run_id=execution.run_id,
-             update_id=update_id, result=expected, events=related)
+             update_id=update_id, result=expected, events=related,
+             recovery_wait_seconds=asyncio.get_running_loop().time() - started)
         await check_counter(client, runtime, counter_state(runtime, replaced=True), "replacement")
 
 

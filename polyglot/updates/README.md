@@ -59,6 +59,11 @@ for each run. Fresh workers must recover the prior state, apply that increment
 once and return the original accepted identity. Repeating the earlier completed
 updates through all three clients returns their original results, while queries
 retain the latest state. Each final workflow result must contain that same state.
+The queued mutation recovery check allows 90 seconds for the normal 60-second
+task lease to expire after SIGKILL. It repeats only the same accepted request,
+reports the measured wait and fails on changed identities, failed outcomes or
+an expired recovery budget. A short HTTP wait returning acceptance does not
+complete this recovery check.
 
 Python uses its bound update and query methods. PHP reconstructs state through
 the documented committed-history context. Rust reconstructs a typed workflow
