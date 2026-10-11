@@ -258,6 +258,39 @@ class StatefulMutationObservationTest(unittest.TestCase):
             self.verify(self.history)
 
 
+class QueuedMutationRecoveryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_acceptance_is_waited_through_without_changing_request_identity(self):
+        client = types.SimpleNamespace(update_workflow=AsyncMock(side_effect=[
+            {"update_status": "accepted", "update_id": "original"},
+            {"update_status": "completed", "update_id": "original", "result_envelope": {"decoded": 11}},
+        ]))
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example"}), \
+                patch.object(updates.asyncio, "sleep", AsyncMock()):
+            result = await updates.complete_queued_increment(client, "php", "request", "original")
+        self.assertEqual(result["result_envelope"], {"decoded": 11})
+        self.assertEqual(client.update_workflow.await_count, 2)
+        for call in client.update_workflow.await_args_list:
+            self.assertEqual(call.kwargs["request_id"], "request")
+            self.assertEqual(call.kwargs["args"][0]["delta"], 5)
+
+    async def test_changed_identity_or_nonaccepted_outcome_is_rejected_immediately(self):
+        for response in ({"update_status": "accepted", "update_id": "other"},
+                         {"update_status": "failed", "update_id": "original"}):
+            client = types.SimpleNamespace(update_workflow=AsyncMock(return_value=response))
+            with self.subTest(response=response), \
+                    patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example"}):
+                with self.assertRaises(RuntimeError):
+                    await updates.complete_queued_increment(client, "php", "request", "original")
+            self.assertEqual(client.update_workflow.await_count, 1)
+
+    async def test_recovery_budget_is_bounded_and_retains_diagnostics(self):
+        client = types.SimpleNamespace(update_workflow=AsyncMock())
+        with patch.object(updates, "observe", AsyncMock(return_value=(None, {"events": ["accepted"]}))):
+            with self.assertRaisesRegex(TimeoutError, "original.*accepted"):
+                await updates.complete_queued_increment(client, "php", "request", "original", timeout=0)
+        client.update_workflow.assert_not_awaited()
+
+
 class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):
     async def test_observer_reads_later_pages(self):
         client = types.SimpleNamespace(
