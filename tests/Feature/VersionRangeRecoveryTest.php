@@ -70,7 +70,8 @@ final class VersionRangeRecoveryTest extends TestCase
                 ->assertStructuredContent(fn (AssertableJson $json) => $json
                     ->where('facts.status', 'waiting')
                     ->where('facts.liveness_state', 'workflow_replay_blocked')
-                    ->where('facts.repair_attention', true)
+                    ->where('facts.task_problem', true)
+                    ->where('diagnosis', 'needs_repair_attention')
                     ->where('latest_failure', null)
                     ->etc());
 
