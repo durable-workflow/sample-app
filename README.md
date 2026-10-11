@@ -46,6 +46,30 @@ when overriding that component separately from `SAMPLE_APP_WORKFLOW_VERSION`.
 Existing explicit Workflow overrides continue selecting both unless the Server
 component override is supplied.
 
+### Published child cancellation experiment
+
+The full child experiment runs PHP, Python and Rust workers and cancellation
+clients against the published tuple. It covers nine child completion directions,
+five directions involving Rust for failure and recovery, and cooperative
+cancellation through legacy, operator and anonymous access. Waterline connects
+to that real Server and renders each original parent/child cancellation cascade.
+Browser checks compare the actual API response with the recorded identities,
+requester, deadline, delivery and cleanup outcomes on desktop and mobile.
+
+With Docker Compose and Node 24 available:
+
+```bash
+npm ci
+npx playwright install --with-deps chromium
+eval "$(scripts/resolve-current-artifacts.sh | sed 's/^/export /')"
+SDK_CHILDREN_RESULT_DIR=./child-results scripts/sdk-children.sh
+```
+
+The command uses an isolated Compose project and removes its containers, data
+and task-built images on exit. The result directory retains original histories,
+request receipts, browser HTTP responses, DOM text and screenshots. Waterline
+binds an ephemeral loopback port and has its own disposable database.
+
 The isolated `sample-app-polyglot-demo` Compose project remains available for
 inspection. Stop it with:
 

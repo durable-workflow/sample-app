@@ -25,6 +25,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Resolve the exact published tuple
         run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked browser tooling
+        run: npm ci && npx playwright install --with-deps chromium
       - name: Run the documented child experiment
         run: SDK_CHILDREN_RESULT_DIR="$RUNNER_TEMP/sdk-children-proof" scripts/sdk-children.sh
       - name: Retain original histories, cancellation actors and request receipts

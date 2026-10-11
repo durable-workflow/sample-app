@@ -6,7 +6,9 @@ if [[ "${1:-}" == --help ]]; then
     'Runs nine PHP/Python/Rust child directions and five Rust-involving typed failure, recovery and cancellation directions.' \
     'Requires original cooperative requester attribution despite forged metadata, duplicates and cold cleanup recovery.' \
     'Also executes all three cancellation clients with operator credentials and anonymous mode, rejecting worker and missing credentials.' \
-    'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
+    'Checks actual published Waterline browser cascades for every cancellation direction and access mode.' \
+    'Requires Docker Compose, Node 24, npm ci, npx playwright install --with-deps chromium,' \
+    'and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_CHILDREN_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
 fi
@@ -53,6 +55,7 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
+node --input-type=module -e 'await import("playwright")'
 "${compose[@]}" build smoke "${workers[@]}"
 "${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
   python -m unittest discover -s /app/scripts -p test_cooperative_principals.py
@@ -60,7 +63,7 @@ done
   python -m unittest discover -s /app/scripts -p test_principal_gateway.py
 "${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
   python -m unittest discover -s /app/scripts -p test_cancellation_client.py
-"${compose[@]}" pull --policy always bootstrap server timer-queue
+"${compose[@]}" pull --policy always bootstrap server timer-queue cancellation-waterline
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
 "${compose[@]}" up -d --wait --no-build principal-gateway
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
@@ -153,6 +156,15 @@ recover_cancellation() {
       "$proof/$worker-replacement.json" >/dev/null
   done
   observer cancellation_verify
+  # Capture only after convergence, so browser time cannot mask the original deadline.
+  "${compose[@]}" up -d --wait --no-build --force-recreate cancellation-waterline
+  local waterline_port
+  waterline_port="$("${compose[@]}" port cancellation-waterline 8080)"
+  docker image inspect "durableworkflow/waterline:$DURABLE_WORKFLOW_WATERLINE_VERSION" \
+    --format '{{json .}}' | jq '{Id,RepoDigests,Labels:.Config.Labels}' > "$proof/waterline-image.json"
+  CHILD_PROOF_DIR="$proof" DURABLE_WORKFLOW_CANCELLATION_MODE="${CHILD_BATCH_MODE:-legacy}" \
+    DURABLE_WORKFLOW_WATERLINE_URL="http://$waterline_port/waterline" \
+    node "$repo_root/scripts/ci/cancellation-cascade-browser.mjs"
 }
 recover_cancellation
 
