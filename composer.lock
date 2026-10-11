@@ -840,16 +840,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.9.0",
+            "version": "2.9.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "50bdfeb998fe4b0db3317eb23c28861d0019052e"
+                "reference": "6906ef91f4304eecb495c63c6bf9bfe6a8d28c3a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/50bdfeb998fe4b0db3317eb23c28861d0019052e",
-                "reference": "50bdfeb998fe4b0db3317eb23c28861d0019052e",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/6906ef91f4304eecb495c63c6bf9bfe6a8d28c3a",
+                "reference": "6906ef91f4304eecb495c63c6bf9bfe6a8d28c3a",
                 "shasum": ""
             },
             "require": {
@@ -886,7 +886,7 @@
                     "dev-main": "2.9.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.9.0",
+                    "product-train": "2.9.1",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -916,9 +916,9 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.9.0"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.9.1"
             },
-            "time": "2026-10-10T14:26:49+00:00"
+            "time": "2026-10-11T04:37:12+00:00"
         },
         {
             "name": "durable-workflow/workflow",

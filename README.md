@@ -61,7 +61,7 @@ With Docker Compose and Node 24 available:
 ```bash
 npm ci
 npx playwright install --with-deps chromium
-eval "$(scripts/resolve-current-artifacts.sh | sed 's/^/export /')"
+while IFS='=' read -r name value; do export "$name=$value"; done < <(scripts/resolve-current-artifacts.sh)
 SDK_CHILDREN_RESULT_DIR=./child-results scripts/sdk-children.sh
 ```
 

@@ -147,12 +147,18 @@ async function main() {
     const mode = process.env.DURABLE_WORKFLOW_CANCELLATION_MODE;
     assert.ok(proofDirectory && baseUrl, 'Set CHILD_PROOF_DIR and DURABLE_WORKFLOW_WATERLINE_URL');
     const records = loadRecords(proofDirectory, mode);
+    const image = JSON.parse(fs.readFileSync(path.join(proofDirectory, 'waterline-image.json'), 'utf8'));
+    assert.equal(image.Labels?.['dev.durable-workflow.release.tag'],
+        process.env.DURABLE_WORKFLOW_WATERLINE_VERSION, 'Wrong published Waterline image');
+    assert.match(image.Labels?.['org.opencontainers.image.revision'] ?? '', /^[a-f0-9]{40}$/,
+        'Missing exact Waterline source identity');
+    assert.ok(image.RepoDigests?.length > 0, 'Missing published image digest');
     const outputDirectory = path.join(proofDirectory, 'browser');
     fs.mkdirSync(outputDirectory, { recursive: true });
     const { chromium } = await import('playwright');
     const browser = await chromium.launch({ args: ['--no-sandbox'] });
     const report = { mode, waterline_version: process.env.DURABLE_WORKFLOW_WATERLINE_VERSION,
-        browser_version: browser.version(), started_at: new Date().toISOString(), checks: [] };
+        browser_version: browser.version(), image, started_at: new Date().toISOString(), checks: [] };
     try {
         for (const record of records) {
             for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {

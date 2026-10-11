@@ -55,7 +55,7 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
-node --input-type=module -e 'await import("playwright")'
+(cd "$repo_root" && node --input-type=module -e 'await import("playwright")')
 "${compose[@]}" build smoke "${workers[@]}"
 "${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
   python -m unittest discover -s /app/scripts -p test_cooperative_principals.py
