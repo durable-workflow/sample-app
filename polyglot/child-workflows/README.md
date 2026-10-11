@@ -55,7 +55,17 @@ Before the operator requests, all three SDKs must reject a worker credential
 with HTTP 403 `forbidden`, and a missing credential with HTTP 401 `unauthorized`.
 The missing credential is refused during capability discovery, before a
 cancellation POST. Actual gateway receipts and unchanged durable histories
-are required for both refusals. Browser rendering is a separate case.
+are required for both refusals.
+
+The same command inspects the published Waterline image through a connected
+Chromium browser after each cancellation batch has converged. Each of the five
+directions has a parent desktop, parent mobile and child desktop view in all
+three access modes, for 45 views. Actual selected-run HTTP responses and rendered
+pages must agree with the original Server/SDK evidence on the root request,
+requester, deadline, delivery, recovery and completed cleanup. Both original
+runs must show Cancelled under the original root budget. The browser checks
+also reject unhandled errors and horizontal overflow. Browser time is outside
+the 30-second cleanup measurement.
 
 The command prints the tuple, digest, UTC interval, results and original
 identities. Its exit trap removes the task stack, volumes and fixture images on
@@ -71,7 +81,8 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-children docker compose \
 ```
 
 Set `SDK_CHILDREN_RESULT_DIR` to retain scenario histories, cascade output,
-actual injected request receipts and physical worker-loss records. Hosted
+actual injected request receipts, physical worker-loss records and browser
+summaries, HTTP responses, screenshots and rendered text. Hosted
 checks retain these for 30 days. The disposable proof directory is removed by
 the exit trap independently of that evidence retention.
 
