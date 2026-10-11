@@ -290,6 +290,16 @@ class QueuedMutationRecoveryTest(unittest.IsolatedAsyncioTestCase):
                 await updates.complete_queued_increment(client, "php", "request", "original", timeout=0)
         client.update_workflow.assert_not_awaited()
 
+    async def test_stalled_http_request_cannot_outlive_the_recovery_budget(self):
+        async def stalled_request(*_args, **_kwargs):
+            await updates.asyncio.Event().wait()
+
+        client = types.SimpleNamespace(update_workflow=AsyncMock(side_effect=stalled_request))
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_UPDATE_ID": "example"}):
+            with self.assertRaisesRegex(TimeoutError, "recovery budget.*original"):
+                await updates.complete_queued_increment(client, "php", "request", "original", timeout=.01)
+        client.update_workflow.assert_awaited_once()
+
 
 class HistoryPaginationTest(unittest.IsolatedAsyncioTestCase):
     async def test_observer_reads_later_pages(self):

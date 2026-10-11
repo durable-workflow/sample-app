@@ -249,9 +249,14 @@ async def complete_queued_increment(client, runtime, request_id, update_id, time
             _, history = await observe(client, runtime)
             raise TimeoutError(f"Queued mutation did not recover within {timeout}s: "
                                f"update_id={update_id}, response={response!r}, history={history!r}")
-        response = await client.update_workflow(workflow_id(runtime), "increment",
-                    args=[increment_request("python", request_id, 5)], wait_for="completed",
-                    wait_timeout_seconds=min(10, max(1, int(remaining))), request_id=request_id)
+        try:
+            response = await asyncio.wait_for(client.update_workflow(workflow_id(runtime), "increment",
+                        args=[increment_request("python", request_id, 5)], wait_for="completed",
+                        wait_timeout_seconds=min(10, max(1, int(remaining))), request_id=request_id),
+                        timeout=remaining)
+        except asyncio.TimeoutError as error:
+            raise TimeoutError(f"Queued mutation exceeded its {timeout}s recovery budget: "
+                               f"update_id={update_id}, last_response={response!r}") from error
         if response.get("update_id") != update_id:
             raise RuntimeError(f"Recovery changed the accepted update identity: {response!r}")
         if response.get("update_status") == "completed":
