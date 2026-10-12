@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.2.8",
+            "version": "2.3.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "730c5996d464074015ded1281fb5ebfc065453a9"
+                "reference": "c08b18a1855d0ba66d5a504d9238511213b90767"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/730c5996d464074015ded1281fb5ebfc065453a9",
-                "reference": "730c5996d464074015ded1281fb5ebfc065453a9",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/c08b18a1855d0ba66d5a504d9238511213b90767",
+                "reference": "c08b18a1855d0ba66d5a504d9238511213b90767",
                 "shasum": ""
             },
             "require": {
@@ -555,7 +555,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.2.8",
+                    "product-train": "2.3.5",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -582,7 +582,7 @@
                         "patched",
                         "deprecatePatch"
                     ],
-                    "worker-protocol-version": "1.19",
+                    "worker-protocol-version": "1.20",
                     "supported-server-versions": "2.5.0",
                     "version-marker-history-event": "VersionMarkerRecorded",
                     "message-streams-minimum-worker-protocol-version": "1.15",
@@ -621,7 +621,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-11T17:12:32+00:00"
+            "time": "2026-10-12T12:51:08+00:00"
         },
         {
             "name": "durable-workflow/waterline",
