@@ -9,7 +9,6 @@ use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Exception\CodecException;
-use DurableWorkflow\Version;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
@@ -865,7 +864,6 @@ function runStandaloneWorker(): void
         $serverUrl,
         token: $token,
         namespace: $namespace,
-        workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL,
     );
     if ($mode === 'activity') {
         runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);
