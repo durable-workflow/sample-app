@@ -800,7 +800,7 @@ PYTHON;
         file_put_contents(
             $phpRuntime.'/vendor/durable-workflow/sdk/docs/quickstart-contract.json',
             json_encode([
-                'package' => ['published_version' => $artifacts['sdk-php']],
+                'package' => ['published_version' => '2.4.0-rc.1'],
             ], JSON_THROW_ON_ERROR),
         );
         file_put_contents($preparedSentinel, "prepared\n");
@@ -871,6 +871,7 @@ doctor.__globals__["resolve_artifacts"] = lambda: {
 }
 doctor.__globals__["php_runtime"] = lambda: Path(sys.argv[2])
 versions = doctor()
+assert versions["sdk_php"] == artifacts["sdk-php"], json.dumps(versions)
 assert versions["sdk_php_laravel"] == artifacts["sdk-php"], json.dumps(versions)
 PYTHON;
 
@@ -897,7 +898,7 @@ PYTHON;
 
             $operations = file($composerStateLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             $this->assertIsArray($operations);
-            $this->assertSame(['--version', 'show'], array_map(
+            $this->assertSame(['--version', 'show', 'show'], array_map(
                 static fn (string $operation): string => explode("\t", $operation)[0],
                 $operations,
             ));

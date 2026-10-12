@@ -167,15 +167,11 @@ def doctor(*, require_docker: bool = True) -> dict[str, str]:
 
     artifacts = resolve_artifacts()
     runtime = php_runtime()
-    with (
-        runtime
-        / "vendor"
-        / "durable-workflow"
-        / "sdk"
-        / "docs"
-        / "quickstart-contract.json"
-    ).open(encoding="utf-8") as source:
-        php_contract = json.load(source)
+    php_package = json.loads(
+        composer_output(
+            ["show", "--working-dir", str(runtime), "durable-workflow/sdk", "--format=json", "--no-ansi"]
+        )
+    )
     rust_lock = (
         REPO_ROOT / "playground" / "templates" / "rust" / "Cargo.lock"
     ).read_text(encoding="utf-8")
@@ -196,9 +192,7 @@ def doctor(*, require_docker: bool = True) -> dict[str, str]:
     )
     versions.update(
         {
-            "sdk_php": str(
-                php_contract.get("package", {}).get("published_version", "")
-            ),
+            "sdk_php": str(php_package.get("versions", [""])[0]),
             "sdk_php_laravel": str(laravel_php_package.get("versions", [""])[0]),
             "sdk_python": command_output(
                 [
