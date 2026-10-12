@@ -48,18 +48,27 @@ jobs:
             php-same-workflow-worker php-same-activity-worker php-workflow-worker \
             polyglot-workflow-worker php-to-rust-workflow-worker php-query-worker \
             php-activity-worker waterline
-          POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE="$(
+          if ! POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE="$(
             "${compose[@]}" run --rm --no-deps -T php-same-activity-worker \
               php /app/task_codec_rejection_probe.php
-          )"
-          POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE="$(
+          )"; then
+            printf '%s\n' "$POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
+          if ! POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE="$(
             "${compose[@]}" run --rm --no-deps -T smoke \
               python /app/scripts/task_codec_rejection_probe.py
-          )"
-          POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE="$(
+          )"; then
+            printf '%s\n' "$POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
+          if ! POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE="$(
             "${compose[@]}" run --rm --no-deps -T --entrypoint task-codec-rejection-probe \
               rust-workflow-worker
-          )"
+          )"; then
+            printf '%s\n' "$POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
           export POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
             POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
             POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE
