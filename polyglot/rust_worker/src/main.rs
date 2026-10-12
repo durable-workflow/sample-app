@@ -194,6 +194,7 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
             }))
         },
     );
+    worker.declare_workflow_signals(RUST_SIGNAL_QUERY, &[SIGNAL_NAME])?;
     worker.register_replayed_query::<SignalState, _, _>(
         RUST_SIGNAL_QUERY,
         "state",

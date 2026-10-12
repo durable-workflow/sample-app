@@ -48,7 +48,25 @@ jobs:
             php-same-workflow-worker php-same-activity-worker php-workflow-worker \
             polyglot-workflow-worker php-to-rust-workflow-worker php-query-worker \
             php-activity-worker waterline
-          "${compose[@]}" run --rm --no-deps smoke
+          POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T php-same-activity-worker \
+              php /app/task_codec_rejection_probe.php
+          )"
+          POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T smoke \
+              python /app/scripts/task_codec_rejection_probe.py
+          )"
+          POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T --entrypoint task-codec-rejection-probe \
+              rust-workflow-worker
+          )"
+          export POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
+            POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
+            POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE
+          "${compose[@]}" run --rm --no-deps \
+            -e POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
+            -e POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
+            -e POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE smoke
       - name: Dump logs
         if: failure()
         run: scripts/polyglot.sh logs
