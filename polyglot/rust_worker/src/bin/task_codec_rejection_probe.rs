@@ -196,6 +196,9 @@ fn handle_request(
         r#"{"task":null}"#
     } else if path.ends_with("/complete") || path.ends_with("/fail") {
         r#"{}"#
+    } else if path == "/api/cluster/info" {
+        // Valid completion discovers inline payload placement before publishing.
+        r#"{"limits":{"max_payload_bytes":2097152},"namespace":{"external_payload_storage":{"transport":null}}}"#
     } else {
         write_response(stream, "404 Not Found", r#"{"message":"not found"}"#);
         return;

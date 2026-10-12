@@ -9,7 +9,7 @@ use DurableWorkflow\Codec\AvroPayloadCodec;
 use DurableWorkflow\Codec\PayloadCodec;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Exception\CodecException;
-use DurableWorkflow\Version;
+use DurableWorkflow\Exception\ServerException;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\PollResponse;
 use DurableWorkflow\Worker\QueryContext;
@@ -637,6 +637,29 @@ function installShutdownHandlers(bool &$shutdown): void
     });
 }
 
+/** Retry an explicitly empty capacity refusal without ending the manual worker. */
+function pollManualTask(Closure $poll, bool &$shutdown): array
+{
+    try {
+        return $poll();
+    } catch (ServerException $exception) {
+        if ($exception->status !== 429
+            || $exception->reason !== 'long_poll_capacity_exhausted'
+            || ! PollResponse::isTransientFailure($exception)) {
+            throw $exception;
+        }
+
+        $response = $exception->details;
+        $deadline = microtime(true) + max(0.05, $response['retry_after_seconds'] ?? 1);
+        fwrite(STDERR, "polyglot php poll capacity exhausted; waiting before retry\n");
+        while (! $shutdown && ($remaining = $deadline - microtime(true)) > 0) {
+            usleep((int) min(100000, max(1, $remaining * 1000000)));
+        }
+
+        return $response;
+    }
+}
+
 function runActivityWorker(Client $client, string $workerId, string $taskQueue, int $pollTimeout): void
 {
     $client->registerWorker($workerId, $taskQueue, [], ACTIVITY_TYPES, ['graceful_shutdown']);
@@ -651,7 +674,10 @@ function runActivityWorker(Client $client, string $workerId, string $taskQueue, 
     installShutdownHandlers($shutdown);
     while (! $shutdown) {
         $client->heartbeatWorker($workerId, ['activity_available' => 1]);
-        $poll = $client->pollActivityTaskResponse($workerId, $taskQueue, $pollTimeout);
+        $poll = pollManualTask(
+            static fn (): array => $client->pollActivityTaskResponse($workerId, $taskQueue, $pollTimeout),
+            $shutdown,
+        );
         if (PollResponse::isTerminal($poll)) {
             break;
         }
@@ -738,7 +764,10 @@ function runQueryWorker(Client $client, string $workerId, string $taskQueue, int
     $codec = $client->payloadCodec();
     while (! $shutdown) {
         $client->heartbeatWorker($workerId, ['workflow_available' => 1]);
-        $poll = $client->pollQueryTaskResponse($workerId, $taskQueue, $pollTimeout);
+        $poll = pollManualTask(
+            static fn (): array => $client->pollQueryTaskResponse($workerId, $taskQueue, $pollTimeout),
+            $shutdown,
+        );
         if (PollResponse::isTerminal($poll)) {
             break;
         }
@@ -865,7 +894,6 @@ function runStandaloneWorker(): void
         $serverUrl,
         token: $token,
         namespace: $namespace,
-        workerProtocolVersion: $cooperative ? '1.20' : Version::WORKER_PROTOCOL,
     );
     if ($mode === 'activity') {
         runActivityWorker($client, $workerId, $taskQueue, $pollTimeout);

@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full_runtime_matrix:
+        description: Run the broader workflow, activity, signal and query diagnostic
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,6 +28,54 @@ jobs:
         run: python3 -m unittest discover -s polyglot/python_worker/tests -v
       - name: Run the documented service-mode example
         run: scripts/polyglot.sh
+      - name: Run the full runtime matrix with published SDK defaults
+        if: github.event_name == 'workflow_dispatch' && inputs.full_runtime_matrix
+        env:
+          COMPOSE_PROJECT_NAME: ${{ env.POLYGLOT_COMPOSE_PROJECT_NAME }}
+          POLYGLOT_QUALIFICATION_HEAD_SHA: ${{ github.sha }}
+          POLYGLOT_QUALIFICATION_RUN_ID: ${{ github.run_id }}
+          POLYGLOT_QUALIFICATION_RUN_ATTEMPT: ${{ github.run_attempt }}
+          POLYGLOT_QUALIFICATION_WORKFLOW: ${{ github.workflow }}
+          POLYGLOT_QUALIFICATION_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          while IFS= read -r assignment; do export "$assignment"; done \
+            < <(scripts/resolve-current-artifacts.sh)
+          compose=(docker compose --project-directory polyglot -f polyglot/docker-compose.yml)
+          "${compose[@]}" build smoke
+          "${compose[@]}" up --detach --build --wait --wait-timeout 180 \
+            server python-workflow-worker python-activity-worker \
+            rust-workflow-worker rust-activity-worker \
+            php-same-workflow-worker php-same-activity-worker php-workflow-worker \
+            polyglot-workflow-worker php-to-rust-workflow-worker php-query-worker \
+            php-activity-worker waterline
+          if ! POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T php-same-activity-worker \
+              php /app/task_codec_rejection_probe.php
+          )"; then
+            printf '%s\n' "$POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
+          if ! POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T smoke \
+              python /app/scripts/task_codec_rejection_probe.py
+          )"; then
+            printf '%s\n' "$POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
+          if ! POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE="$(
+            "${compose[@]}" run --rm --no-deps -T --entrypoint task-codec-rejection-probe \
+              rust-workflow-worker
+          )"; then
+            printf '%s\n' "$POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE"
+            exit 1
+          fi
+          export POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
+            POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
+            POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE
+          "${compose[@]}" run --rm --no-deps \
+            -e POLYGLOT_PHP_TASK_CODEC_REJECTION_EVIDENCE \
+            -e POLYGLOT_PYTHON_TASK_CODEC_REJECTION_EVIDENCE \
+            -e POLYGLOT_RUST_TASK_CODEC_REJECTION_EVIDENCE smoke
       - name: Dump logs
         if: failure()
         run: scripts/polyglot.sh logs

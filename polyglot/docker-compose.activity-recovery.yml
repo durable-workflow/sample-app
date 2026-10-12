@@ -107,4 +107,3 @@ services:
       - "${ACTIVITY_RECOVERY_PROOF_DIR}:/proof"
     environment:
       ACTIVITY_RECOVERY_PROOF: /proof
-      DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION: "1.20"

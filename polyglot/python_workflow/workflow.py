@@ -440,8 +440,6 @@ async def main() -> int:
         f"py-workflow-worker-{socket.gethostname()}",
     )
     cooperative = os.environ.get("POLYGLOT_TIMER_COOPERATIVE") == "1"
-    if cooperative:
-        os.environ["DURABLE_WORKFLOW_WORKER_PROTOCOL_VERSION"] = "1.20"
 
     async with Client(
         server_url,

@@ -6,6 +6,7 @@ namespace Tests\Unit;
 
 use DurableWorkflow\Client;
 use DurableWorkflow\Codec\AvroBinaryValue;
+use DurableWorkflow\Exception\ServerException;
 use DurableWorkflow\Transport\Transport;
 use DurableWorkflow\Worker;
 use DurableWorkflow\Worker\Replayer;
@@ -14,6 +15,47 @@ use PHPUnit\Framework\TestCase;
 
 final class StandalonePhpWorkerContractTest extends TestCase
 {
+    public function test_manual_poll_survives_empty_capacity_refusal_and_can_poll_again(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $shutdown = false;
+        $attempts = 0;
+        $poll = static function () use (&$attempts): array {
+            if (++$attempts === 1) {
+                throw new ServerException('Retry later.', 429, 'long_poll_capacity_exhausted', [
+                    'task' => null,
+                    'poll_status' => 'long_poll_capacity_exhausted',
+                    'reason' => 'long_poll_capacity_exhausted',
+                    'retryable' => true,
+                    'retry_after_seconds' => 0,
+                ]);
+            }
+
+            return ['task' => ['task_id' => 'next-real-task']];
+        };
+
+        $this->assertNull(\pollManualTask($poll, $shutdown)['task']);
+        $this->assertSame('next-real-task', \pollManualTask($poll, $shutdown)['task']['task_id']);
+        $this->assertSame(2, $attempts);
+    }
+
+    public function test_manual_poll_keeps_non_retryable_refusals_visible(): void
+    {
+        require_once dirname(__DIR__, 2).'/polyglot/php_worker/worker.php';
+
+        $shutdown = false;
+        $exception = new ServerException('Refused.', 429, 'long_poll_capacity_exhausted', [
+            'task' => null,
+            'poll_status' => 'long_poll_capacity_exhausted',
+            'reason' => 'long_poll_capacity_exhausted',
+            'retryable' => false,
+            'retry_after_seconds' => 0,
+        ]);
+        $this->expectExceptionObject($exception);
+        \pollManualTask(static fn (): array => throw $exception, $shutdown);
+    }
+
     #[DataProvider('unsupportedTaskCodecProvider')]
     public function test_manual_workers_reject_non_avro_root_tags_before_payload_decode(
         bool $present,

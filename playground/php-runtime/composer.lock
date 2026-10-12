@@ -70,16 +70,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.3.1",
+            "version": "2.3.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "c511790951fb9b999c0952a3155fe00860732732"
+                "reference": "d69bec4fa4a330bb12a120eab81b6a36ad236da7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/c511790951fb9b999c0952a3155fe00860732732",
-                "reference": "c511790951fb9b999c0952a3155fe00860732732",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/d69bec4fa4a330bb12a120eab81b6a36ad236da7",
+                "reference": "d69bec4fa4a330bb12a120eab81b6a36ad236da7",
                 "shasum": ""
             },
             "require": {
@@ -120,7 +120,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.4.0-rc.1",
+                    "product-train": "2.3.3",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -147,7 +147,7 @@
                         "patched",
                         "deprecatePatch"
                     ],
-                    "worker-protocol-version": "1.19",
+                    "worker-protocol-version": "1.20",
                     "supported-server-versions": "2.5.0",
                     "version-marker-history-event": "VersionMarkerRecorded",
                     "message-streams-minimum-worker-protocol-version": "1.15",
@@ -186,7 +186,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-12T00:21:32+00:00"
+            "time": "2026-10-12T05:03:22+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
