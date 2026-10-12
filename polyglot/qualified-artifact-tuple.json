@@ -7,10 +7,10 @@
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
     "cli": "2.2.3",
-    "sdk-php": "2.3.1",
-    "sdk-python": "2.5.6",
-    "sdk-rust": "3.4.4",
-    "server": "2.5.23",
+    "sdk-php": "2.3.2",
+    "sdk-python": "2.5.7",
+    "sdk-rust": "3.5.0",
+    "server": "2.6.1",
     "waterline": "2.9.1",
     "workflow": "2.5.12"
   }

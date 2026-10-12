@@ -70,16 +70,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.3.1",
+            "version": "2.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "c511790951fb9b999c0952a3155fe00860732732"
+                "reference": "1433daaf76807f567fdf9796c21e7313205f5135"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/c511790951fb9b999c0952a3155fe00860732732",
-                "reference": "c511790951fb9b999c0952a3155fe00860732732",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/1433daaf76807f567fdf9796c21e7313205f5135",
+                "reference": "1433daaf76807f567fdf9796c21e7313205f5135",
                 "shasum": ""
             },
             "require": {
@@ -147,7 +147,7 @@
                         "patched",
                         "deprecatePatch"
                     ],
-                    "worker-protocol-version": "1.19",
+                    "worker-protocol-version": "1.20",
                     "supported-server-versions": "2.5.0",
                     "version-marker-history-event": "VersionMarkerRecorded",
                     "message-streams-minimum-worker-protocol-version": "1.15",
@@ -186,7 +186,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-12T00:21:32+00:00"
+            "time": "2026-10-12T02:30:00+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
