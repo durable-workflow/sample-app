@@ -8,8 +8,8 @@
   "artifacts": {
     "cli": "2.2.3",
     "sdk-php": "2.3.9",
-    "sdk-python": "2.5.12",
-    "sdk-rust": "3.5.2",
+    "sdk-python": "2.5.13",
+    "sdk-rust": "3.5.4",
     "server": "2.6.2",
     "waterline": "2.9.1",
     "workflow": "2.5.14"
