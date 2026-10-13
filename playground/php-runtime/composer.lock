@@ -70,16 +70,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.3.8",
+            "version": "2.3.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "5ba854117a2355ec862235034c0f84e78ce5199b"
+                "reference": "7decd1a9fc39704f48b10c9209a23db8668ae7f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/5ba854117a2355ec862235034c0f84e78ce5199b",
-                "reference": "5ba854117a2355ec862235034c0f84e78ce5199b",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/7decd1a9fc39704f48b10c9209a23db8668ae7f2",
+                "reference": "7decd1a9fc39704f48b10c9209a23db8668ae7f2",
                 "shasum": ""
             },
             "require": {
@@ -120,7 +120,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.3.8",
+                    "product-train": "2.3.9",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -186,7 +186,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-13T03:09:55+00:00"
+            "time": "2026-10-13T04:53:11+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",

@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "2.3.5",
+            "version": "2.3.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "c08b18a1855d0ba66d5a504d9238511213b90767"
+                "reference": "7decd1a9fc39704f48b10c9209a23db8668ae7f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/c08b18a1855d0ba66d5a504d9238511213b90767",
-                "reference": "c08b18a1855d0ba66d5a504d9238511213b90767",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/7decd1a9fc39704f48b10c9209a23db8668ae7f2",
+                "reference": "7decd1a9fc39704f48b10c9209a23db8668ae7f2",
                 "shasum": ""
             },
             "require": {
@@ -555,7 +555,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "2.3.5",
+                    "product-train": "2.3.9",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -621,20 +621,20 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-12T12:51:08+00:00"
+            "time": "2026-10-13T04:53:11+00:00"
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.9.0",
+            "version": "2.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "50bdfeb998fe4b0db3317eb23c28861d0019052e"
+                "reference": "9b4ebc482c2317016bf2be9bb6e6dbfee6787a25"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/50bdfeb998fe4b0db3317eb23c28861d0019052e",
-                "reference": "50bdfeb998fe4b0db3317eb23c28861d0019052e",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/9b4ebc482c2317016bf2be9bb6e6dbfee6787a25",
+                "reference": "9b4ebc482c2317016bf2be9bb6e6dbfee6787a25",
                 "shasum": ""
             },
             "require": {
@@ -645,8 +645,8 @@
                 "laravel-workflow/waterline": "self.version"
             },
             "require-dev": {
-                "durable-workflow/sdk": "2.2.3",
-                "durable-workflow/workflow": "2.5.3",
+                "durable-workflow/sdk": "2.3.0",
+                "durable-workflow/workflow": "2.5.12",
                 "fakerphp/faker": "^1.9.1",
                 "mockery/mockery": "^1.4.4",
                 "orchestra/testbench": "^10.11",
@@ -668,10 +668,10 @@
                     ]
                 },
                 "branch-alias": {
-                    "dev-main": "2.9.x-dev"
+                    "dev-main": "2.10.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.9.0",
+                    "product-train": "2.10.0",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -701,22 +701,22 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.9.0"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.10.0"
             },
-            "time": "2026-10-10T14:26:49+00:00"
+            "time": "2026-10-11T21:25:35+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.5.12",
+            "version": "2.5.14",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "19a7a1cf33604c66f1f838e8b3db22563041f6b2"
+                "reference": "563675723522b2d453f950f593ab91473e91c831"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/19a7a1cf33604c66f1f838e8b3db22563041f6b2",
-                "reference": "19a7a1cf33604c66f1f838e8b3db22563041f6b2",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/563675723522b2d453f950f593ab91473e91c831",
+                "reference": "563675723522b2d453f950f593ab91473e91c831",
                 "shasum": ""
             },
             "require": {
@@ -749,7 +749,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.5.12",
+                    "product-train": "2.5.14",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -776,9 +776,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.5.12"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.5.14"
             },
-            "time": "2026-10-11T18:03:24+00:00"
+            "time": "2026-10-13T03:35:10+00:00"
         },
         {
             "name": "egulias/email-validator",
