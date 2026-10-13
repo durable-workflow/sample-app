@@ -29,7 +29,7 @@ jobs:
         run: SDK_SEARCH_ATTRIBUTES_RESULT_DIR="$RUNNER_TEMP/sdk-search-attributes-proof" scripts/sdk-search-attributes.sh
       - name: Retain actual observations and physical worker loss
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-search-attributes-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-search-attributes-proof
