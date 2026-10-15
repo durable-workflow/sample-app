@@ -922,16 +922,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.5.21",
+            "version": "2.5.22",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "fbccb54b8f52e8724847296ee5b89d093b4a91d7"
+                "reference": "908e2db9b4337ceae52ebe5fc5e64f3de8e5338b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/fbccb54b8f52e8724847296ee5b89d093b4a91d7",
-                "reference": "fbccb54b8f52e8724847296ee5b89d093b4a91d7",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/908e2db9b4337ceae52ebe5fc5e64f3de8e5338b",
+                "reference": "908e2db9b4337ceae52ebe5fc5e64f3de8e5338b",
                 "shasum": ""
             },
             "require": {
@@ -964,7 +964,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.5.21",
+                    "product-train": "2.5.22",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -991,9 +991,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.5.21"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.5.22"
             },
-            "time": "2026-10-15T03:20:47+00:00"
+            "time": "2026-10-15T09:07:57+00:00"
         },
         {
             "name": "egulias/email-validator",
@@ -4850,16 +4850,16 @@
         },
         {
             "name": "symfony/http-foundation",
-            "version": "v8.1.6",
+            "version": "v8.1.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/http-foundation.git",
-                "reference": "093b78326f649c3a9db922b9f17123b6aeb3b8fb"
+                "reference": "7850897fb8659f98491b03be79ac48600bdaf9ab"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/http-foundation/zipball/093b78326f649c3a9db922b9f17123b6aeb3b8fb",
-                "reference": "093b78326f649c3a9db922b9f17123b6aeb3b8fb",
+                "url": "https://api.github.com/repos/symfony/http-foundation/zipball/7850897fb8659f98491b03be79ac48600bdaf9ab",
+                "reference": "7850897fb8659f98491b03be79ac48600bdaf9ab",
                 "shasum": ""
             },
             "require": {
@@ -4907,7 +4907,7 @@
             "description": "Defines an object-oriented layer for the HTTP specification",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/http-foundation/tree/v8.1.6"
+                "source": "https://github.com/symfony/http-foundation/tree/v8.1.9"
             },
             "funding": [
                 {
@@ -4927,7 +4927,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-30T20:10:55+00:00"
+            "time": "2026-10-08T16:57:43+00:00"
         },
         {
             "name": "symfony/http-kernel",
