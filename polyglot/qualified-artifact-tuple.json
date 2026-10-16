@@ -12,6 +12,6 @@
     "sdk-rust": "3.5.5",
     "server": "2.8.6",
     "waterline": "2.11.1",
-    "workflow": "2.5.27"
+    "workflow": "2.5.28"
   }
 }
