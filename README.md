@@ -1,7 +1,6 @@
 # Durable Workflow Sample App
 
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=durable-workflow_sample-app&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=durable-workflow_sample-app)
-
 [![Application tests](https://github.com/durable-workflow/sample-app/actions/workflows/ci.yml/badge.svg)](https://github.com/durable-workflow/sample-app/actions/workflows/ci.yml)
 [![Embedded smoke](https://github.com/durable-workflow/sample-app/actions/workflows/smoke.yml/badge.svg)](https://github.com/durable-workflow/sample-app/actions/workflows/smoke.yml)
 [![Polyglot smoke](https://github.com/durable-workflow/sample-app/actions/workflows/polyglot-validation.yml/badge.svg)](https://github.com/durable-workflow/sample-app/actions/workflows/polyglot-validation.yml)
