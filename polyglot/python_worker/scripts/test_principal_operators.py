@@ -1,9 +1,14 @@
 """Reject misleading operator views before comparing real published executions."""
 
 import copy
+import os
+import subprocess
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from principal_operators import verify_views
+from principal_operators import cli_history, verify_views
 
 
 def views(*, anonymous=False, terminal="WorkflowCompleted"):
@@ -39,6 +44,58 @@ def views(*, anonymous=False, terminal="WorkflowCompleted"):
 
 
 class OperatorViewChecks(unittest.TestCase):
+    def test_cli_configuration_is_private_per_call_and_removed_after_success(self):
+        directories = []
+
+        def run_cli(command, **options):
+            directory = Path(options["env"]["XDG_CONFIG_HOME"])
+            self.assertTrue(directory.is_dir())
+            self.assertEqual(0o700, directory.stat().st_mode & 0o777)
+            directories.append(directory)
+            self.assertEqual(["original-instance", "original-run"], command[2:4])
+            self.assertEqual("https://runtime.invalid", command[command.index("--server") + 1])
+            self.assertEqual(30, options["timeout"])
+            for key in ("DURABLE_WORKFLOW_AUTH_TOKEN", "DURABLE_WORKFLOW_CONTROL_TOKEN",
+                        "DURABLE_WORKFLOW_WORKER_TOKEN"):
+                self.assertEqual("", options["env"][key])
+            return SimpleNamespace(returncode=0, stdout='{"events": []}', stderr="")
+
+        with patch.dict(os.environ, {"DURABLE_WORKFLOW_SERVER_URL": "https://runtime.invalid"}), \
+                patch("principal_operators.subprocess.run", side_effect=run_cli) as runner:
+            self.assertEqual({"events": []}, cli_history("default", "original-instance", "original-run"))
+            self.assertEqual('{"events": []}', cli_history("rust-namespace-a", "original-instance", "original-run", human=True))
+
+        self.assertNotEqual(directories[0], directories[1])
+        self.assertTrue(all(not directory.exists() for directory in directories))
+        commands = [call.args[0] for call in runner.call_args_list]
+        self.assertNotIn("--token", commands[0])
+        self.assertIn("--output=json", commands[0])
+        self.assertEqual("rust-namespace-a", commands[1][commands[1].index("--namespace") + 1])
+        self.assertEqual("dwr_fixture_operator_rust_namespace_a_0123456789_rotated",
+                         commands[1][commands[1].index("--token") + 1])
+        self.assertNotIn("--output=json", commands[1])
+
+    def test_cli_configuration_is_removed_after_failure_or_timeout(self):
+        for timed_out in (False, True):
+            directories = []
+
+            def run_cli(command, **options):
+                directory = Path(options["env"]["XDG_CONFIG_HOME"])
+                self.assertTrue(directory.is_dir())
+                directories.append(directory)
+                if timed_out:
+                    raise subprocess.TimeoutExpired(command, options["timeout"])
+                return SimpleNamespace(returncode=2, stdout="", stderr="fixture refusal")
+
+            with self.subTest(timed_out=timed_out), \
+                    patch.dict(os.environ, {"DURABLE_WORKFLOW_SERVER_URL": "https://runtime.invalid"}), \
+                    patch("principal_operators.subprocess.run", side_effect=run_cli), \
+                    self.assertRaises(subprocess.TimeoutExpired if timed_out else RuntimeError):
+                cli_history("default", "original-instance", "original-run")
+
+            self.assertEqual(1, len(directories))
+            self.assertFalse(directories[0].exists())
+
     def test_named_and_anonymous_terminal_views(self):
         for anonymous in (False, True):
             for terminal in ("WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled"):
