@@ -2,7 +2,7 @@
   "schema": "durable-workflow.sample-app.polyglot-qualified-artifact-tuple",
   "schemaVersion": 1,
   "serverComponents": {
-    "workflow": "2.5.22"
+    "workflow": "2.5.32"
   },
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
@@ -10,7 +10,7 @@
     "sdk-php": "2.4.2",
     "sdk-python": "2.5.15",
     "sdk-rust": "3.5.5",
-    "server": "2.8.6",
+    "server": "2.8.7",
     "waterline": "2.11.2",
     "workflow": "2.5.32"
   }
