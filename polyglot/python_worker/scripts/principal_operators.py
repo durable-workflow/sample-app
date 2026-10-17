@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.request import urlopen
 
 from durable_workflow import Client
@@ -59,9 +60,10 @@ def cli_history(namespace, workflow_id, run_id, *, human=False):
         command.extend(("--token", token))
     if not human:
         command.append("--output=json")
-    environment = {**os.environ, "DURABLE_WORKFLOW_AUTH_TOKEN": "", "DURABLE_WORKFLOW_CONTROL_TOKEN": "",
-                   "DURABLE_WORKFLOW_WORKER_TOKEN": "", "XDG_CONFIG_HOME": "/tmp/principal-operator-cli"}
-    result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+    with TemporaryDirectory(prefix="dw-principal-operator-") as config_home:
+        environment = {**os.environ, "DURABLE_WORKFLOW_AUTH_TOKEN": "", "DURABLE_WORKFLOW_CONTROL_TOKEN": "",
+                       "DURABLE_WORKFLOW_WORKER_TOKEN": "", "XDG_CONFIG_HOME": config_home}
+        result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     if result.returncode:
         raise RuntimeError(f"Published CLI history exited {result.returncode}.")
     return result.stdout if human else json.loads(result.stdout)
