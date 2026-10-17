@@ -77,24 +77,24 @@ class OperatorViewChecks(unittest.TestCase):
 
     def test_cli_configuration_is_removed_after_failure_or_timeout(self):
         for timed_out in (False, True):
-            directories = []
+            with self.subTest(timed_out=timed_out):
+                directories = []
 
-            def run_cli(command, **options):
-                directory = Path(options["env"]["XDG_CONFIG_HOME"])
-                self.assertTrue(directory.is_dir())
-                directories.append(directory)
-                if timed_out:
-                    raise subprocess.TimeoutExpired(command, options["timeout"])
-                return SimpleNamespace(returncode=2, stdout="", stderr="fixture refusal")
+                def run_cli(command, **options):
+                    directory = Path(options["env"]["XDG_CONFIG_HOME"])
+                    self.assertTrue(directory.is_dir())
+                    directories.append(directory)
+                    if timed_out:
+                        raise subprocess.TimeoutExpired(command, options["timeout"])
+                    return SimpleNamespace(returncode=2, stdout="", stderr="fixture refusal")
 
-            with self.subTest(timed_out=timed_out), \
-                    patch.dict(os.environ, {"DURABLE_WORKFLOW_SERVER_URL": "https://runtime.invalid"}), \
-                    patch("principal_operators.subprocess.run", side_effect=run_cli), \
-                    self.assertRaises(subprocess.TimeoutExpired if timed_out else RuntimeError):
-                cli_history("default", "original-instance", "original-run")
+                with patch.dict(os.environ, {"DURABLE_WORKFLOW_SERVER_URL": "https://runtime.invalid"}), \
+                        patch("principal_operators.subprocess.run", side_effect=run_cli), \
+                        self.assertRaises(subprocess.TimeoutExpired if timed_out else RuntimeError):
+                    cli_history("default", "original-instance", "original-run")
 
-            self.assertEqual(1, len(directories))
-            self.assertFalse(directories[0].exists())
+                self.assertEqual(1, len(directories))
+                self.assertFalse(directories[0].exists())
 
     def test_named_and_anonymous_terminal_views(self):
         for anonymous in (False, True):
