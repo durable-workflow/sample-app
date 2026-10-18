@@ -625,16 +625,16 @@
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.10.2",
+            "version": "2.11.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "f44b34479b15233838d4868df9d9f7a7f916cff3"
+                "reference": "2445b916742b7b721231909ab49063d1da36609b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/f44b34479b15233838d4868df9d9f7a7f916cff3",
-                "reference": "f44b34479b15233838d4868df9d9f7a7f916cff3",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/2445b916742b7b721231909ab49063d1da36609b",
+                "reference": "2445b916742b7b721231909ab49063d1da36609b",
                 "shasum": ""
             },
             "require": {
@@ -645,7 +645,7 @@
                 "laravel-workflow/waterline": "self.version"
             },
             "require-dev": {
-                "durable-workflow/sdk": "2.3.0",
+                "durable-workflow/sdk": "2.4.0",
                 "durable-workflow/workflow": "2.5.12",
                 "fakerphp/faker": "^1.9.1",
                 "mockery/mockery": "^1.4.4",
@@ -668,10 +668,10 @@
                     ]
                 },
                 "branch-alias": {
-                    "dev-main": "2.10.x-dev"
+                    "dev-main": "2.11.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.10.2",
+                    "product-train": "2.11.3",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -701,9 +701,9 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.10.2"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.11.3"
             },
-            "time": "2026-10-13T21:31:02+00:00"
+            "time": "2026-10-18T21:30:35+00:00"
         },
         {
             "name": "durable-workflow/workflow",
