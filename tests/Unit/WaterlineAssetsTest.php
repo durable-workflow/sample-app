@@ -9,6 +9,30 @@ class WaterlineAssetsTest extends TestCase
 {
     private string $tmpDir;
 
+    public function test_bundled_assets_match_the_installed_package(): void
+    {
+        $root = dirname(__DIR__, 2);
+        $package = $root.'/vendor/durable-workflow/waterline/public';
+        $this->assertFileExists($package.'/mix-manifest.json');
+        $assets = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(
+            $package,
+            \FilesystemIterator::SKIP_DOTS,
+        ));
+
+        foreach ($assets as $asset) {
+            $relative = substr($asset->getPathname(), strlen($package) + 1);
+            foreach (['public/vendor/waterline', 'microservice/public/vendor/waterline'] as $directory) {
+                $published = $root.'/'.$directory.'/'.$relative;
+                $this->assertFileExists($published);
+                $this->assertSame(
+                    hash_file('sha256', $asset->getPathname()),
+                    hash_file('sha256', $published),
+                    $directory.'/'.$relative,
+                );
+            }
+        }
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
