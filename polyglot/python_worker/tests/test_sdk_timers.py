@@ -281,6 +281,45 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "Run identity"):
             await self.verify("concurrent-cancellation")
 
+    async def test_resolved_group_ordinals_keep_their_original_numeric_types(self):
+        original = copy.deepcopy(self.history)
+        for scenario, kind in (("concurrent", "TimerFired"), ("concurrent-cancellation", "TimerCancelled")):
+            self.history = copy.deepcopy(original)
+            self.execution.status = "completed"
+            if kind == "TimerCancelled":
+                self.cancel_group()
+            baseline = copy.deepcopy(self.history)
+            first = timers.events(self.history, kind)[0]["payload"]
+            for field, value in (("parallel_group_index", bool(first["parallel_group_index"])),
+                                 ("parallel_group_size", 3.0)):
+                with self.subTest(scenario=scenario, field=field):
+                    self.history = copy.deepcopy(baseline)
+                    timers.events(self.history, kind)[0]["payload"][field] = value
+                    with self.assertRaisesRegex(RuntimeError, "metadata"):
+                        await self.verify(scenario)
+
+    async def test_resolved_group_paths_keep_nested_ordinal_types(self):
+        scheduled = timers.events(self.history, "TimerScheduled")
+        for item in scheduled:
+            item["payload"]["parallel_group_path"] = [{
+                key: value for key, value in item["payload"].items() if key.startswith("parallel_group_")
+            }]
+        members = {item["payload"]["timer_id"]: item["payload"] for item in scheduled}
+        for item in timers.events(self.history, "TimerFired"):
+            item["payload"]["parallel_group_path"] = copy.deepcopy(members[item["payload"]["timer_id"]]["parallel_group_path"])
+        self.original["timers"] = [copy.deepcopy(item["payload"]) for item in scheduled]
+        original = copy.deepcopy(self.history)
+        for scenario, kind in (("concurrent", "TimerFired"), ("concurrent-cancellation", "TimerCancelled")):
+            with self.subTest(scenario=scenario):
+                self.history = copy.deepcopy(original)
+                self.execution.status = "completed"
+                if kind == "TimerCancelled":
+                    self.cancel_group()
+                path = timers.events(self.history, kind)[0]["payload"]["parallel_group_path"][0]
+                path["parallel_group_index"] = bool(path["parallel_group_index"])
+                with self.assertRaisesRegex(RuntimeError, "metadata"):
+                    await self.verify(scenario)
+
     async def test_each_concurrent_recovery_start_uses_the_parallel_workflow(self):
         self.execution.status = "waiting"
         scheduled = copy.deepcopy(timers.events(self.history, "TimerScheduled"))
