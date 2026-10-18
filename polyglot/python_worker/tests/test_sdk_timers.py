@@ -153,14 +153,153 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.original = {"workflow_id": "timers-python", "run_id": "run-1",
                          "timers": [copy.deepcopy(item["payload"]) for item in scheduled]}
 
-    async def verify(self):
+    async def verify(self, scenario="concurrent"):
         with patch.object(timers, "observe", AsyncMock(return_value=(self.handle, self.execution, self.history))), \
                 patch.object(timers, "original_pending", return_value=self.original), \
                 patch.object(timers, "emit"):
-            await timers.verify(None, "python", "concurrent")
+            await timers.verify(None, "python", scenario)
+
+    def cancel_group(self):
+        self.execution.status = "cancelled"
+        scheduled = copy.deepcopy(timers.events(self.history, "TimerScheduled"))
+        self.history = {"events": [event("WorkflowStarted"), *scheduled,
+            event("CooperativeCancellationRequested"), event("CooperativeCancellationDelivered"),
+            *(event("TimerCancelled", **item["payload"], cancelled_at="2026-10-05T00:00:10Z")
+              for item in scheduled), event("WorkflowCancelled")]}
 
     async def test_one_original_with_three_concurrent_timers_passes(self):
         await self.verify()
+
+    async def test_worker_recovery_preserves_every_fire_during_the_absence(self):
+        with patch.dict("os.environ", {
+            "DURABLE_WORKFLOW_WORKER_STOPPED_AT": "2026-10-05T00:00:10Z",
+            "DURABLE_WORKFLOW_WORKER_RESTART_AT": "2026-10-05T00:01:01Z",
+        }):
+            await self.verify("concurrent-worker-restart")
+            self.history["events"][5]["payload"]["fired_at"] = "2026-10-05T00:01:02Z"
+            with self.assertRaisesRegex(RuntimeError, "while the SDK worker was absent"):
+                await self.verify("concurrent-worker-restart")
+
+    async def test_server_outage_must_cross_every_original_deadline(self):
+        for item in timers.events(self.history, "TimerFired"):
+            item["payload"]["fired_at"] = "2026-10-05T00:01:06Z"
+        with patch.dict("os.environ", {
+            "DURABLE_WORKFLOW_SERVER_STOPPED_AT": "2026-10-05T00:00:10Z",
+            "DURABLE_WORKFLOW_SERVER_RESTART_AT": "2026-10-05T00:01:05Z",
+        }):
+            await self.verify("concurrent-server-restart")
+            for field, value in (("DURABLE_WORKFLOW_SERVER_STOPPED_AT", "2026-10-05T00:00:35Z"),
+                                 ("DURABLE_WORKFLOW_SERVER_RESTART_AT", "2026-10-05T00:00:50Z")):
+                with patch.dict("os.environ", {field: value}), self.assertRaisesRegex(RuntimeError, "did not cross"):
+                    await self.verify("concurrent-server-restart")
+            self.history["events"][5]["payload"]["fired_at"] = "2026-10-05T00:01:04Z"
+            with self.assertRaisesRegex(RuntimeError, "before Server restart"):
+                await self.verify("concurrent-server-restart")
+
+    async def test_absent_worker_observation_waits_for_every_member(self):
+        self.execution.status = "waiting"
+        self.history["events"].pop()
+        partial = copy.deepcopy(self.history)
+        partial["events"].pop()
+        observer = AsyncMock(side_effect=[(self.handle, self.execution, history)
+                                         for history in (partial, self.history)])
+        with patch.object(timers, "observe", observer), \
+                patch.object(timers, "original_pending", return_value=self.original), \
+                patch.object(timers, "emit"), patch.object(timers.asyncio, "sleep", AsyncMock()):
+            await timers.fired(None, "python", "concurrent-worker-restart")
+        self.assertEqual(observer.await_count, 2)
+
+    async def test_absent_worker_observation_refuses_duplicate_or_foreign_fires(self):
+        self.execution.status = "waiting"
+        self.history["events"].pop()
+        for timer_id in ("timer-60", "foreign-timer"):
+            with self.subTest(timer_id=timer_id):
+                self.history["events"][5]["payload"]["timer_id"] = timer_id
+                with patch.object(timers, "observe", AsyncMock(return_value=(self.handle, self.execution, self.history))), \
+                        patch.object(timers, "original_pending", return_value=self.original), \
+                        patch.object(timers, "emit"), self.assertRaisesRegex(RuntimeError, "identities"):
+                    await timers.fired(None, "python", "concurrent-worker-restart")
+
+    async def test_concurrent_cancellation_closes_every_member_without_a_result(self):
+        self.cancel_group()
+        await self.verify("concurrent-cancellation")
+        self.handle.result.assert_not_awaited()
+
+    async def test_concurrent_cancellation_waits_beyond_the_last_original_deadline(self):
+        self.cancel_group()
+        instants = [datetime(2026, 10, 5, 0, 0, 45, tzinfo=timezone.utc),
+                    datetime(2026, 10, 5, 0, 1, 1, tzinfo=timezone.utc)]
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return instants.pop(0)
+
+        with patch.object(timers, "datetime", Clock), patch.object(timers.asyncio, "sleep", AsyncMock()) as sleep:
+            await self.verify("concurrent-cancellation")
+        self.assertEqual(sleep.await_count, 1)
+
+    async def test_concurrent_cancellation_refuses_missing_duplicate_or_foreign_members(self):
+        self.cancel_group()
+        original = copy.deepcopy(self.history)
+        for change in ("missing", "duplicate", "foreign"):
+            with self.subTest(change=change):
+                self.history = copy.deepcopy(original)
+                selected = timers.events(self.history, "TimerCancelled")
+                if change == "missing":
+                    self.history["events"].remove(selected[-1])
+                else:
+                    selected[-1]["payload"]["timer_id"] = "foreign" if change == "foreign" else selected[0]["payload"]["timer_id"]
+                with self.assertRaisesRegex(RuntimeError, "cancelled timer identities"):
+                    await self.verify("concurrent-cancellation")
+
+    async def test_concurrent_cancellation_refuses_changed_original_metadata(self):
+        self.cancel_group()
+        original = copy.deepcopy(self.history)
+        for field, value in (("sequence", 99), ("fire_at", "2026-10-05T00:01:01Z"),
+                             ("parallel_group_index", 99), ("parallel_group_mode", "select"),
+                             ("parallel_group_path", [{"parallel_group_id": "foreign"}])):
+            with self.subTest(field=field):
+                self.history = copy.deepcopy(original)
+                timers.events(self.history, "TimerCancelled")[0]["payload"][field] = value
+                with self.assertRaisesRegex(RuntimeError, "metadata"):
+                    await self.verify("concurrent-cancellation")
+
+    async def test_concurrent_cancellation_refuses_fires_results_and_repeated_terminal_events(self):
+        self.cancel_group()
+        original = copy.deepcopy(self.history)
+        for kind in ("TimerFired", "WorkflowCompleted", "WorkflowCancelled", "CooperativeCancellationDelivered"):
+            with self.subTest(kind=kind):
+                self.history = copy.deepcopy(original)
+                self.history["events"].append(event(kind, timer_id="timer-60"))
+                with self.assertRaises(RuntimeError):
+                    await self.verify("concurrent-cancellation")
+
+    async def test_concurrent_cancellation_cannot_replace_the_original_run(self):
+        self.cancel_group()
+        self.execution.run_id = "replacement-run"
+        with self.assertRaisesRegex(RuntimeError, "Run identity"):
+            await self.verify("concurrent-cancellation")
+
+    async def test_each_concurrent_recovery_start_uses_the_parallel_workflow(self):
+        self.execution.status = "waiting"
+        scheduled = copy.deepcopy(timers.events(self.history, "TimerScheduled"))
+        now = datetime.now(timezone.utc)
+        for item in scheduled:
+            item["payload"]["fire_at"] = (now + timedelta(seconds=item["payload"]["delay_seconds"])).isoformat()
+        history = {"events": scheduled}
+        for scenario in ("concurrent-worker-restart", "concurrent-server-restart", "concurrent-cancellation"):
+            with self.subTest(scenario=scenario):
+                client = types.SimpleNamespace(start_workflow=AsyncMock())
+                cancellation = {"request_id": "request-1", "cleanup_deadline_at": "2026-10-05T00:00:20Z"}
+                self.handle.request_cancellation = AsyncMock(side_effect=[
+                    {"duplicate": False, "cancellation_request": cancellation},
+                    {"duplicate": True, "cancellation_request": cancellation}])
+                with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_ID": "fixture"}), \
+                        patch.object(timers, "observe", AsyncMock(return_value=(self.handle, self.execution, history))), \
+                        patch.object(timers, "emit"):
+                    await timers.pending(client, "python", scenario)
+                self.assertEqual(client.start_workflow.await_args.kwargs["workflow_type"], "polyglot.python.concurrent-timers")
 
     async def test_serial_timers_cannot_pass(self):
         first_fire = self.history["events"].pop(6)
@@ -220,7 +359,8 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
     async def test_fired_member_cannot_change_its_original_group_or_sequence(self):
         original = copy.deepcopy(self.history)
         for field, value in (("parallel_group_id", "another-group"), ("parallel_group_index", 99),
-                             ("sequence", 99), ("fire_at", "2026-10-05T00:00:01Z")):
+                             ("sequence", 99), ("fire_at", "2026-10-05T00:00:01Z"),
+                             ("parallel_group_mode", "select"), ("parallel_group_path", [{"parallel_group_id": "foreign"}])):
             with self.subTest(field=field):
                 self.history = copy.deepcopy(original)
                 self.history["events"][5]["payload"][field] = value
