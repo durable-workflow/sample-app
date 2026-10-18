@@ -96,6 +96,14 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "Run identity"):
             await self.verify(self.history)
 
+    async def test_original_timer_metadata_keeps_its_scalar_types(self):
+        for field, original, changed in (("sequence", 1, True), ("delay_seconds", 30, 30.0)):
+            with self.subTest(field=field):
+                self.original["timer"][field] = original
+                self.history["events"][1]["payload"][field] = changed
+                with self.assertRaisesRegex(RuntimeError, "original scheduled timer changed"):
+                    await self.verify(self.history)
+
     async def test_fire_outside_worker_absence_cannot_pass(self):
         with patch.dict("os.environ", {
             "DURABLE_WORKFLOW_WORKER_STOPPED_AT": "2026-10-05T00:00:10Z",
@@ -164,8 +172,19 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         scheduled = copy.deepcopy(timers.events(self.history, "TimerScheduled"))
         self.history = {"events": [event("WorkflowStarted"), *scheduled,
             event("CooperativeCancellationRequested"), event("CooperativeCancellationDelivered"),
-            *(event("TimerCancelled", **item["payload"], cancelled_at="2026-10-05T00:00:10Z")
+            *(event("TimerCancelled", **copy.deepcopy(item["payload"]), cancelled_at="2026-10-05T00:00:10Z")
               for item in scheduled), event("WorkflowCancelled")]}
+
+    def add_group_paths(self):
+        scheduled = timers.events(self.history, "TimerScheduled")
+        for item in scheduled:
+            item["payload"]["parallel_group_path"] = [{
+                key: value for key, value in item["payload"].items() if key.startswith("parallel_group_")
+            }]
+        members = {item["payload"]["timer_id"]: item["payload"] for item in scheduled}
+        for item in timers.events(self.history, "TimerFired"):
+            item["payload"]["parallel_group_path"] = copy.deepcopy(members[item["payload"]["timer_id"]]["parallel_group_path"])
+        self.original["timers"] = [copy.deepcopy(item["payload"]) for item in scheduled]
 
     async def test_one_original_with_three_concurrent_timers_passes(self):
         await self.verify()
@@ -299,15 +318,7 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
                         await self.verify(scenario)
 
     async def test_resolved_group_paths_keep_nested_ordinal_types(self):
-        scheduled = timers.events(self.history, "TimerScheduled")
-        for item in scheduled:
-            item["payload"]["parallel_group_path"] = [{
-                key: value for key, value in item["payload"].items() if key.startswith("parallel_group_")
-            }]
-        members = {item["payload"]["timer_id"]: item["payload"] for item in scheduled}
-        for item in timers.events(self.history, "TimerFired"):
-            item["payload"]["parallel_group_path"] = copy.deepcopy(members[item["payload"]["timer_id"]]["parallel_group_path"])
-        self.original["timers"] = [copy.deepcopy(item["payload"]) for item in scheduled]
+        self.add_group_paths()
         original = copy.deepcopy(self.history)
         for scenario, kind in (("concurrent", "TimerFired"), ("concurrent-cancellation", "TimerCancelled")):
             with self.subTest(scenario=scenario):
@@ -319,6 +330,16 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 path["parallel_group_index"] = bool(path["parallel_group_index"])
                 with self.assertRaisesRegex(RuntimeError, "metadata"):
                     await self.verify(scenario)
+
+    async def test_opening_group_paths_cannot_rewrite_the_original_ordinal_type(self):
+        self.add_group_paths()
+        for item in self.history["events"]:
+            if item["event_type"] in ("TimerScheduled", "TimerFired"):
+                path = item["payload"]["parallel_group_path"][0]
+                if path["parallel_group_index"] == 1:
+                    path["parallel_group_index"] = True
+        with self.assertRaisesRegex(RuntimeError, "original scheduled timers changed"):
+            await self.verify()
 
     async def test_each_concurrent_recovery_start_uses_the_parallel_workflow(self):
         self.execution.status = "waiting"
