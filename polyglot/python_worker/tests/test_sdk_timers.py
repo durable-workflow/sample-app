@@ -133,5 +133,74 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 await self.verify(self.history, "server-restart")
 
 
+class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.execution = types.SimpleNamespace(workflow_id="timers-python", run_id="run-1", status="completed")
+        self.handle = types.SimpleNamespace(result=AsyncMock(return_value={
+            "workflow_runtime": "python", "request": "timers-python", "timer_seconds": [60, 30, 45],
+        }))
+        started = datetime(2026, 10, 5, tzinfo=timezone.utc)
+        scheduled = [event("TimerScheduled", timer_id=f"timer-{delay}", delay_seconds=delay,
+                           fire_at=(started + timedelta(seconds=delay)).isoformat()) for delay in (60, 30, 45)]
+        fired = [event("TimerFired", timer_id=item["payload"]["timer_id"],
+                       fired_at=item["payload"]["fire_at"])
+                 for item in sorted(scheduled, key=lambda item: item["payload"]["fire_at"])]
+        self.history = {"events": [event("WorkflowStarted"), *scheduled, *fired, event("WorkflowCompleted")]}
+        self.original = {"workflow_id": "timers-python", "run_id": "run-1",
+                         "timers": [copy.deepcopy(item["payload"]) for item in scheduled]}
+
+    async def verify(self):
+        with patch.object(timers, "observe", AsyncMock(return_value=(self.handle, self.execution, self.history))), \
+                patch.object(timers, "original_pending", return_value=self.original), \
+                patch.object(timers, "emit"):
+            await timers.verify(None, "python", "concurrent")
+
+    async def test_one_original_with_three_concurrent_timers_passes(self):
+        await self.verify()
+
+    async def test_serial_timers_cannot_pass(self):
+        first_fire = self.history["events"].pop(6)
+        self.history["events"].insert(2, first_fire)
+        with self.assertRaisesRegex(RuntimeError, "before the first fire"):
+            await self.verify()
+
+    async def test_duplicate_or_missing_members_cannot_pass(self):
+        for kind in ("TimerScheduled", "TimerFired", "WorkflowCompleted"):
+            original = copy.deepcopy(self.history)
+            for duplicate in (False, True):
+                with self.subTest(kind=kind, duplicate=duplicate):
+                    self.history = copy.deepcopy(original)
+                    selected = next(item for item in self.history["events"] if item["event_type"] == kind)
+                    if duplicate:
+                        self.history["events"].append(selected)
+                    else:
+                        self.history["events"].remove(selected)
+                    with self.assertRaises(RuntimeError):
+                        await self.verify()
+            self.history = original
+
+    async def test_foreign_or_repeated_timer_identity_cannot_pass(self):
+        for timer_id in ("foreign-timer", "timer-60"):
+            with self.subTest(timer_id=timer_id):
+                self.history["events"][5]["payload"]["timer_id"] = timer_id
+                with self.assertRaisesRegex(RuntimeError, "identities"):
+                    await self.verify()
+
+    async def test_rewritten_original_deadline_cannot_pass(self):
+        self.history["events"][2]["payload"]["fire_at"] = "2026-10-05T00:00:29Z"
+        with self.assertRaisesRegex(RuntimeError, "original scheduled timers changed"):
+            await self.verify()
+
+    async def test_early_member_cannot_pass(self):
+        self.history["events"][5]["payload"]["fired_at"] = "2026-10-05T00:00:29Z"
+        with self.assertRaisesRegex(RuntimeError, "before its original deadline"):
+            await self.verify()
+
+    async def test_completion_before_last_member_cannot_pass(self):
+        self.history["events"][-1], self.history["events"][-2] = self.history["events"][-2], self.history["events"][-1]
+        with self.assertRaisesRegex(RuntimeError, "before every timer fired"):
+            await self.verify()
+
+
 if __name__ == "__main__":
     unittest.main()

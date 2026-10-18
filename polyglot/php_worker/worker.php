@@ -30,6 +30,7 @@ const WORKFLOW_TYPES = [
     'sample-app.child-matrix.php.parent-rust',
     'polyglot.php.greeter',
     'polyglot.php.timer',
+    'polyglot.php.concurrent-timers',
     'polyglot.php.updates',
     'polyglot.PolyglotWorkflow',
     'polyglot.php-to-python.greeter',
@@ -508,6 +509,16 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
         $context->sleep(30);
 
         return ['workflow_runtime' => 'php', 'request' => $request, 'timer_seconds' => 30];
+    });
+
+    $worker->registerWorkflow('polyglot.php.concurrent-timers', static function (WorkflowContext $context, string $request): array {
+        $context->all([
+            $context->deferTimer(60),
+            $context->deferTimer(30),
+            $context->deferTimer(45),
+        ]);
+
+        return ['workflow_runtime' => 'php', 'request' => $request, 'timer_seconds' => [60, 30, 45]];
     });
 
     $workflowQueue = getenv('POLYGLOT_WORKFLOW_TASK_QUEUE') ?: 'polyglot-workflow';

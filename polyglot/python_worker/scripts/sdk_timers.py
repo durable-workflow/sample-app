@@ -14,6 +14,7 @@ from durable_workflow import Client
 
 RUNTIMES = ("php", "python", "rust")
 TIMER_SECONDS = 30
+CONCURRENT_SECONDS = [60, 30, 45]
 
 
 def required(name: str) -> str:
@@ -53,7 +54,8 @@ def check_original(runtime: str, scenario: str, execution, scheduled: dict) -> N
 
 async def observe(client: Client, runtime: str, scenario: str):
     workflow_id = f"{required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{runtime}"
-    handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{runtime}.timer")
+    suffix = "concurrent-timers" if scenario == "concurrent" else "timer"
+    handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{runtime}.{suffix}")
     execution = await handle.describe()
     if not execution.run_id:
         raise RuntimeError(f"No run ID for {workflow_id}.")
@@ -63,8 +65,10 @@ async def observe(client: Client, runtime: str, scenario: str):
 
 async def pending(client: Client, runtime: str, scenario: str) -> None:
     workflow_id = f"{required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{runtime}"
+    suffix = "concurrent-timers" if scenario == "concurrent" else "timer"
+    delays = CONCURRENT_SECONDS if scenario == "concurrent" else [TIMER_SECONDS]
     await client.start_workflow(
-        workflow_type=f"polyglot.{runtime}.timer",
+        workflow_type=f"polyglot.{runtime}.{suffix}",
         workflow_id=workflow_id,
         task_queue=f"polyglot-{runtime}",
         input=[workflow_id],
@@ -73,22 +77,26 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     while True:
         handle, execution, history = await observe(client, runtime, scenario)
         scheduled = events(history, "TimerScheduled")
-        if scheduled and execution.status == "waiting":
+        if len(scheduled) >= len(delays) and execution.status == "waiting":
             break
         if execution.status in ("failed", "cancelled", "terminated", "completed"):
             raise RuntimeError(f"{runtime} closed before scheduling its timer: {history!r}")
         if asyncio.get_running_loop().time() >= deadline:
             raise TimeoutError(f"{runtime} did not schedule its durable timer.")
         await asyncio.sleep(0.25)
-    if len(scheduled) != 1 or events(history, "TimerFired") or execution.status != "waiting":
-        raise RuntimeError(f"Expected one pending timer and public waiting status: {history!r}")
-    timer = scheduled[0]["payload"]
-    if timer.get("delay_seconds") != TIMER_SECONDS or not timer.get("timer_id") or not timer.get("fire_at"):
-        raise RuntimeError(f"Invalid timer: {timer!r}")
-    if timestamp(timer["fire_at"]) <= datetime.now(timezone.utc):
-        raise RuntimeError("The pending timer's deadline has already passed.")
+    if len(scheduled) != len(delays) or events(history, "TimerFired") or execution.status != "waiting":
+        raise RuntimeError(f"Expected {len(delays)} pending timers and public waiting status: {history!r}")
+    timers = [item["payload"] for item in scheduled]
+    for timer, delay in zip(timers, delays, strict=True):
+        if timer.get("delay_seconds") != delay or not timer.get("timer_id") or not timer.get("fire_at"):
+            raise RuntimeError(f"Invalid timer: {timer!r}")
+        if timestamp(timer["fire_at"]) <= datetime.now(timezone.utc):
+            raise RuntimeError("The pending timer's deadline has already passed.")
+    if len({timer["timer_id"] for timer in timers}) != len(delays):
+        raise RuntimeError("Pending timer identities are not distinct.")
+    observation = {"timers": timers} if scenario == "concurrent" else {"timer": timers[0]}
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
-         run_id=execution.run_id, status=execution.status, timer=timer)
+         run_id=execution.run_id, status=execution.status, **observation)
     if scenario == "cancellation":
         first = await handle.request_cancellation(reason="timer conformance", cleanup_timeout_seconds=20)
         duplicate = await handle.request_cancellation(reason="duplicate request", cleanup_timeout_seconds=60)
@@ -116,7 +124,46 @@ async def fired(client: Client, runtime: str, scenario: str) -> None:
         await asyncio.sleep(0.25)
 
 
+async def verify_concurrent(client: Client, runtime: str) -> None:
+    scenario = "concurrent"
+    handle, _, _ = await observe(client, runtime, scenario)
+    result = await handle.result(timeout=120, poll_interval=0.25)
+    _, execution, history = await observe(client, runtime, scenario)
+    expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "timer_seconds": CONCURRENT_SECONDS}
+    if execution.status != "completed" or result != expected:
+        raise RuntimeError(f"Unexpected concurrent timer outcome: {execution!r}, {result!r}")
+    scheduled, fired = events(history, "TimerScheduled"), events(history, "TimerFired")
+    if len(scheduled) != 3 or len(fired) != 3 or len(events(history, "WorkflowCompleted")) != 1:
+        raise RuntimeError(f"Expected three scheduled/fired timers and one completion: {history!r}")
+    original = original_pending(runtime, scenario)
+    if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]
+            or [item["payload"] for item in scheduled] != original["timers"]):
+        raise RuntimeError("Run identity or original scheduled timers changed.")
+    if [item["payload"]["delay_seconds"] for item in scheduled] != CONCURRENT_SECONDS:
+        raise RuntimeError("Authored concurrent timer durations changed.")
+    due = {item["payload"]["timer_id"]: item["payload"]["fire_at"] for item in scheduled}
+    fired_ids = [item["payload"]["timer_id"] for item in fired]
+    if len(due) != 3 or len(set(fired_ids)) != 3 or set(fired_ids) != set(due):
+        raise RuntimeError("Scheduled and fired timer identities differ or repeat.")
+    kinds = [item["event_type"] for item in history["events"]]
+    if max(index for index, kind in enumerate(kinds) if kind == "TimerScheduled") >= kinds.index("TimerFired"):
+        raise RuntimeError("All timers must be scheduled before the first fire.")
+    if kinds.index("WorkflowCompleted") <= max(index for index, kind in enumerate(kinds) if kind == "TimerFired"):
+        raise RuntimeError("Workflow completed before every timer fired.")
+    for item in fired:
+        payload = item["payload"]
+        if timestamp(payload["fired_at"]) < timestamp(due[payload["timer_id"]]):
+            raise RuntimeError("A concurrent timer fired before its original deadline.")
+    emit(phase="verified", runtime=runtime, scenario=scenario, workflow_id=execution.workflow_id,
+         run_id=execution.run_id, status=execution.status, result=result,
+         history_events=kinds, timer_events=[item for item in history["events"]
+                                           if item["event_type"] in ("TimerScheduled", "TimerFired")])
+
+
 async def verify(client: Client, runtime: str, scenario: str) -> None:
+    if scenario == "concurrent":
+        await verify_concurrent(client, runtime)
+        return
     handle, execution, history = await observe(client, runtime, scenario)
     if scenario == "cancellation":
         deadline = asyncio.get_running_loop().time() + 60
@@ -218,6 +265,6 @@ async def main(phase: str, scenario: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose"))
-    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation"))
+    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", "concurrent"))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))
