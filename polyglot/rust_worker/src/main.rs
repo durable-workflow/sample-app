@@ -2,7 +2,9 @@ use std::{collections::BTreeMap, env, time::Duration};
 
 use apache_avro::{from_avro_datum, to_avro_datum, Schema};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use durable_workflow::{json, ActivityOptions, AvroValue, Client, Error, ParallelOperation, Result, Value, Worker};
+use durable_workflow::{
+    json, ActivityOptions, AvroValue, Client, Error, ParallelOperation, Result, Value, Worker,
+};
 
 mod updates;
 mod children;

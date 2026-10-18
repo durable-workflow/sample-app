@@ -139,6 +139,15 @@ def check_parallel_timers(timers: list[dict]) -> None:
             raise RuntimeError("Timer members do not belong to one all/parallel barrier.")
 
 
+def check_fired_timer(original: dict, fired: dict) -> None:
+    fields = ("sequence", "delay_seconds", "fire_at", "parallel_group_id", "parallel_group_kind",
+              "parallel_group_base_sequence", "parallel_group_size", "parallel_group_index")
+    if any(fired.get(field) != original.get(field) for field in fields):
+        raise RuntimeError("Fired timer metadata differs from its original scheduled member.")
+    if timestamp(fired["fired_at"]) < timestamp(original["fire_at"]):
+        raise RuntimeError("A concurrent timer fired before its original deadline.")
+
+
 async def verify_concurrent(client: Client, runtime: str) -> None:
     scenario = "concurrent"
     handle, _, _ = await observe(client, runtime, scenario)
@@ -157,9 +166,9 @@ async def verify_concurrent(client: Client, runtime: str) -> None:
     if [item["payload"]["delay_seconds"] for item in scheduled] != CONCURRENT_SECONDS:
         raise RuntimeError("Authored concurrent timer durations changed.")
     check_parallel_timers([item["payload"] for item in scheduled])
-    due = {item["payload"]["timer_id"]: item["payload"]["fire_at"] for item in scheduled}
+    members = {item["payload"]["timer_id"]: item["payload"] for item in scheduled}
     fired_ids = [item["payload"]["timer_id"] for item in fired]
-    if len(due) != 3 or len(set(fired_ids)) != 3 or set(fired_ids) != set(due):
+    if len(members) != 3 or len(set(fired_ids)) != 3 or set(fired_ids) != set(members):
         raise RuntimeError("Scheduled and fired timer identities differ or repeat.")
     kinds = [item["event_type"] for item in history["events"]]
     if max(index for index, kind in enumerate(kinds) if kind == "TimerScheduled") >= kinds.index("TimerFired"):
@@ -168,13 +177,7 @@ async def verify_concurrent(client: Client, runtime: str) -> None:
         raise RuntimeError("Workflow completed before every timer fired.")
     for item in fired:
         payload = item["payload"]
-        member = next(item["payload"] for item in scheduled if item["payload"]["timer_id"] == payload["timer_id"])
-        fields = ("sequence", "delay_seconds", "fire_at", "parallel_group_id", "parallel_group_kind",
-                  "parallel_group_base_sequence", "parallel_group_size", "parallel_group_index")
-        if any(payload.get(field) != member.get(field) for field in fields):
-            raise RuntimeError("Fired timer metadata differs from its original scheduled member.")
-        if timestamp(payload["fired_at"]) < timestamp(due[payload["timer_id"]]):
-            raise RuntimeError("A concurrent timer fired before its original deadline.")
+        check_fired_timer(members[payload["timer_id"]], payload)
     emit(phase="verified", runtime=runtime, scenario=scenario, workflow_id=execution.workflow_id,
          run_id=execution.run_id, status=execution.status, result=result,
          history_events=kinds, timer_events=[item for item in history["events"]
