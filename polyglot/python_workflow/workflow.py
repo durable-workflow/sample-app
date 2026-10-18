@@ -85,6 +85,13 @@ class PythonTimerWorkflow:
         return {"workflow_runtime": "python", "request": request, "timer_seconds": 30}
 
 
+@workflow.defn(name="polyglot.python.concurrent-timers")
+class PythonConcurrentTimersWorkflow:
+    def run(self, ctx, request):
+        yield [ctx.sleep(seconds) for seconds in (60, 30, 45)]
+        return {"workflow_runtime": "python", "request": request, "timer_seconds": [60, 30, 45]}
+
+
 @workflow.defn(name="polyglot.python.updates")
 class PythonUpdatesWorkflow:
     def __init__(self):
@@ -456,6 +463,7 @@ async def main() -> int:
                 *CHILD_WORKFLOWS,
                 PythonGreeterWorkflow,
                 PythonTimerWorkflow,
+                PythonConcurrentTimersWorkflow,
                 PythonUpdatesWorkflow,
                 PythonToPhpGreeterWorkflow,
                 PythonToPhpTypeRoundtripWorkflow,

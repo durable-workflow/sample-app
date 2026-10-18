@@ -4,6 +4,7 @@ set -euo pipefail
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-timers.sh' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
+    'Also runs three concurrent timers with distinct deadlines in one original per SDK.' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -68,6 +69,9 @@ start() {
 
 start completion
 client verify completion
+
+start concurrent
+client verify concurrent
 
 start worker-restart
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"

@@ -12,10 +12,17 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
 Use the prepared Sample App development container with Docker Compose. The
 checked-in artifact tuple selects exact published packages and images. The
 experiment builds workers from those packages, starts a disposable MySQL/Redis
-Server stack, and checks four scenarios for each workflow language:
+Server stack, and checks five scenarios for each workflow language:
 
 - Normal completion after the original 30-second deadline, with exactly one
   scheduled timer, matching fire and completed result.
+- Three concurrent timers in one original workflow, authored in the order
+  60, 30 and 45 seconds through each SDK's ordinary parallel barrier. All
+  three must be scheduled before the first fire, retain distinct original
+  identities and deadlines, never fire early, and resolve before the one
+  workflow completion. Scheduled and fired members must retain the same
+  three-member all/parallel barrier. The runner records actual firing order without
+  requiring a separate parent resume for every member of the barrier.
 - Worker `SIGKILL` while waiting, timer fire while all SDK workers are absent,
   then cold replay in replacement processes without rescheduling or duplicate
   completion.
@@ -40,7 +47,7 @@ operator attention or a process supervisor.
 
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
-UTC interval and twelve scenario outcomes in the owning GitHub issue. Its exit
+UTC interval and fifteen scenario outcomes in the owning GitHub issue. Its exit
 trap removes the isolated Compose stack, volumes and task worker images on
 success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:
@@ -50,7 +57,7 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-timers COMPOSE_PROFILES=timers \
   docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
 ```
 
-This is focused SDK timer coverage. Concurrent distinct deadlines, nested
+This is focused SDK timer coverage. Concurrent timer cancellation, nested
 cancellation scopes and timer-bearing application upgrades have separate
 qualification requirements.
 
