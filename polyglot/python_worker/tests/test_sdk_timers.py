@@ -227,6 +227,26 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(RuntimeError, "Fired timer metadata"):
                     await self.verify()
 
+    async def test_coalesced_original_deadlines_cannot_pass(self):
+        original = copy.deepcopy(self.history)
+        same_instant = (
+            ["2026-10-05T00:01:00+00:00"] * 3,
+            ["2026-10-05T00:01:00+00:00", "2026-10-05T01:01:00+01:00", "2026-10-04T23:01:00-01:00"],
+        )
+        for deadlines in same_instant:
+            with self.subTest(deadlines=deadlines):
+                self.history = copy.deepcopy(original)
+                scheduled = timers.events(self.history, "TimerScheduled")
+                for item, deadline in zip(scheduled, deadlines, strict=True):
+                    item["payload"]["fire_at"] = deadline
+                members = {item["payload"]["timer_id"]: item["payload"] for item in scheduled}
+                for item in timers.events(self.history, "TimerFired"):
+                    item["payload"]["fire_at"] = members[item["payload"]["timer_id"]]["fire_at"]
+                    item["payload"]["fired_at"] = "2026-10-05T00:01:00+00:00"
+                self.original["timers"] = [copy.deepcopy(item["payload"]) for item in scheduled]
+                with self.assertRaisesRegex(RuntimeError, "distinct original deadlines"):
+                    await self.verify()
+
 
 if __name__ == "__main__":
     unittest.main()

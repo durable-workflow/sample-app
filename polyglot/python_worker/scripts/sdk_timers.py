@@ -94,6 +94,8 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
             raise RuntimeError("The pending timer's deadline has already passed.")
     if len({timer["timer_id"] for timer in timers}) != len(delays):
         raise RuntimeError("Pending timer identities are not distinct.")
+    if scenario == "concurrent":
+        check_parallel_timers(timers)
     observation = {"timers": timers} if scenario == "concurrent" else {"timer": timers[0]}
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
          run_id=execution.run_id, status=execution.status, **observation)
@@ -125,6 +127,8 @@ async def fired(client: Client, runtime: str, scenario: str) -> None:
 
 
 def check_parallel_timers(timers: list[dict]) -> None:
+    if len({timestamp(timer["fire_at"]) for timer in timers}) != 3:
+        raise RuntimeError("Concurrent timers must have distinct original deadlines.")
     group_id = timers[0].get("parallel_group_id")
     base = timers[0].get("parallel_group_base_sequence")
     if not isinstance(group_id, str) or not group_id or type(base) is not int:
