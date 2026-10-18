@@ -4,7 +4,7 @@ set -euo pipefail
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-timers.sh' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
-    'Also runs three concurrent timers with distinct deadlines in one original per SDK.' \
+    'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -67,29 +67,44 @@ start() {
   printf '%s\n' "$DURABLE_WORKFLOW_TIMER_PENDING"
 }
 
+worker_restart() {
+  local scenario="$1"
+  start "$scenario"
+  "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+  export DURABLE_WORKFLOW_WORKER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  client fired "$scenario"
+  export DURABLE_WORKFLOW_WORKER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  "${compose[@]}" up -d --wait --no-build "${workers[@]}"
+  client verify "$scenario"
+}
+
+server_restart() {
+  local scenario="$1" downtime="$2"
+  start "$scenario"
+  "${compose[@]}" stop --timeout 2 timer-queue server
+  export DURABLE_WORKFLOW_SERVER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  sleep "$downtime"
+  export DURABLE_WORKFLOW_SERVER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
+  client diagnose "$scenario"
+  client verify "$scenario"
+}
+
 start completion
 client verify completion
 
 start concurrent
 client verify concurrent
 
-start worker-restart
-"${compose[@]}" kill --signal SIGKILL "${workers[@]}"
-export DURABLE_WORKFLOW_WORKER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-client fired worker-restart
-export DURABLE_WORKFLOW_WORKER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-"${compose[@]}" up -d --wait --no-build "${workers[@]}"
-client verify worker-restart
-
-start server-restart
-"${compose[@]}" stop --timeout 2 timer-queue server
-export DURABLE_WORKFLOW_SERVER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-sleep 32
-export DURABLE_WORKFLOW_SERVER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
-client diagnose server-restart
-client verify server-restart
+worker_restart worker-restart
+server_restart server-restart 32
 
 start cancellation
 client verify cancellation
+
+worker_restart concurrent-worker-restart
+server_restart concurrent-server-restart 62
+
+start concurrent-cancellation
+client verify concurrent-cancellation
 printf 'SDK timers pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
