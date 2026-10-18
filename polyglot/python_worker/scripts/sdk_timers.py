@@ -124,6 +124,21 @@ async def fired(client: Client, runtime: str, scenario: str) -> None:
         await asyncio.sleep(0.25)
 
 
+def check_parallel_timers(timers: list[dict]) -> None:
+    group_id = timers[0].get("parallel_group_id")
+    base = timers[0].get("parallel_group_base_sequence")
+    if not isinstance(group_id, str) or not group_id or type(base) is not int:
+        raise RuntimeError("Timers do not describe one original parallel barrier.")
+    for index, timer in enumerate(timers):
+        expected = {"parallel_group_id": group_id, "parallel_group_kind": "timer",
+                    "parallel_group_base_sequence": base, "parallel_group_size": 3,
+                    "parallel_group_index": index, "sequence": base + index}
+        if (timer.get("parallel_group_mode", "all") != "all"
+                or any(type(timer.get(key)) is not type(value) or timer.get(key) != value
+                       for key, value in expected.items())):
+            raise RuntimeError("Timer members do not belong to one all/parallel barrier.")
+
+
 async def verify_concurrent(client: Client, runtime: str) -> None:
     scenario = "concurrent"
     handle, _, _ = await observe(client, runtime, scenario)
@@ -141,6 +156,7 @@ async def verify_concurrent(client: Client, runtime: str) -> None:
         raise RuntimeError("Run identity or original scheduled timers changed.")
     if [item["payload"]["delay_seconds"] for item in scheduled] != CONCURRENT_SECONDS:
         raise RuntimeError("Authored concurrent timer durations changed.")
+    check_parallel_timers([item["payload"] for item in scheduled])
     due = {item["payload"]["timer_id"]: item["payload"]["fire_at"] for item in scheduled}
     fired_ids = [item["payload"]["timer_id"] for item in fired]
     if len(due) != 3 or len(set(fired_ids)) != 3 or set(fired_ids) != set(due):
@@ -152,6 +168,11 @@ async def verify_concurrent(client: Client, runtime: str) -> None:
         raise RuntimeError("Workflow completed before every timer fired.")
     for item in fired:
         payload = item["payload"]
+        member = next(item["payload"] for item in scheduled if item["payload"]["timer_id"] == payload["timer_id"])
+        fields = ("sequence", "delay_seconds", "fire_at", "parallel_group_id", "parallel_group_kind",
+                  "parallel_group_base_sequence", "parallel_group_size", "parallel_group_index")
+        if any(payload.get(field) != member.get(field) for field in fields):
+            raise RuntimeError("Fired timer metadata differs from its original scheduled member.")
         if timestamp(payload["fired_at"]) < timestamp(due[payload["timer_id"]]):
             raise RuntimeError("A concurrent timer fired before its original deadline.")
     emit(phase="verified", runtime=runtime, scenario=scenario, workflow_id=execution.workflow_id,

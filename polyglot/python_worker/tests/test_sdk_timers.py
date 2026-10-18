@@ -142,7 +142,11 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         started = datetime(2026, 10, 5, tzinfo=timezone.utc)
         scheduled = [event("TimerScheduled", timer_id=f"timer-{delay}", delay_seconds=delay,
                            fire_at=(started + timedelta(seconds=delay)).isoformat()) for delay in (60, 30, 45)]
-        fired = [event("TimerFired", timer_id=item["payload"]["timer_id"],
+        for index, item in enumerate(scheduled):
+            item["payload"].update(sequence=1 + index, parallel_group_id="parallel-timers:1:3",
+                                   parallel_group_kind="timer", parallel_group_base_sequence=1,
+                                   parallel_group_size=3, parallel_group_index=index)
+        fired = [event("TimerFired", **item["payload"],
                        fired_at=item["payload"]["fire_at"])
                  for item in sorted(scheduled, key=lambda item: item["payload"]["fire_at"])]
         self.history = {"events": [event("WorkflowStarted"), *scheduled, *fired, event("WorkflowCompleted")]}
@@ -200,6 +204,28 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.history["events"][-1], self.history["events"][-2] = self.history["events"][-2], self.history["events"][-1]
         with self.assertRaisesRegex(RuntimeError, "before every timer fired"):
             await self.verify()
+
+    async def test_independent_or_selection_groups_cannot_pass_as_one_barrier(self):
+        original = copy.deepcopy(self.history)
+        for field, value in (("parallel_group_id", "another-group"), ("parallel_group_size", 1),
+                             ("parallel_group_index", 0), ("parallel_group_mode", "select")):
+            with self.subTest(field=field):
+                self.history = copy.deepcopy(original)
+                self.history["events"][2]["payload"][field] = value
+                self.original["timers"] = [copy.deepcopy(item["payload"])
+                                          for item in timers.events(self.history, "TimerScheduled")]
+                with self.assertRaisesRegex(RuntimeError, "parallel barrier"):
+                    await self.verify()
+
+    async def test_fired_member_cannot_change_its_original_group_or_sequence(self):
+        original = copy.deepcopy(self.history)
+        for field, value in (("parallel_group_id", "another-group"), ("parallel_group_index", 99),
+                             ("sequence", 99), ("fire_at", "2026-10-05T00:00:01Z")):
+            with self.subTest(field=field):
+                self.history = copy.deepcopy(original)
+                self.history["events"][5]["payload"][field] = value
+                with self.assertRaisesRegex(RuntimeError, "Fired timer metadata"):
+                    await self.verify()
 
 
 if __name__ == "__main__":

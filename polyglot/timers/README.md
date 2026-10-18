@@ -20,7 +20,8 @@ Server stack, and checks five scenarios for each workflow language:
   60, 30 and 45 seconds through each SDK's ordinary parallel barrier. All
   three must be scheduled before the first fire, retain distinct original
   identities and deadlines, never fire early, and resolve before the one
-  workflow completion. The runner records actual firing order without
+  workflow completion. Scheduled and fired members must retain the same
+  three-member all/parallel barrier. The runner records actual firing order without
   requiring a separate parent resume for every member of the barrier.
 - Worker `SIGKILL` while waiting, timer fire while all SDK workers are absent,
   then cold replay in replacement processes without rescheduling or duplicate
