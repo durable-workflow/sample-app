@@ -128,9 +128,10 @@ class CombinedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(timers.ready_snapshot(self.roster(), self.scenario))
 
     def test_combined_readiness_cannot_omit_the_package_selection(self):
+        roster = self.roster()
         with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_SDK_VERSIONS": ""}):
             with self.assertRaisesRegex(RuntimeError, "selected SDK"):
-                timers.ready_snapshot(self.roster(), self.scenario)
+                timers.ready_snapshot(roster, self.scenario)
 
     async def test_pending_capture_binds_both_package_identity_and_application_marker(self):
         for fresh in (False, True):
