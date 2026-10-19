@@ -22,7 +22,7 @@ if (! class_exists(Client::class)) {
 }
 
 require __DIR__.'/child_workflows.php';
-require __DIR__.'/timer_upgrades.php';
+require_once __DIR__.'/timer_upgrades.php';
 
 const WORKFLOW_TYPES = [
     'sample-app.child-matrix.php.child',
