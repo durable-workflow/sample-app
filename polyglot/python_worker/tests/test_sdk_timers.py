@@ -72,6 +72,25 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     self.case(version=version, concurrent=concurrent)
                     await self.verify()
 
+    async def test_fired_waits_for_every_upgrade_barrier_member(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.case(version=version, concurrent=True)
+                self.execution.status = "waiting"
+                resolved = timers.events(self.history, "TimerFired")
+                prefix = self.original["history_prefix"]
+                first = min(resolved, key=lambda item: item["payload"]["delay_seconds"])
+                partial = {"events": [*copy.deepcopy(prefix), copy.deepcopy(first)]}
+                complete = {"events": [*copy.deepcopy(prefix), *copy.deepcopy(resolved)]}
+                observer = AsyncMock(side_effect=[
+                    (None, self.execution, partial), (None, self.execution, complete),
+                ])
+                with patch.object(timers, "observe", observer), \
+                        patch.object(timers, "original_pending", return_value=self.original), \
+                        patch.object(timers, "emit"), patch.object(timers.asyncio, "sleep", AsyncMock()):
+                    await timers.fired(None, "python", self.scenario)
+                self.assertEqual(observer.await_count, 2)
+
     async def test_replacement_cannot_report_the_old_application(self):
         self.result["application_revision"] = "v1"
         with self.assertRaises(RuntimeError):
