@@ -12,7 +12,8 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
 Use the prepared Sample App development container with Docker Compose. The
 checked-in artifact tuple selects exact published packages and images. The
 experiment builds workers from those packages, starts a disposable MySQL/Redis
-Server stack, and checks twelve cases for each workflow language:
+Server stack, and checks forty originals: twelve each for PHP/Rust and sixteen
+for Python. The shared cases cover:
 
 - Normal completion after the original 30-second deadline, with exactly one
   scheduled timer, matching fire and completed result.
@@ -37,7 +38,7 @@ Server stack, and checks twelve cases for each workflow language:
   due time has passed. Repeat for the concurrent group, requiring all three
   matching cancellations and no fire or completion beyond its last original
   deadline.
-- Replace the registered application definition in fresh worker processes,
+- Replace compatible business helpers in fresh worker processes,
   with both one timer and the concurrent group pending. Revision one records
   version `1` for `sample-timer-application`. Revision two accepts that
   original decision while adding a new version `2` branch. The old runs must
@@ -46,13 +47,38 @@ Server stack, and checks twelve cases for each workflow language:
 - Start fresh single/concurrent runs on revision two. They must record version
   `2`, use 45 seconds or `[75, 45, 60]`, and finish with that new branch.
 
-Both authored application implementations ship in the scenario workers. The
-command selects the registered definition before each worker starts and uses
-`SIGKILL` plus replacement processes between revisions. This checks application
-definition changes with a fixed published SDK tuple. It does not qualify an
-SDK package upgrade, worker-build routing or a Server version upgrade.
-Replacement definitions use new worker identities, as required by the published
-registration contract. The existing scenarios keep their normal worker IDs.
+Both authored helper implementations ship in the scenario workers. The command
+selects the helper before each worker starts and uses `SIGKILL` plus replacement
+processes between revisions. Their registered wrappers remain the same, including
+Python's worker-advertised class fingerprints. The version marker protects the
+original commands while the new helper executes the retained branch. This uses
+one published SDK tuple; SDK package upgrades, worker-build routing and Server
+version upgrades require separate qualification.
+
+Python additionally runs four class-identity cases: single/concurrent originals
+and fresh replacements. The original records its worker-sourced definition
+fingerprint. A genuinely different class must leave it unclaimed after every
+original timer fires, with no history beyond those fires and ready tasks at
+attempt/repair zero. A cold process using the original class must then complete
+the same original with revision one, while fresh runs use the new class and
+version-two branch. This qualifies refusal and safe original-class restoration;
+it does not authorize adopting an incompatible class into an existing run.
+
+Before each replacement, stop the experiment's worker processes and retire only
+their captured registration identities. Retirement must recover zero leased
+tasks. The command waits for the actual replacement roster before admitting a
+new original, avoiding admission against the preceding definition. Other
+namespaces and queues are excluded. Replacements use new worker identities;
+the existing interruption cases retain their normal IDs.
+
+The helper-replacement and class-fencing cases remain under qualification in
+[the SDK coverage audit](https://github.com/durable-workflow/.github/issues/122).
+The two Python class revisions advertise different definition fingerprints. Those cases
+require one worker-sourced fingerprint in the original `WorkflowStarted` event;
+an unbound run cannot qualify the definition fence. Server requires that recorded
+definition for task delivery. A passing version-marker replay alone does not
+establish compatible class deployment. The original definition and history stay
+intact through refusal and restoration.
 Revision one already records its version marker. Introducing versioning into
 an unversioned history is a separate scenario.
 
@@ -75,7 +101,7 @@ operator attention or a process supervisor.
 
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
-UTC interval and thirty-six scenario outcomes in the owning GitHub issue. Its exit
+UTC interval and forty scenario outcomes in the owning GitHub issue. Its exit
 trap removes the isolated Compose stack, volumes and task worker images on
 success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:

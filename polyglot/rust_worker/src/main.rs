@@ -75,8 +75,9 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
     let rust_queue = env_value("POLYGLOT_RUST_TASK_QUEUE", "polyglot-rust");
     let python_queue = env_value("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python");
     let php_queue = env_value("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php");
+    let worker_id = env_value("POLYGLOT_RUST_WORKER_ID", "rust-workflow-worker");
     let mut worker = Worker::new(client, rust_queue.clone())
-        .worker_id(env_value("POLYGLOT_RUST_WORKER_ID", "rust-workflow-worker"))
+        .worker_id(worker_id.clone())
         .recover_transient_outages(true)
         .cooperative_cancellation(env_value("POLYGLOT_TIMER_COOPERATIVE", "0") == "1")
         .poll_timeout(Duration::from_secs(5));
@@ -231,7 +232,7 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
     );
 
     println!(
-        "polyglot rust workflow worker starting: id=rust-workflow-worker queue={rust_queue} sdk={} avro={}",
+        "polyglot rust workflow worker starting: id={worker_id} queue={rust_queue} sdk={} avro={}",
         required_env("DURABLE_WORKFLOW_RUST_SDK_VERSION"),
         required_env("APACHE_AVRO_RUST_VERSION"),
     );

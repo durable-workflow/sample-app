@@ -5,7 +5,7 @@ if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-timers.sh' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
-    'Also replaces v1 application definitions with v2, preserving pending originals and verifying fresh version-two branches.' \
+    'Replaces compatible business helpers across all SDKs and checks pinned Python class refusal, restoration and fresh v2 runs.' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -60,13 +60,19 @@ client() {
     -e DURABLE_WORKFLOW_TIMER_ID -e DURABLE_WORKFLOW_WORKER_STOPPED_AT -e DURABLE_WORKFLOW_WORKER_RESTART_AT \
     -e DURABLE_WORKFLOW_SERVER_STOPPED_AT -e DURABLE_WORKFLOW_SERVER_RESTART_AT \
     -e DURABLE_WORKFLOW_TIMER_PENDING \
+    -e DURABLE_WORKFLOW_TIMER_WORKERS \
     smoke python /app/scripts/sdk_timers.py "$@"
 }
 
 start() {
-  DURABLE_WORKFLOW_TIMER_PENDING="$(client start "$1")"
+  local scenario="$1" status=0
+  DURABLE_WORKFLOW_TIMER_PENDING="$(client start "$scenario")" || status=$?
   export DURABLE_WORKFLOW_TIMER_PENDING
   printf '%s\n' "$DURABLE_WORKFLOW_TIMER_PENDING"
+  if (( status != 0 )); then
+    client diagnose "$scenario" || true
+    return "$status"
+  fi
 }
 
 worker_restart() {
@@ -92,17 +98,45 @@ server_restart() {
   client verify "$scenario"
 }
 
+remember_workers() {
+  DURABLE_WORKFLOW_TIMER_WORKERS="$(client ready application-upgrade)"
+  export DURABLE_WORKFLOW_TIMER_WORKERS
+  printf '%s\n' "$DURABLE_WORKFLOW_TIMER_WORKERS"
+}
+
+worker_generation=0
+replace_workers() {
+  local revision="$1" scenario="$2"
+  "${compose[@]}" stop --timeout 10 "${workers[@]}"
+  client retire "$scenario"
+  export POLYGLOT_TIMER_APPLICATION="$revision"
+  worker_generation=$((worker_generation + 1))
+  export POLYGLOT_RUST_WORKER_ID="timer-$scenario-$revision-$worker_generation"
+  "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
+  remember_workers
+}
+
 application_upgrade() {
   local scenario="$1"
-  export POLYGLOT_TIMER_APPLICATION=v1
-  export POLYGLOT_RUST_WORKER_ID="timer-$scenario-v1"
-  "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
+  replace_workers v1 "$scenario"
   start "$scenario"
   "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
-  export POLYGLOT_TIMER_APPLICATION=v2
-  export POLYGLOT_RUST_WORKER_ID="timer-$scenario-v2"
-  "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
+  replace_workers v2 "$scenario"
   client verify "$scenario"
+  start "$scenario-fresh"
+  client verify "$scenario-fresh"
+}
+
+class_replacement() {
+  local scenario="$1"
+  replace_workers v1 "$scenario"
+  start "$scenario"
+  "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+  replace_workers v2 "$scenario"
+  client fenced "$scenario"
+  replace_workers v1 "$scenario"
+  client verify "$scenario"
+  replace_workers v2 "$scenario"
   start "$scenario-fresh"
   client verify "$scenario-fresh"
 }
@@ -125,6 +159,9 @@ server_restart concurrent-server-restart 62
 start concurrent-cancellation
 client verify concurrent-cancellation
 
+remember_workers
 application_upgrade application-upgrade
 application_upgrade concurrent-application-upgrade
+class_replacement class-replacement
+class_replacement concurrent-class-replacement
 printf 'SDK timers pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
