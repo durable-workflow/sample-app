@@ -48,8 +48,11 @@ def timer_delays(scenario: str) -> list[int]:
 
 
 def workflow_suffix(scenario: str) -> str:
-    prefix = "class-upgrade-" if scenario in CLASS_UPGRADE_SCENARIOS else (
-        "upgrade-" if scenario in UPGRADE_SCENARIOS else "")
+    prefix = ""
+    if scenario in CLASS_UPGRADE_SCENARIOS:
+        prefix = "class-upgrade-"
+    elif scenario in UPGRADE_SCENARIOS:
+        prefix = "upgrade-"
     return prefix + ("concurrent-timers" if is_concurrent(scenario) else "timer")
 
 
