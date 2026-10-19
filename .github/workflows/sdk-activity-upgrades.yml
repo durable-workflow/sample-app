@@ -1,0 +1,31 @@
+name: published SDK and application activity upgrades
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-activity-upgrades-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  upgrades:
+    name: Pending activity SDK/application upgrades (nine directions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SDK_ACTIVITY_UPGRADES_COMPOSE_PROJECT_NAME: sample-app-sdk-activity-upgrades-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Test original-activity and package evidence
+        run: python3 -m unittest discover -s polyglot/python_worker/tests -p test_sdk_activity_upgrades.py -v
+      - name: Replay pending activities across SDK and application replacements
+        run: scripts/sdk-activity-upgrades.sh

@@ -30,6 +30,7 @@ RUN test -n "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
 COPY worker.php ./
 COPY child_workflows.php ./
 COPY timer_upgrades.php ./
+COPY activity_upgrades.php ./
 COPY php_created_rust_schedule.php ./
 COPY update_client.php ./
 COPY cancellation_client.php ./
