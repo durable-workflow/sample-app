@@ -12,7 +12,7 @@ spec = importlib.util.spec_from_file_location("activity_upgrades", path)
 upgrades = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(upgrades)
 
-TARGETS = {"php": "2.5.1", "python": "2.6.0", "rust": "3.5.5"}
+TARGETS = {"php": "2.5.2", "python": "2.6.0", "rust": "3.5.5"}
 
 
 def event(kind, payload, seconds=0):

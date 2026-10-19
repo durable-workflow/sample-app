@@ -16,7 +16,7 @@ import test_sdk_timers as fixtures
 
 timers = fixtures.timers
 PREVIOUS = {"php": "2.5.0", "python": "2.5.15", "rust": "3.5.4"}
-CURRENT = {"php": "2.5.1", "python": "2.6.0", "rust": "3.5.5"}
+CURRENT = {"php": "2.5.2", "python": "2.6.0", "rust": "3.5.5"}
 
 FAKE_DOCKER = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -63,7 +63,7 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
                 "FAKE_DOCKER_LOG": str(log), "SDK_TIMERS_COMPOSE_PROJECT_NAME": "owned-sdk-packages",
                 "DURABLE_SERVER_IMAGE": "server:constructed", "DURABLE_WORKFLOW_CLI_VERSION": "0.0.1",
                 "DURABLE_WORKFLOW_WORKFLOW_VERSION": "0.0.1", "DURABLE_WORKFLOW_WATERLINE_VERSION": "0.0.1",
-                "DURABLE_WORKFLOW_PHP_SDK_PIN": "durable-workflow/sdk:2.5.1@target-reference"}
+                "DURABLE_WORKFLOW_PHP_SDK_PIN": "durable-workflow/sdk:2.5.2@target-reference"}
             for runtime, version in (CURRENT if targets is None else targets).items():
                 environment[f"DURABLE_WORKFLOW_{runtime.upper()}_SDK_VERSION"] = version
             if wrong_package:

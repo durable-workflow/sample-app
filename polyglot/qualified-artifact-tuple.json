@@ -7,7 +7,7 @@
   "source": "polyglot/qualified-artifact-tuple.json",
   "artifacts": {
     "cli": "2.3.0",
-    "sdk-php": "2.5.1",
+    "sdk-php": "2.5.2",
     "sdk-python": "2.6.0",
     "sdk-rust": "3.5.5",
     "server": "2.9.4",
