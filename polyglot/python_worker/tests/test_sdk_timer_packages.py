@@ -155,6 +155,11 @@ class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 self.case(concurrent=concurrent)
                 await self.verify()
 
+    async def test_codec_diagnostics_survive_package_replay(self):
+        self.fixture.handle.result.return_value["codec"] = {
+            "codec": "avro", "framing": "single_object", "implementation": "apache-avro"}
+        await self.verify()
+
     async def test_ready_refuses_a_current_image_label_backed_by_the_wrong_sdk(self):
         self.workers[-1].raw["sdk_version"] = f"durable-workflow-rust/{PREVIOUS['rust']}"
         self.assertIsNone(timers.ready_snapshot(types.SimpleNamespace(workers=self.workers)))

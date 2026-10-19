@@ -683,7 +683,9 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
         result = await handle.result(timeout=120, poll_interval=0.25)
         handle, execution, history = await observe(client, runtime, scenario)
         expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "timer_seconds": TIMER_SECONDS}
-        if not same_json_value(result, expected):
+        # Rust also returns codec diagnostics. Check the shared fields with their JSON types.
+        selected = {key: result.get(key) for key in expected} if isinstance(result, dict) else None
+        if not same_json_value(selected, expected):
             raise RuntimeError(f"Unexpected {runtime} result: {result!r}")
         if execution.status != "completed":
             raise RuntimeError(f"Workflow did not complete: {execution!r}")

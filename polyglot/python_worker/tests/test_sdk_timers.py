@@ -545,6 +545,13 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await self.verify(self.history)
 
+    async def test_rust_codec_diagnostics_are_supported_result_metadata(self):
+        self.handle.result.return_value["codec"] = {
+            "codec": "avro", "framing": "single_object", "implementation": "apache-avro",
+            "package": "apache-avro", "schema": "durable_workflow.protocol.Value", "version": "0.21.0",
+        }
+        await self.verify(self.history)
+
     async def test_pending_waits_for_status_after_timer_history_arrives(self):
         client = types.SimpleNamespace(start_workflow=AsyncMock())
         history = {"events": [event(
