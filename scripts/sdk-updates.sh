@@ -17,7 +17,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_UPDATES_COMPOSE_PROJECT_NAME:-sample-app-sdk-updates-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export DURABLE_WORKFLOW_UPDATE_ID="$COMPOSE_PROJECT_NAME"
-compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml")
+compose=(docker compose --project-directory "$repo_root/polyglot" \
+  -f "$repo_root/polyglot/docker-compose.yml" -f "$repo_root/polyglot/docker-compose.updates.yml")
 workers=(php-same-workflow-worker python-workflow-worker rust-workflow-worker)
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
   printf 'Choose a new isolated project. %s already has containers.\n' "$COMPOSE_PROJECT_NAME" >&2
