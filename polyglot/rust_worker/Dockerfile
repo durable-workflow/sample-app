@@ -32,6 +32,7 @@ RUN apt-get update \
 COPY --from=build /build/target/release/durable-workflow-polyglot-rust-worker /usr/local/bin/polyglot-rust-worker
 COPY --from=build /build/target/release/task_codec_rejection_probe /usr/local/bin/task-codec-rejection-probe
 COPY --from=build /build/target/release/activity_recovery_worker /usr/local/bin/activity-recovery-worker
+COPY --from=build /build/target/release/activity_upgrade_worker /usr/local/bin/activity-upgrade-worker
 
 USER 65532:65532
 

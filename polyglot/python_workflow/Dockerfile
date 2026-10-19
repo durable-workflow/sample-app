@@ -18,6 +18,7 @@ RUN set -eux; \
 COPY workflow.py ./workflow.py
 COPY child_workflows.py ./child_workflows.py
 COPY timer_upgrades.py ./timer_upgrades.py
+COPY activity_upgrades.py ./activity_upgrades.py
 COPY replay_fixtures ./replay_fixtures
 
 RUN python workflow.py --replay-fixtures

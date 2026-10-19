@@ -36,7 +36,7 @@ if args[:2] == ["image", "inspect"]:
     sys.exit(1)
 if "run" not in args:
     sys.exit(0)
-if "/app/scripts/sdk_timers.py" in args:
+if any(script in args for script in ("/app/scripts/sdk_timers.py", "/app/scripts/sdk_activity_upgrades.py")):
     print(json.dumps({"phase": args[-2], "scenario": args[-1]}))
 elif "php-same-workflow-worker" in args:
     print(json.dumps({"sdk_version": versions["php"], "reference": "constructed"}))
@@ -128,6 +128,35 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
         self.assertFalse(any("/app/scripts/sdk_timers.py" in record["args"]
                              and record["args"][-2] == "start" for record in records))
         self.assertTrue(any("down" in record["args"] for record in records))
+
+    def test_pending_activity_upgrade_keeps_all_originals_before_one_cold_package_replacement(self):
+        result, records = self.run_control(mode="--sdk-activity-upgrades")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        builds = [row for row in records if "build" in row["args"]]
+        self.assertEqual([row["versions"] for row in builds], [CURRENT, PREVIOUS])
+        observer = "/app/scripts/sdk_activity_upgrades.py"
+        starts = [row for row in records if observer in row["args"] and row["args"][-2] == "start"]
+        self.assertEqual([row["args"][-1] for row in starts], ["activity-upgrade", "activity-upgrade-fresh"])
+        self.assertEqual([row["versions"] for row in starts], [PREVIOUS, CURRENT])
+        self.assertEqual([row["application"] for row in starts], ["v1", "v2"])
+        phases = [row["args"][-2] for row in records if observer in row["args"]]
+        self.assertEqual(phases, ["ready", "start", "retire", "ready", "verify", "start", "verify"])
+        killed = [index for index, row in enumerate(records) if "kill" in row["args"]]
+        first = records.index(starts[0])
+        current = next(index for index, row in enumerate(records)
+                       if "up" in row["args"] and row["generation"] == "current")
+        self.assertEqual(len(killed), 1)
+        self.assertLess(first, killed[0])
+        self.assertLess(killed[0], current)
+        self.assertTrue(all(any(arg.endswith("activities/compose-sdk-upgrades.yml") for arg in row["args"])
+                            for row in records if row["args"][0] == "compose"))
+        self.assertTrue(any("down" in row["args"] for row in records))
+
+    def test_pending_activity_mislabelled_package_refuses_before_original_admission(self):
+        result, records = self.run_control(mode="--sdk-activity-upgrades", wrong_package=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any("/app/scripts/sdk_activity_upgrades.py" in row["args"] for row in records))
+        self.assertTrue(any("down" in row["args"] for row in records))
 
 
 class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):

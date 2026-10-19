@@ -2,13 +2,14 @@
 set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
-  printf '%s\n' 'Usage: scripts/sdk-timers.sh [--unversioned-upgrades|--sdk-upgrades|--sdk-application-upgrades]' \
+  printf '%s\n' 'Usage: scripts/sdk-timers.sh [--unversioned-upgrades|--sdk-upgrades|--sdk-application-upgrades|--sdk-activity-upgrades]' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
     'Replaces compatible business helpers across all SDKs and checks pinned Python class refusal, restoration and fresh v2 runs.' \
     '--unversioned-upgrades instead runs twelve originals introducing versioning into already pending single/concurrent timers.' \
     '--sdk-upgrades instead runs twelve originals across previous/current SDK packages with unchanged application code (requires Python 3).' \
     '--sdk-application-upgrades instead changes both SDK packages and versioned application helpers in twelve originals (requires Python 3).' \
+    '--sdk-activity-upgrades selects the separate eighteen-original pending-activity experiment (see scripts/sdk-activity-upgrades.sh).' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -16,6 +17,7 @@ fi
 unversioned_only=0
 sdk_packages_only=0
 sdk_application_upgrade=0
+sdk_activity_upgrade=0
 if [[ "${1:-}" == --unversioned-upgrades && $# == 1 ]]; then
   unversioned_only=1
   shift
@@ -25,6 +27,10 @@ elif [[ "${1:-}" == --sdk-upgrades && $# == 1 ]]; then
 elif [[ "${1:-}" == --sdk-application-upgrades && $# == 1 ]]; then
   sdk_packages_only=1
   sdk_application_upgrade=1
+  shift
+elif [[ "${1:-}" == --sdk-activity-upgrades && $# == 1 ]]; then
+  sdk_packages_only=1
+  sdk_activity_upgrade=1
   shift
 fi
 [[ $# == 0 ]] || { printf '%s\n' 'Use --help for usage.' >&2; exit 2; }
@@ -102,6 +108,9 @@ if (( sdk_packages_only )); then
   DURABLE_WORKFLOW_TIMER_SDK_TARGETS=$(package_json targets)
   package_json different
   target_php_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
+fi
+if (( sdk_activity_upgrade )); then
+  compose+=(-f "$repo_root/polyglot/activities/compose-sdk-upgrades.yml")
 fi
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
   printf 'Choose a new isolated project. %s already has containers.\n' "$COMPOSE_PROJECT_NAME" >&2
@@ -187,17 +196,20 @@ else
   "${compose[@]}" build smoke "${workers[@]}"
 fi
 "${compose[@]}" pull --policy always bootstrap server timer-queue
+if (( sdk_activity_upgrade )); then export POLYGLOT_TIMER_APPLICATION=v1; fi
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
 client() {
+  local observer=/app/scripts/sdk_timers.py
+  if (( sdk_activity_upgrade )); then observer=/app/scripts/sdk_activity_upgrades.py; fi
   "${compose[@]}" run --rm --no-deps --user 1000:1000 \
     -e DURABLE_WORKFLOW_TIMER_ID -e DURABLE_WORKFLOW_WORKER_STOPPED_AT -e DURABLE_WORKFLOW_WORKER_RESTART_AT \
     -e DURABLE_WORKFLOW_SERVER_STOPPED_AT -e DURABLE_WORKFLOW_SERVER_RESTART_AT \
     -e DURABLE_WORKFLOW_TIMER_PENDING \
     -e DURABLE_WORKFLOW_TIMER_WORKERS \
     -e DURABLE_WORKFLOW_TIMER_SDK_VERSIONS -e DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS -e DURABLE_WORKFLOW_TIMER_SDK_TARGETS \
-    smoke python /app/scripts/sdk_timers.py "$@"
+    smoke python "$observer" "$@"
 }
 
 start() {
@@ -306,7 +318,17 @@ package_upgrade() {
   client verify "$scenario-fresh"
 }
 
-if (( sdk_packages_only )); then
+if (( sdk_activity_upgrade )); then
+  remember_workers activity-upgrade
+  start activity-upgrade
+  "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+  export DURABLE_WORKFLOW_WORKER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  export POLYGLOT_TIMER_APPLICATION=v2
+  replace_package_workers current activity-upgrade
+  client verify activity-upgrade
+  start activity-upgrade-fresh
+  client verify activity-upgrade-fresh
+elif (( sdk_packages_only )); then
   package_scenario=sdk-upgrade
   if (( sdk_application_upgrade )); then
     package_scenario=sdk-application-upgrade

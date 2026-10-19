@@ -1,0 +1,7 @@
+services:
+  php-same-workflow-worker:
+    command: ["php", "/app/activity_upgrades.php"]
+  python-workflow-worker:
+    command: ["python", "/app/activity_upgrades.py"]
+  rust-workflow-worker:
+    entrypoint: ["activity-upgrade-worker"]

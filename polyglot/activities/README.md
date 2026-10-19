@@ -1,5 +1,49 @@
 # Published remote activity retry and recovery
 
+## Pending activities across SDK and application upgrades
+
+Run from the prepared development container with the published tuple resolved:
+
+```bash
+while IFS= read -r assignment; do export "$assignment"; done \
+  < <(scripts/resolve-current-artifacts.sh)
+SDK_ACTIVITY_UPGRADES_COMPOSE_PROJECT_NAME=sample-app-activity-upgrades \
+  scripts/sdk-activity-upgrades.sh
+```
+
+This separate experiment runs eighteen originals: nine pending workflow/activity
+directions across PHP, Python and Rust, then nine fresh current-package controls.
+It uses the same explicit previous-package baseline as the timer upgrades and
+the current qualified tuple. Both image generations are built and their actual
+installed package identities checked before the first workflow starts.
+
+Previous-package workers register the workflow without an activity handler.
+Each original must reach public waiting status with one unstarted activity,
+version 1/range 1..1, command sequence 2, and its complete retry/timeout policy.
+The runner records all nine original histories, kills those workflow workers,
+retires only their exact registrations and starts cold current-package workers
+with revision-two application helpers and activity handlers.
+
+Replayed originals must retain version 1 and every event in their original
+history prefix. Fresh current runs select version 2/range 1..2 and the revised
+policy. Each actual activity executes once on the current SDK after replacement,
+returns exact int64/null/boolean/fraction/Unicode/list values and completes the
+same original workflow once. The observer checks both durable results, actual
+attempt/execution identities and completion inside the original total budget.
+Python's registered wrapper and recorded definition stay identical; the selected
+business helper changes. Incompatible Python class adoption and build routing
+remain separate gates.
+
+Pending admission has a twenty-second observer bound and each result a
+120-second observer bound. Authored activities retain their thirty-second
+attempt budget and original 120-second total budget; fresh revision-two controls
+use 180 seconds total. No clock, database row or task budget is edited. Built
+consumer images, project containers, volumes and networks are removed on exit. The focused
+Action and logs report the actual package pairs, original IDs and outcomes;
+constructed verifier tests alone do not qualify published-package replay.
+
+## Retry, deadlines and worker loss
+
 This experiment runs every PHP, Python and Rust workflow/activity direction.
 Each workflow language calls an activity in each of the three languages,
 including its own language, for nine directions.
