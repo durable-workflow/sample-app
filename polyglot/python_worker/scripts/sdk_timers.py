@@ -426,7 +426,9 @@ def upgrade_marker(history: dict, scenario: str) -> dict:
     marker = markers[0]["payload"]
     version = UPGRADE_SCENARIOS[scenario][1]
     if (marker.get("change_id") != APPLICATION_CHANGE_ID or type(marker.get("version")) is not int
-            or marker["version"] != version or type(marker.get("sequence")) is not int):
+            or marker["version"] != version or type(marker.get("sequence")) is not int
+            or type(marker.get("min_supported")) is not int or marker["min_supported"] != 1
+            or type(marker.get("max_supported")) is not int or marker["max_supported"] != version):
         raise RuntimeError("Application upgrade selected a different version decision.")
     kinds = [item["event_type"] for item in history["events"]]
     if kinds.index("VersionMarkerRecorded") >= kinds.index("TimerScheduled"):
