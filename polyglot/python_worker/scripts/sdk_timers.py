@@ -150,7 +150,7 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
 
 
 async def fired(client: Client, runtime: str, scenario: str) -> None:
-    concurrent = scenario in CONCURRENT_SCENARIOS
+    concurrent = is_concurrent(scenario)
     deadline = asyncio.get_running_loop().time() + (90 if concurrent else 60)
     while True:
         _, execution, history = await observe(client, runtime, scenario)
