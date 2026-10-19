@@ -1,0 +1,51 @@
+name: published SDK versioning introduction
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/sdk-unversioned-timers.yml
+      - scripts/sdk-timers.sh
+      - scripts/resolve-current-artifacts.sh
+      - polyglot/qualified-artifact-tuple.json
+      - polyglot/docker-compose.yml
+      - polyglot/php_worker/**
+      - polyglot/python_worker/**
+      - polyglot/python_workflow/**
+      - polyglot/rust_worker/**
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/sdk-unversioned-timers.yml
+      - scripts/sdk-timers.sh
+      - scripts/resolve-current-artifacts.sh
+      - polyglot/qualified-artifact-tuple.json
+      - polyglot/docker-compose.yml
+      - polyglot/php_worker/**
+      - polyglot/python_worker/**
+      - polyglot/python_workflow/**
+      - polyglot/rust_worker/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-unversioned-timers-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  timers:
+    name: SDK versioning introduction (PHP/Python/Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SDK_TIMERS_COMPOSE_PROJECT_NAME: sample-app-sdk-unversioned-timers-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve the exact published tuple
+        run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
+      - name: Introduce versioning into pending timer workflows
+        run: scripts/sdk-timers.sh --unversioned-upgrades

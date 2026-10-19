@@ -28,12 +28,19 @@ CLASS_UPGRADE_SCENARIOS = {
     "concurrent-class-replacement": (True, 1),
     "concurrent-class-replacement-fresh": (True, 2),
 }
+UNVERSIONED_UPGRADE_SCENARIOS = {
+    "unversioned-upgrade": (False, -1),
+    "unversioned-upgrade-fresh": (False, 2),
+    "concurrent-unversioned-upgrade": (True, -1),
+    "concurrent-unversioned-upgrade-fresh": (True, 2),
+}
 UPGRADE_SCENARIOS = {
     "application-upgrade": (False, 1),
     "application-upgrade-fresh": (False, 2),
     "concurrent-application-upgrade": (True, 1),
     "concurrent-application-upgrade-fresh": (True, 2),
     **CLASS_UPGRADE_SCENARIOS,
+    **UNVERSIONED_UPGRADE_SCENARIOS,
 }
 APPLICATION_CHANGE_ID = "sample-timer-application"
 
@@ -51,6 +58,8 @@ def workflow_suffix(scenario: str) -> str:
     prefix = ""
     if scenario in CLASS_UPGRADE_SCENARIOS:
         prefix = "class-upgrade-"
+    elif scenario in UNVERSIONED_UPGRADE_SCENARIOS:
+        prefix = "unversioned-upgrade-"
     elif scenario in UPGRADE_SCENARIOS:
         prefix = "upgrade-"
     return prefix + ("concurrent-timers" if is_concurrent(scenario) else "timer")
@@ -110,6 +119,8 @@ def ready_snapshot(roster):
         if len(matches) > 1:
             raise RuntimeError(f"Ambiguous active worker definitions for {runtime}.")
         types = {f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"}
+        types.update({f"polyglot.{runtime}.unversioned-upgrade-timer",
+                      f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"})
         if runtime == "python":
             types.update({"polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"})
         if len(matches) != 1 or not types <= set(matches[0].supported_workflow_types or []):
@@ -422,15 +433,33 @@ async def verify_concurrent(client: Client, runtime: str, scenario: str) -> None
          timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")])
 
 
-def upgrade_marker(history: dict, scenario: str) -> dict:
+def check_version_introduction(history: dict, scenario: str) -> None:
+    marker_count = 0 if UNVERSIONED_UPGRADE_SCENARIOS[scenario][1] == -1 else 1
+    first_sequence = marker_count + 1
+    scheduled = events(history, "TimerScheduled")
+    if (len(events(history, "VersionMarkerRecorded")) != marker_count
+            or len(scheduled) != len(timer_delays(scenario))
+            or any(type(item["payload"].get("sequence")) is not int
+                or item["payload"]["sequence"] != first_sequence + index
+                for index, item in enumerate(scheduled))):
+        raise RuntimeError("Version introduction changed the original marker or timer command sequences.")
+
+
+def upgrade_marker(history: dict, scenario: str) -> dict | None:
     markers = events(history, "VersionMarkerRecorded")
+    version = UPGRADE_SCENARIOS[scenario][1]
+    if scenario in UNVERSIONED_UPGRADE_SCENARIOS:
+        check_version_introduction(history, scenario)
+        if version == -1:
+            return None
     if len(markers) != 1:
         raise RuntimeError("Application upgrade requires one original version marker.")
     marker = markers[0]["payload"]
-    version = UPGRADE_SCENARIOS[scenario][1]
+    minimum = -1 if scenario in UNVERSIONED_UPGRADE_SCENARIOS else 1
     if (marker.get("change_id") != APPLICATION_CHANGE_ID or type(marker.get("version")) is not int
             or marker["version"] != version or type(marker.get("sequence")) is not int
-            or type(marker.get("min_supported")) is not int or marker["min_supported"] != 1
+            or (scenario in UNVERSIONED_UPGRADE_SCENARIOS and marker["sequence"] != 1)
+            or type(marker.get("min_supported")) is not int or marker["min_supported"] != minimum
             or type(marker.get("max_supported")) is not int or marker["max_supported"] != version):
         raise RuntimeError("Application upgrade selected a different version decision.")
     kinds = [item["event_type"] for item in history["events"]]
@@ -449,7 +478,7 @@ def check_upgrade_definition_binding(history: dict) -> str:
     return fingerprint
 
 
-def check_upgrade_prefix(original: dict, execution, history: dict, scenario: str) -> dict:
+def check_upgrade_prefix(original: dict, execution, history: dict, scenario: str) -> dict | None:
     marker = upgrade_marker(history, scenario)
     prefix = original["history_prefix"]
     if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]

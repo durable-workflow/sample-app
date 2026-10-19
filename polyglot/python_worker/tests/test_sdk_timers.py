@@ -8,7 +8,7 @@ import types
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 
 if "durable_workflow" not in sys.modules:
@@ -231,6 +231,115 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(emit.call_args.kwargs["history_prefix"], history["events"])
 
 
+class UnversionedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
+    def case(self, *, fresh=False, concurrent=False):
+        self.fixture = ApplicationUpgradeEvidenceTest()
+        self.fixture.case(version=2 if fresh else -1, concurrent=concurrent)
+        self.fixture.scenario = ("concurrent-" if concurrent else "") + "unversioned-upgrade"
+        if fresh:
+            self.fixture.scenario += "-fresh"
+        for history in (self.fixture.history["events"], self.fixture.original["history_prefix"]):
+            if fresh:
+                history[1]["payload"]["min_supported"] = -1
+            else:
+                del history[1]
+                for item in history:
+                    if item["event_type"] in ("TimerScheduled", "TimerFired"):
+                        item["payload"]["sequence"] -= 1
+                        if concurrent:
+                            item["payload"]["parallel_group_base_sequence"] = 1
+        if fresh:
+            self.fixture.original["version_marker"]["min_supported"] = -1
+        else:
+            self.fixture.original["version_marker"] = None
+            scheduled = timers.events(self.fixture.history, "TimerScheduled")
+            self.fixture.original["timers" if concurrent else "timer"] = (
+                [copy.deepcopy(item["payload"]) for item in scheduled] if concurrent
+                else copy.deepcopy(scheduled[0]["payload"]))
+
+    async def test_unmarked_original_replays_without_a_new_marker(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(concurrent=concurrent)
+                await self.fixture.verify()
+
+    async def test_fresh_original_records_the_new_version_and_legacy_range(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(fresh=True, concurrent=concurrent)
+                await self.fixture.verify()
+
+    async def test_replay_cannot_append_a_version_marker_to_the_old_history(self):
+        self.case()
+        self.fixture.history["events"].insert(-1, event("VersionMarkerRecorded",
+            change_id="sample-timer-application", sequence=2, version=2, min_supported=-1, max_supported=2))
+        with self.assertRaises(RuntimeError):
+            await self.fixture.verify()
+
+    async def test_new_marker_must_retain_its_exact_authored_bounds(self):
+        for field, value in (("min_supported", 1), ("min_supported", -1.0),
+                             ("max_supported", 3), ("max_supported", True), ("sequence", 2)):
+            with self.subTest(field=field, value=value):
+                self.case(fresh=True)
+                for marker in (self.fixture.history["events"][1]["payload"],
+                               self.fixture.original["history_prefix"][1]["payload"],
+                               self.fixture.original["version_marker"]):
+                    marker[field] = value
+                with self.assertRaises(RuntimeError):
+                    await self.fixture.verify()
+
+    async def test_old_timer_sequences_cannot_be_rebased_to_make_room_for_a_marker(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(concurrent=concurrent)
+                for history in (self.fixture.history["events"], self.fixture.original["history_prefix"]):
+                    for item in history:
+                        if item["event_type"] in ("TimerScheduled", "TimerFired"):
+                            item["payload"]["sequence"] += 1
+                originals = (self.fixture.original["timers"] if concurrent
+                             else [self.fixture.original["timer"]])
+                for timer in originals:
+                    timer["sequence"] += 1
+                with self.assertRaises(RuntimeError):
+                    await self.fixture.verify()
+
+
+class VersionIntroductionAuthoringTest(unittest.TestCase):
+    def test_first_revision_has_no_marker_and_replacement_preserves_both_decisions(self):
+        path = Path(__file__).parents[2] / "python_workflow" / "timer_upgrades.py"
+        spec = importlib.util.spec_from_file_location("timer_upgrade_authoring", path)
+        application = importlib.util.module_from_spec(spec)
+        decorator = types.SimpleNamespace(defn=lambda **_: lambda definition: definition)
+        with patch.object(sys.modules["durable_workflow"], "workflow", decorator, create=True):
+            spec.loader.exec_module(application)
+        for revision, version in (("v1", -1), ("v2", -1), ("v2", 2)):
+            for concurrent in (False, True):
+                with self.subTest(revision=revision, version=version, concurrent=concurrent):
+                    application.applications(revision)
+                    context = types.SimpleNamespace(get_version=Mock(return_value="version-command"),
+                        sleep=Mock(side_effect=lambda seconds: ("timer", seconds)))
+                    definition = (application.IntroductionConcurrentTimers if concurrent
+                                  else application.IntroductionSingleTimer)
+                    execution = definition().run(context, "original-request")
+                    if revision == "v2":
+                        self.assertEqual(next(execution), "version-command")
+                        context.get_version.assert_called_once_with("sample-timer-application", -1, 2)
+                        operation = execution.send(version)
+                    else:
+                        operation = next(execution)
+                        context.get_version.assert_not_called()
+                    delays = [60, 30, 45] if concurrent else [30]
+                    if version == 2:
+                        delays = [delay + 15 for delay in delays]
+                    expected = [("timer", delay) for delay in delays]
+                    self.assertEqual(operation, expected if concurrent else expected[0])
+                    with self.assertRaises(StopIteration) as completed:
+                        next(execution)
+                    self.assertEqual(completed.exception.value, {"workflow_runtime": "python",
+                        "request": "original-request", "application_revision": revision,
+                        "version": version, "timer_seconds": delays if concurrent else delays[0]})
+
+
 class WorkerRosterEvidenceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         environment = patch.dict("os.environ", {"DURABLE_WORKFLOW_NAMESPACE": "default",
@@ -246,6 +355,8 @@ class WorkerRosterEvidenceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def worker(runtime):
         types_ = [f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"]
+        types_ += [f"polyglot.{runtime}.unversioned-upgrade-timer",
+                   f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"]
         if runtime == "python":
             types_ += ["polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"]
         return types.SimpleNamespace(worker_id=f"owned-{runtime}", namespace="default", runtime=runtime,
