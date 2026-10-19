@@ -433,18 +433,23 @@ async def verify_concurrent(client: Client, runtime: str, scenario: str) -> None
          timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")])
 
 
+def check_version_introduction(history: dict, scenario: str) -> None:
+    marker_count = 0 if UNVERSIONED_UPGRADE_SCENARIOS[scenario][1] == -1 else 1
+    first_sequence = marker_count + 1
+    scheduled = events(history, "TimerScheduled")
+    if (len(events(history, "VersionMarkerRecorded")) != marker_count
+            or len(scheduled) != len(timer_delays(scenario))
+            or any(type(item["payload"].get("sequence")) is not int
+                or item["payload"]["sequence"] != first_sequence + index
+                for index, item in enumerate(scheduled))):
+        raise RuntimeError("Version introduction changed the original marker or timer command sequences.")
+
+
 def upgrade_marker(history: dict, scenario: str) -> dict | None:
     markers = events(history, "VersionMarkerRecorded")
     version = UPGRADE_SCENARIOS[scenario][1]
     if scenario in UNVERSIONED_UPGRADE_SCENARIOS:
-        first_sequence = 1 if version == -1 else 2
-        scheduled = events(history, "TimerScheduled")
-        if (len(markers) != (0 if version == -1 else 1)
-                or len(scheduled) != len(timer_delays(scenario))
-                or any(type(item["payload"].get("sequence")) is not int
-                    or item["payload"]["sequence"] != first_sequence + index
-                    for index, item in enumerate(scheduled))):
-            raise RuntimeError("Version introduction changed the original marker or timer command sequences.")
+        check_version_introduction(history, scenario)
         if version == -1:
             return None
     if len(markers) != 1:
