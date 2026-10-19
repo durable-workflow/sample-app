@@ -71,7 +71,7 @@ new original, avoiding admission against the preceding definition. Other
 namespaces and queues are excluded. Replacements use new worker identities;
 the existing interruption cases retain their normal IDs.
 
-The helper-replacement and class-fencing cases remain under qualification in
+Qualification outcomes and remaining SDK coverage are recorded in
 [the SDK coverage audit](https://github.com/durable-workflow/.github/issues/122).
 The two Python class revisions advertise different definition fingerprints. Those cases
 require one worker-sourced fingerprint in the original `WorkflowStarted` event;
@@ -142,9 +142,10 @@ replacement readiness, cleanup, the pending window of 20 seconds and result
 observations of 120 seconds follow the main command. This mode has its own ordinary
 CI job and does not extend the main forty-original experiment.
 
-Report these twelve outcomes separately from the forty above. The command is
-under qualification in [the SDK audit](https://github.com/durable-workflow/.github/issues/122);
-local observer tests do not establish actual installed-package replay. SDK
+Report these twelve outcomes separately from the forty above in
+[the SDK audit](https://github.com/durable-workflow/.github/issues/122).
+Include the exact runner commit, artifact tuple and original outcomes. Keep
+observer source tests distinct from actual installed-package replay. SDK
 package upgrades, build-ID rollouts and incompatible class adoption remain
 separate cases.
 
