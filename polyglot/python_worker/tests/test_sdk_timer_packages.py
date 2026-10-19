@@ -52,7 +52,7 @@ elif "rust-workflow-worker" in args:
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("python3"), "runner control requires bash and Python 3")
 class PackageUpgradeRunnerTest(unittest.TestCase):
-    def run_control(self, *, wrong_package=False, targets=None, allow_empty=False):
+    def run_control(self, *, wrong_package=False, targets=None, allow_empty=False, mode="--sdk-upgrades"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             docker = root / "docker"
@@ -68,7 +68,7 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
                 environment[f"DURABLE_WORKFLOW_{runtime.upper()}_SDK_VERSION"] = version
             if wrong_package:
                 environment["FAKE_WRONG_PACKAGE"] = "1"
-            result = subprocess.run(["bash", "scripts/sdk-timers.sh", "--sdk-upgrades"],
+            result = subprocess.run(["bash", "scripts/sdk-timers.sh", mode],
                 cwd=Path(__file__).parents[3], env=environment, capture_output=True, text=True, timeout=15)
             if not allow_empty:
                 self.assertTrue(log.exists(), result.stderr or result.stdout)
@@ -104,6 +104,30 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
                 result, records = self.run_control(targets={**CURRENT, "rust": version}, allow_empty=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(records, [])
+
+    def test_combined_change_uses_old_application_and_package_before_cold_current_replacement(self):
+        result, records = self.run_control(mode="--sdk-application-upgrades")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        starts = [record for record in records if "/app/scripts/sdk_timers.py" in record["args"]
+                  and record["args"][-2] == "start"]
+        self.assertEqual([record["args"][-1] for record in starts], [
+            "sdk-application-upgrade", "sdk-application-upgrade-fresh",
+            "concurrent-sdk-application-upgrade", "concurrent-sdk-application-upgrade-fresh"])
+        self.assertEqual([record["versions"] for record in starts], [PREVIOUS, CURRENT, PREVIOUS, CURRENT])
+        self.assertEqual([record["application"] for record in starts], ["v1", "v2", "v1", "v2"])
+        absent = [record for record in records if "/app/scripts/sdk_timers.py" in record["args"]
+                  and record["args"][-2] == "fired"]
+        self.assertEqual(len(absent), 2)
+        self.assertTrue(all(record["versions"] == PREVIOUS and record["application"] == "v1" for record in absent))
+        self.assertEqual({record["server"] for record in records}, {"server:constructed"})
+        self.assertTrue(any("down" in record["args"] for record in records))
+
+    def test_combined_change_rejects_a_mislabelled_previous_package_before_admission(self):
+        result, records = self.run_control(wrong_package=True, mode="--sdk-application-upgrades")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any("/app/scripts/sdk_timers.py" in record["args"]
+                             and record["args"][-2] == "start" for record in records))
+        self.assertTrue(any("down" in record["args"] for record in records))
 
 
 class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
