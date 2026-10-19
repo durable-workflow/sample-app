@@ -145,9 +145,17 @@ def package_worker(runtime: str) -> dict:
     return {**selected, "package_version": version}
 
 
+def check_application_command_sequences(history: dict, marker: dict) -> None:
+    scheduled = events(history, "TimerScheduled")
+    if (marker["sequence"] != 1 or any(type(item["payload"].get("sequence")) is not int
+            or item["payload"]["sequence"] != index + 2 for index, item in enumerate(scheduled))):
+        raise RuntimeError("SDK/application replacement rebased its marker or timer command sequences.")
+
+
 def check_package_markers(scenario: str, original: dict, history: dict) -> None:
     if scenario in SDK_APPLICATION_UPGRADE_SCENARIOS:
         marker = upgrade_marker(history, scenario)
+        check_application_command_sequences(history, marker)
         if not same_json_value(marker, original.get("version_marker")):
             raise RuntimeError("SDK/application replacement changed the original version marker.")
     elif events(history, "VersionMarkerRecorded"):
@@ -347,6 +355,7 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
             check_upgrade_definition_binding(history)
         observation.update(history_prefix=history["events"], sdk_version=package["package_version"],
                            worker_id=package["worker_id"])
+        check_package_markers(scenario, observation, history)
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
          run_id=execution.run_id, status=execution.status, **observation)
     if CONCURRENT_SCENARIOS.get(scenario, scenario) == "cancellation":
