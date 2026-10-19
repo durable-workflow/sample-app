@@ -38,6 +38,12 @@ def timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def same_json_value(left, right) -> bool:
+    # Python equality conflates booleans, integers and floats, including in nested paths.
+    return (json.dumps(left, sort_keys=True, allow_nan=False)
+            == json.dumps(right, sort_keys=True, allow_nan=False))
+
+
 def emit(**record) -> None:
     print(json.dumps(record, sort_keys=True), flush=True)
 
@@ -54,7 +60,7 @@ def original_pending(runtime: str, scenario: str) -> dict:
 def check_original(runtime: str, scenario: str, execution, scheduled: dict) -> None:
     original = original_pending(runtime, scenario)
     if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]
-            or scheduled["payload"] != original["timer"]):
+            or not same_json_value(scheduled["payload"], original["timer"])):
         raise RuntimeError("Run identity or original scheduled timer changed after the interruption.")
 
 
@@ -128,9 +134,8 @@ async def fired(client: Client, runtime: str, scenario: str) -> None:
         if concurrent:
             original = original_parallel_timers(runtime, scenario, execution, history)
             check_resolved_members(original, resolved, "fired", complete=False)
-        if resolved:
-            if events(history, "WorkflowCompleted"):
-                raise RuntimeError("Workflow completed while its SDK worker should be killed.")
+        if resolved and events(history, "WorkflowCompleted"):
+            raise RuntimeError("Workflow completed while its SDK worker should be killed.")
         if resolved and (not concurrent or len(resolved) == len(CONCURRENT_SECONDS)):
             emit(phase="fired_without_worker", runtime=runtime, scenario=scenario,
                  workflow_id=execution.workflow_id, run_id=execution.run_id, timer_events=resolved)
@@ -161,7 +166,9 @@ def check_timer_metadata(original: dict, resolved: dict, outcome: str) -> None:
     fields = ("sequence", "delay_seconds", "fire_at", "parallel_group_id", "parallel_group_kind",
               "parallel_group_base_sequence", "parallel_group_size", "parallel_group_index",
               "parallel_group_mode", "parallel_group_path")
-    if any(resolved.get(field) != original.get(field) for field in fields):
+    original_fields = {field: original.get(field) for field in fields}
+    resolved_fields = {field: resolved.get(field) for field in fields}
+    if not same_json_value(resolved_fields, original_fields):
         raise RuntimeError(f"{outcome.capitalize()} timer metadata differs from its original scheduled member.")
     if outcome == "fired" and timestamp(resolved["fired_at"]) < timestamp(original["fire_at"]):
         raise RuntimeError("A concurrent timer fired before its original deadline.")
@@ -171,7 +178,7 @@ def original_parallel_timers(runtime: str, scenario: str, execution, history: di
     scheduled = events(history, "TimerScheduled")
     original = original_pending(runtime, scenario)
     if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]
-            or [item["payload"] for item in scheduled] != original["timers"]):
+            or not same_json_value([item["payload"] for item in scheduled], original["timers"])):
         raise RuntimeError("Run identity or original scheduled timers changed.")
     timers = [item["payload"] for item in scheduled]
     if [timer["delay_seconds"] for timer in timers] != CONCURRENT_SECONDS:

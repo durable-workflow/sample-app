@@ -97,8 +97,10 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
             await self.verify(self.history)
 
     async def test_original_timer_metadata_keeps_its_scalar_types(self):
+        original_history, original_snapshot = copy.deepcopy(self.history), copy.deepcopy(self.original)
         for field, original, changed in (("sequence", 1, True), ("delay_seconds", 30, 30.0)):
             with self.subTest(field=field):
+                self.history, self.original = copy.deepcopy(original_history), copy.deepcopy(original_snapshot)
                 self.original["timer"][field] = original
                 self.history["events"][1]["payload"][field] = changed
                 with self.assertRaisesRegex(RuntimeError, "original scheduled timer changed"):
