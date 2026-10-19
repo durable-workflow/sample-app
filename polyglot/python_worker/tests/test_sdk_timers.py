@@ -231,6 +231,79 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(emit.call_args.kwargs["history_prefix"], history["events"])
 
 
+class UnversionedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
+    def case(self, *, fresh=False, concurrent=False):
+        self.fixture = ApplicationUpgradeEvidenceTest()
+        self.fixture.case(version=2 if fresh else -1, concurrent=concurrent)
+        self.fixture.scenario = ("concurrent-" if concurrent else "") + "unversioned-upgrade"
+        if fresh:
+            self.fixture.scenario += "-fresh"
+        for history in (self.fixture.history["events"], self.fixture.original["history_prefix"]):
+            if fresh:
+                history[1]["payload"]["min_supported"] = -1
+            else:
+                del history[1]
+                for item in history:
+                    if item["event_type"] in ("TimerScheduled", "TimerFired"):
+                        item["payload"]["sequence"] -= 1
+                        if concurrent:
+                            item["payload"]["parallel_group_base_sequence"] = 1
+        if fresh:
+            self.fixture.original["version_marker"]["min_supported"] = -1
+        else:
+            self.fixture.original["version_marker"] = None
+            scheduled = timers.events(self.fixture.history, "TimerScheduled")
+            self.fixture.original["timers" if concurrent else "timer"] = (
+                [copy.deepcopy(item["payload"]) for item in scheduled] if concurrent
+                else copy.deepcopy(scheduled[0]["payload"]))
+
+    async def test_unmarked_original_replays_without_a_new_marker(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(concurrent=concurrent)
+                await self.fixture.verify()
+
+    async def test_fresh_original_records_the_new_version_and_legacy_range(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(fresh=True, concurrent=concurrent)
+                await self.fixture.verify()
+
+    async def test_replay_cannot_append_a_version_marker_to_the_old_history(self):
+        self.case()
+        self.fixture.history["events"].insert(-1, event("VersionMarkerRecorded",
+            change_id="sample-timer-application", sequence=2, version=2, min_supported=-1, max_supported=2))
+        with self.assertRaises(RuntimeError):
+            await self.fixture.verify()
+
+    async def test_new_marker_must_retain_its_exact_authored_bounds(self):
+        for field, value in (("min_supported", 1), ("min_supported", -1.0),
+                             ("max_supported", 3), ("max_supported", True), ("sequence", 2)):
+            with self.subTest(field=field, value=value):
+                self.case(fresh=True)
+                for marker in (self.fixture.history["events"][1]["payload"],
+                               self.fixture.original["history_prefix"][1]["payload"],
+                               self.fixture.original["version_marker"]):
+                    marker[field] = value
+                with self.assertRaises(RuntimeError):
+                    await self.fixture.verify()
+
+    async def test_old_timer_sequences_cannot_be_rebased_to_make_room_for_a_marker(self):
+        for concurrent in (False, True):
+            with self.subTest(concurrent=concurrent):
+                self.case(concurrent=concurrent)
+                for history in (self.fixture.history["events"], self.fixture.original["history_prefix"]):
+                    for item in history:
+                        if item["event_type"] in ("TimerScheduled", "TimerFired"):
+                            item["payload"]["sequence"] += 1
+                originals = (self.fixture.original["timers"] if concurrent
+                             else [self.fixture.original["timer"]])
+                for timer in originals:
+                    timer["sequence"] += 1
+                with self.assertRaises(RuntimeError):
+                    await self.fixture.verify()
+
+
 class WorkerRosterEvidenceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         environment = patch.dict("os.environ", {"DURABLE_WORKFLOW_NAMESPACE": "default",
