@@ -2,23 +2,29 @@
 set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
-  printf '%s\n' 'Usage: scripts/sdk-timers.sh [--unversioned-upgrades|--sdk-upgrades]' \
+  printf '%s\n' 'Usage: scripts/sdk-timers.sh [--unversioned-upgrades|--sdk-upgrades|--sdk-application-upgrades]' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
     'Replaces compatible business helpers across all SDKs and checks pinned Python class refusal, restoration and fresh v2 runs.' \
     '--unversioned-upgrades instead runs twelve originals introducing versioning into already pending single/concurrent timers.' \
     '--sdk-upgrades instead runs twelve originals across previous/current SDK packages with unchanged application code (requires Python 3).' \
+    '--sdk-application-upgrades instead changes both SDK packages and versioned application helpers in twelve originals (requires Python 3).' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
 fi
 unversioned_only=0
 sdk_packages_only=0
+sdk_application_upgrade=0
 if [[ "${1:-}" == --unversioned-upgrades && $# == 1 ]]; then
   unversioned_only=1
   shift
 elif [[ "${1:-}" == --sdk-upgrades && $# == 1 ]]; then
   sdk_packages_only=1
+  shift
+elif [[ "${1:-}" == --sdk-application-upgrades && $# == 1 ]]; then
+  sdk_packages_only=1
+  sdk_application_upgrade=1
   shift
 fi
 [[ $# == 0 ]] || { printf '%s\n' 'Use --help for usage.' >&2; exit 2; }
@@ -285,11 +291,15 @@ replace_package_workers() {
 
 package_upgrade() {
   local scenario="$1"
+  if (( sdk_application_upgrade )); then
+    export POLYGLOT_TIMER_APPLICATION=v1
+  fi
   replace_package_workers previous "$scenario"
   start "$scenario"
   "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
   export DURABLE_WORKFLOW_WORKER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
   client fired "$scenario"
+  export POLYGLOT_TIMER_APPLICATION=v2
   replace_package_workers current "$scenario"
   client verify "$scenario"
   start "$scenario-fresh"
@@ -297,9 +307,13 @@ package_upgrade() {
 }
 
 if (( sdk_packages_only )); then
-  remember_workers sdk-upgrade
-  package_upgrade sdk-upgrade
-  package_upgrade concurrent-sdk-upgrade
+  package_scenario=sdk-upgrade
+  if (( sdk_application_upgrade )); then
+    package_scenario=sdk-application-upgrade
+  fi
+  remember_workers "$package_scenario"
+  package_upgrade "$package_scenario"
+  package_upgrade "concurrent-$package_scenario"
 elif (( unversioned_only )); then
   remember_workers unversioned-upgrade
   application_upgrade unversioned-upgrade

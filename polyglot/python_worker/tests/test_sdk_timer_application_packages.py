@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
 import types
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import test_sdk_timers as fixtures
@@ -10,6 +12,12 @@ from test_sdk_timer_packages import CURRENT, PREVIOUS
 
 
 timers = fixtures.timers
+
+
+def shift_command_sequences(payload):
+    for field in ("sequence", "parallel_group_base_sequence"):
+        if field in payload:
+            payload[field] += 8
 
 
 class CombinedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
@@ -99,11 +107,57 @@ class CombinedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(RuntimeError):
                     await self.verify()
 
+    async def test_consistently_renumbered_commands_cannot_qualify_a_new_sdk(self):
+        for concurrent, fresh in ((False, False), (False, True), (True, False), (True, True)):
+            with self.subTest(concurrent=concurrent, fresh=fresh):
+                self.case(concurrent=concurrent, fresh=fresh)
+                for history in (self.fixture.history["events"], self.fixture.original["history_prefix"]):
+                    for item in history:
+                        shift_command_sequences(item["payload"])
+                shift_command_sequences(self.fixture.original["version_marker"])
+                scheduled = self.fixture.original["timers"] if concurrent else [self.fixture.original["timer"]]
+                for timer in scheduled:
+                    shift_command_sequences(timer)
+                with self.assertRaisesRegex(RuntimeError, "sequence"):
+                    await self.verify()
+
     def test_ready_requires_application_timer_contracts_on_the_selected_packages(self):
         self.assertIsNotNone(timers.ready_snapshot(self.roster(), self.scenario))
         for worker in self.workers:
             worker.supported_workflow_types = [f"polyglot.{worker.runtime}.timer", f"polyglot.{worker.runtime}.concurrent-timers"]
         self.assertIsNone(timers.ready_snapshot(self.roster(), self.scenario))
+
+    def test_combined_readiness_cannot_omit_the_package_selection(self):
+        with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_SDK_VERSIONS": ""}):
+            with self.assertRaisesRegex(RuntimeError, "selected SDK"):
+                timers.ready_snapshot(self.roster(), self.scenario)
+
+    async def test_pending_capture_binds_both_package_identity_and_application_marker(self):
+        for fresh in (False, True):
+            with self.subTest(fresh=fresh):
+                self.case(fresh=fresh)
+                selected = CURRENT if fresh else PREVIOUS
+                for worker in self.workers:
+                    worker.raw["sdk_version"] = f"durable-workflow-{worker.runtime}/{selected[worker.runtime]}"
+                snapshot = {"phase": "workers_ready", "project": "owned-project",
+                            "workers": [timers.worker_snapshot(worker) for worker in self.workers]}
+                workflow_id = f"owned-project-{self.scenario}-python"
+                execution = types.SimpleNamespace(workflow_id=workflow_id, run_id="original-run", status="waiting")
+                history = {"events": copy.deepcopy(self.fixture.original["history_prefix"])}
+                history["events"][0]["payload"]["input"] = [workflow_id]
+                client = types.SimpleNamespace(start_workflow=AsyncMock())
+                with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_WORKERS": json.dumps(snapshot),
+                        "DURABLE_WORKFLOW_TIMER_SDK_VERSIONS": json.dumps(selected)}), \
+                        patch.object(timers, "observe", AsyncMock(return_value=(None, execution, history))), \
+                        patch.object(timers, "datetime", wraps=datetime) as clock, patch.object(timers, "emit") as output:
+                    clock.now.return_value = datetime(2026, 10, 5, tzinfo=timezone.utc)
+                    await timers.pending(client, "python", self.scenario)
+                recorded = output.call_args.kwargs
+                self.assertEqual(recorded["sdk_version"], selected["python"])
+                self.assertEqual(recorded["worker_id"], "owned-python")
+                self.assertEqual(recorded["version_marker"], self.fixture.original["version_marker"])
+                self.assertEqual(recorded["history_prefix"], history["events"])
+                self.assertEqual(client.start_workflow.call_args.kwargs["workflow_type"], "polyglot.python.upgrade-timer")
 
 
 if __name__ == "__main__":

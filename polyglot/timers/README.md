@@ -190,6 +190,45 @@ other durable operations, application changes, build routing and incompatible
 class adoption require separate cases. Source controls do not establish actual
 published-package replay; use the owning run's outcome.
 
+## Upgrade SDK packages and application logic together
+
+With the prepared checkout and resolved tuple above, run:
+
+```bash
+SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-application-timers \
+  scripts/sdk-timers.sh --sdk-application-upgrades
+```
+
+This separate twelve-original experiment changes both the installed SDK and
+the versioned application helper. It reuses the same previous-package baseline
+file and current tuple as the package-only command. It does not change the
+ordinary artifact tuple or add cases to the existing forty-original command.
+
+Each SDK starts single and concurrent timers on the previous package and
+application revision one. That helper records version 1 with authored range
+1..1. All workers are killed and the original timers must fire during absence.
+Cold replacements use the current SDK and revision-two helper, whose authored
+range is 1..2. They must complete those same original runs using version 1,
+with the stored marker, full history prefix, timer/barrier identities,
+sequences and original deadlines unchanged. The result must identify revision
+two while preserving the old branch and typed values.
+
+Fresh current-package controls must select version 2/range 1..2 and the new
+timer durations. Python's registered workflow wrappers remain unchanged and
+their recorded definition must match the replacement; this does not qualify
+incompatible class adoption. Installed versions and the actual worker roster
+are verified before admission. Wrong package identities, rebound definitions,
+changed marker bounds or history prefixes, scalar substitutions and timers
+firing outside worker absence refuse qualification.
+
+Record the six combined upgrades and six fresh controls separately in
+[the SDK audit](https://github.com/durable-workflow/.github/issues/122), with
+the actual old/new packages, original run/worker identities and version
+markers. Existing pending, absent-worker and result budgets stay unchanged.
+Cleanup removes both generations' images and the isolated stack. Constructed
+observer tests are not actual package replay; use the owning run's outcome.
+Other durable operations and build routing retain their separate coverage gaps.
+
 ## Single Rust restart example
 
 This focused service-mode experiment runs a timer authored with the published
