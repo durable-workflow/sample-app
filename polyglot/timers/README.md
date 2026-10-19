@@ -12,7 +12,7 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
 Use the prepared Sample App development container with Docker Compose. The
 checked-in artifact tuple selects exact published packages and images. The
 experiment builds workers from those packages, starts a disposable MySQL/Redis
-Server stack, and checks five scenarios for each workflow language:
+Server stack, and checks eight cases for each workflow language:
 
 - Normal completion after the original 30-second deadline, with exactly one
   scheduled timer, matching fire and completed result.
@@ -23,15 +23,25 @@ Server stack, and checks five scenarios for each workflow language:
   workflow completion. Scheduled and fired members must retain the same
   three-member all/parallel barrier. The runner records actual firing order without
   requiring a separate parent resume for every member of the barrier.
-- Worker `SIGKILL` while waiting, timer fire while all SDK workers are absent,
-  then cold replay in replacement processes without rescheduling or duplicate
-  completion.
-- Server and timer-queue restart across the deadline, preserving timer identity
-  and completing once from the original history.
+- Worker `SIGKILL` while waiting, with either one timer or the three-member
+  concurrent group. Every original timer must fire while all SDK workers are
+  absent, then cold replay in replacement processes must complete once without
+  rescheduling or changing any member or barrier metadata.
+- Server and timer-queue restart across the deadline for both single timers and
+  the concurrent group. The group case keeps them stopped for 62 seconds,
+  crossing all three original deadlines. Every fire must follow restart and
+  preserve the original timer and run identities before one completion.
 - Cooperative cancellation while waiting, duplicate requests preserving the
   original request identity and cleanup deadline, one delivered cancellation
   and cancelled timer, and no fire or completion after the timer's original
-  due time has passed.
+  due time has passed. Repeat for the concurrent group, requiring all three
+  matching cancellations and no fire or completion beyond its last original
+  deadline.
+
+The new concurrent interruption/cancellation cases use a 90-second observation
+window for absent-worker firing and cancelled-history checks, and the existing
+120-second result timeout. The single-timer cases keep their original windows.
+Observation does not renew timer deadlines or the cancellation cleanup deadline.
 
 Every start also checks the public API's `waiting` status. The Python SDK is the
 observer and control client. PHP, Python and Rust author and execute their own
@@ -47,7 +57,7 @@ operator attention or a process supervisor.
 
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
-UTC interval and fifteen scenario outcomes in the owning GitHub issue. Its exit
+UTC interval and twenty-four scenario outcomes in the owning GitHub issue. Its exit
 trap removes the isolated Compose stack, volumes and task worker images on
 success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:
@@ -57,8 +67,8 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-timers COMPOSE_PROFILES=timers \
   docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
 ```
 
-This is focused SDK timer coverage. Concurrent timer cancellation, nested
-cancellation scopes and timer-bearing application upgrades have separate
+This is focused SDK timer coverage. Nested cancellation scopes and
+timer-bearing application upgrades have separate
 qualification requirements.
 
 ## Single Rust restart example
