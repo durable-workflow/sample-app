@@ -42,8 +42,8 @@ distinguish an undelivered task from failed replay or an absent worker.
 
 This recipe also enables Apache poll metadata in its isolated Server container.
 Failure logs include the request start, client address, method, fixed poll path,
-HTTP status, response body size, duration and connection state. Request/response
-bodies, headers and query strings are excluded. Correlate completed server
+HTTP status, response body size, duration and connection state. The added poll
+records exclude bodies, headers and query strings. Correlate completed server
 responses with the Rust replay and callback records to establish worker progress.
 The regular Server image and other recipes keep their normal logging settings.
 
