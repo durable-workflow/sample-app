@@ -158,7 +158,8 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-package-timers \
   scripts/sdk-timers.sh --sdk-upgrades
 ```
 
-This separate twelve-original experiment requires `jq`. Previous SDK versions
+This separate twelve-original experiment uses Python 3 from the prepared image.
+Previous SDK versions
 come from [`sdk-upgrade-baselines.json`](sdk-upgrade-baselines.json); targets
 come from the existing qualified artifact tuple. Neither changes the ordinary
 tuple or earlier outcomes. The application source and registered workflow types

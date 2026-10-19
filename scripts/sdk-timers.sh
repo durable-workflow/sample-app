@@ -7,7 +7,7 @@ if [[ "${1:-}" == --help ]]; then
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
     'Replaces compatible business helpers across all SDKs and checks pinned Python class refusal, restoration and fresh v2 runs.' \
     '--unversioned-upgrades instead runs twelve originals introducing versioning into already pending single/concurrent timers.' \
-    '--sdk-upgrades instead runs twelve originals across previous/current SDK packages with unchanged application code (requires jq).' \
+    '--sdk-upgrades instead runs twelve originals across previous/current SDK packages with unchanged application code (requires Python 3).' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -33,26 +33,68 @@ export POLYGLOT_WORKER_DIAGNOSTICS=1
 export DURABLE_WORKFLOW_TIMER_ID="${COMPOSE_PROJECT_NAME}"
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml")
 workers=(php-same-workflow-worker python-workflow-worker rust-workflow-worker)
+
+package_json() {
+  python3 - "$@" <<'PY'
+import json
+import os
+from pathlib import Path
+import re
+import sys
+
+runtimes = ("php", "python", "rust")
+
+def versions(value):
+    if (not isinstance(value, dict) or set(value) != set(runtimes)
+            or any(not isinstance(version, str) or not version.strip() for version in value.values())):
+        raise SystemExit("Select one exact package version per runtime")
+    return value
+
+operation = sys.argv[1]
+if operation == "baseline":
+    result = versions(json.loads(Path(sys.argv[2]).read_text()))
+    if not all(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value) for value in result.values()):
+        raise SystemExit("Select stable published SDK baselines")
+elif operation == "targets":
+    result = versions({runtime: os.environ.get(f"DURABLE_WORKFLOW_{runtime.upper()}_SDK_VERSION")
+                       for runtime in runtimes})
+elif operation == "different":
+    previous = versions(json.loads(os.environ["DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS"]))
+    target = versions(json.loads(os.environ["DURABLE_WORKFLOW_TIMER_SDK_TARGETS"]))
+    if any(previous[runtime] == target[runtime] for runtime in runtimes):
+        raise SystemExit("Previous and current SDK packages must differ for every runtime")
+    sys.exit(0)
+elif operation == "get":
+    print(versions(json.loads(sys.argv[3]))[sys.argv[2]])
+    sys.exit(0)
+elif operation == "installed":
+    runtime = sys.argv[2]
+    selected = versions(json.loads(os.environ["DURABLE_WORKFLOW_TIMER_SDK_VERSIONS"]))[runtime]
+    result = json.loads(sys.argv[3])
+    if not isinstance(result, dict):
+        raise SystemExit("Package metadata must be a JSON object")
+    if runtime == "rust":
+        if result.get("sdk_identity") != f"durable-workflow-rust/{selected}":
+            raise SystemExit("Compiled Rust SDK differs from the selected package")
+        result["sdk_version"] = selected
+    if result.get("sdk_version") != selected:
+        raise SystemExit("Installed SDK differs from the selected package")
+    result.update(phase="package_installed", runtime=runtime,
+                  generation=os.environ["SDK_TIMERS_PACKAGE_GENERATION"])
+else:
+    raise SystemExit("Unknown SDK package metadata operation")
+print(json.dumps(result, sort_keys=True))
+PY
+}
+
 if (( sdk_packages_only )); then
-  command -v jq >/dev/null || { printf '%s\n' 'SDK package upgrades require jq.' >&2; exit 2; }
+  command -v python3 >/dev/null || { printf '%s\n' 'SDK package upgrades require Python 3.' >&2; exit 2; }
   compose+=(-f "$repo_root/polyglot/timers/compose-sdk-upgrades.yml")
   export DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS
-  DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS=$(jq -ce '
-    if type == "object" and (keys == ["php", "python", "rust"])
-      and all(.[]; type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
-    then . else error("Select one exact published baseline per SDK") end
-  ' "$repo_root/polyglot/timers/sdk-upgrade-baselines.json")
+  DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS=$(package_json baseline "$repo_root/polyglot/timers/sdk-upgrade-baselines.json")
   export DURABLE_WORKFLOW_TIMER_SDK_TARGETS
-  DURABLE_WORKFLOW_TIMER_SDK_TARGETS=$(jq -cn \
-    --arg php "${DURABLE_WORKFLOW_PHP_SDK_VERSION:?resolve the published tuple}" \
-    --arg python "${DURABLE_WORKFLOW_PYTHON_SDK_VERSION:?resolve the published tuple}" \
-    --arg rust "${DURABLE_WORKFLOW_RUST_SDK_VERSION:?resolve the published tuple}" \
-    '{php:$php,python:$python,rust:$rust}')
-  jq -en --argjson previous "$DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS" \
-    --argjson target "$DURABLE_WORKFLOW_TIMER_SDK_TARGETS" \
-    'all($previous | to_entries[]; .value != $target[.key])' >/dev/null || {
-      printf '%s\n' 'Previous and current SDK packages must differ for every runtime.' >&2; exit 2;
-    }
+  DURABLE_WORKFLOW_TIMER_SDK_TARGETS=$(package_json targets)
+  package_json different
   target_php_pin="${DURABLE_WORKFLOW_PHP_SDK_PIN:-}"
 fi
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
@@ -94,9 +136,9 @@ package_generation() {
   export SDK_TIMERS_PACKAGE_GENERATION="$generation"
   export DURABLE_WORKFLOW_TIMER_SDK_VERSIONS="$versions"
   export DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFLOW_PYTHON_SDK_VERSION DURABLE_WORKFLOW_RUST_SDK_VERSION
-  DURABLE_WORKFLOW_PHP_SDK_VERSION=$(jq -r .php <<<"$versions")
-  DURABLE_WORKFLOW_PYTHON_SDK_VERSION=$(jq -r .python <<<"$versions")
-  DURABLE_WORKFLOW_RUST_SDK_VERSION=$(jq -r .rust <<<"$versions")
+  DURABLE_WORKFLOW_PHP_SDK_VERSION=$(package_json get php "$versions")
+  DURABLE_WORKFLOW_PYTHON_SDK_VERSION=$(package_json get python "$versions")
+  DURABLE_WORKFLOW_RUST_SDK_VERSION=$(package_json get rust "$versions")
   export DURABLE_WORKFLOW_PHP_SDK_PIN="$target_php_pin"
   if [[ "$generation" == previous ]]; then
     export DURABLE_WORKFLOW_PHP_SDK_PIN="durable-workflow/sdk:$DURABLE_WORKFLOW_PHP_SDK_VERSION"
@@ -104,9 +146,8 @@ package_generation() {
 }
 
 installed_packages() {
-  local runtime metadata version
+  local runtime metadata
   for runtime in php python rust; do
-    version=$(jq -r --arg runtime "$runtime" '.[$runtime]' <<<"$DURABLE_WORKFLOW_TIMER_SDK_VERSIONS")
     case "$runtime" in
       php)
         metadata=$("${compose[@]}" run --rm --no-deps --user 1000:1000 php-same-workflow-worker php -r '
@@ -118,14 +159,9 @@ installed_packages() {
 import importlib.metadata, json
 print(json.dumps({"sdk_version": importlib.metadata.version("durable-workflow")}))') ;;
       rust)
-        metadata=$("${compose[@]}" run --rm --no-deps --user 1000:1000 -e POLYGLOT_RUST_MODE=sdk-metadata rust-workflow-worker)
-        metadata=$(jq --arg version "$version" \
-          'if .sdk_identity == ("durable-workflow-rust/" + $version) then . + {sdk_version:$version}
-           else error("Compiled Rust SDK differs from the selected package") end' <<<"$metadata") ;;
+        metadata=$("${compose[@]}" run --rm --no-deps --user 1000:1000 -e POLYGLOT_RUST_MODE=sdk-metadata rust-workflow-worker) ;;
     esac
-    jq -ce --arg version "$version" --arg runtime "$runtime" --arg generation "$SDK_TIMERS_PACKAGE_GENERATION" \
-      'if .sdk_version == $version then . + {phase:"package_installed",runtime:$runtime,generation:$generation}
-       else error("Installed SDK differs from the selected package") end' <<<"$metadata"
+    package_json installed "$runtime" "$metadata"
   done
 }
 

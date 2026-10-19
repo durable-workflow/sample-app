@@ -50,9 +50,9 @@ elif "rust-workflow-worker" in args:
 '''
 
 
-@unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "runner control requires bash and jq")
+@unittest.skipUnless(shutil.which("bash") and shutil.which("python3"), "runner control requires bash and Python 3")
 class PackageUpgradeRunnerTest(unittest.TestCase):
-    def run_control(self, *, wrong_package=False):
+    def run_control(self, *, wrong_package=False, targets=None, allow_empty=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             docker = root / "docker"
@@ -64,14 +64,15 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
                 "DURABLE_SERVER_IMAGE": "server:constructed", "DURABLE_WORKFLOW_CLI_VERSION": "0.0.1",
                 "DURABLE_WORKFLOW_WORKFLOW_VERSION": "0.0.1", "DURABLE_WORKFLOW_WATERLINE_VERSION": "0.0.1",
                 "DURABLE_WORKFLOW_PHP_SDK_PIN": "durable-workflow/sdk:2.5.1@target-reference"}
-            for runtime, version in CURRENT.items():
+            for runtime, version in (CURRENT if targets is None else targets).items():
                 environment[f"DURABLE_WORKFLOW_{runtime.upper()}_SDK_VERSION"] = version
             if wrong_package:
                 environment["FAKE_WRONG_PACKAGE"] = "1"
             result = subprocess.run(["bash", "scripts/sdk-timers.sh", "--sdk-upgrades"],
                 cwd=Path(__file__).parents[3], env=environment, capture_output=True, text=True, timeout=15)
-            self.assertTrue(log.exists(), result.stderr or result.stdout)
-            records = [json.loads(line) for line in log.read_text().splitlines()]
+            if not allow_empty:
+                self.assertTrue(log.exists(), result.stderr or result.stdout)
+            records = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             return result, records
 
     def test_distinct_packages_are_built_before_admission_and_replacements_keep_application_code(self):
@@ -96,6 +97,13 @@ class PackageUpgradeRunnerTest(unittest.TestCase):
         self.assertFalse(any("/app/scripts/sdk_timers.py" in record["args"]
                              and record["args"][-2] == "start" for record in records))
         self.assertTrue(any("down" in record["args"] for record in records))
+
+    def test_equal_or_missing_target_refuses_before_any_docker_operation(self):
+        for version in (PREVIOUS["rust"], ""):
+            with self.subTest(version=version):
+                result, records = self.run_control(targets={**CURRENT, "rust": version}, allow_empty=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(records, [])
 
 
 class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
