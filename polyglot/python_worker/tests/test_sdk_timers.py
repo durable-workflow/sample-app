@@ -204,6 +204,21 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
             await timers.pending(client, "rust", "completion")
         self.assertEqual(observer.await_count, 2)
 
+    async def test_scheduling_timeout_identifies_the_original_run_and_observed_state(self):
+        client = types.SimpleNamespace(start_workflow=AsyncMock())
+        self.execution.status = "running"
+        history = {"events": [event("WorkflowStarted", sequence=1)]}
+        observer = AsyncMock(return_value=(self.handle, self.execution, history))
+        loop = types.SimpleNamespace(time=unittest.mock.Mock(side_effect=[0, 20]))
+        with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_ID": "timer"}), \
+                patch.object(timers, "observe", observer), \
+                patch.object(timers.asyncio, "get_running_loop", return_value=loop), \
+                self.assertRaises(TimeoutError) as failure:
+            await timers.pending(client, "rust", "application-upgrade")
+        for field in ("application-upgrade", "timer-rust", "run-1", "running", "WorkflowStarted"):
+            self.assertIn(field, str(failure.exception))
+        self.assertEqual(observer.await_count, 1)
+
     async def test_duplicate_or_missing_durable_events_cannot_pass(self):
         for kind in ("TimerScheduled", "TimerFired", "WorkflowCompleted"):
             for duplicate in (False, True):
