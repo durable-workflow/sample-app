@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 path = Path(__file__).parents[1] / "scripts" / "sdk_activity_upgrades.py"
 spec = importlib.util.spec_from_file_location("activity_upgrades", path)
@@ -183,6 +183,36 @@ class ActivityUpgradeEvidenceTest(unittest.TestCase):
         workers, common, selected = self.roster_case(True)
         with self.assertRaisesRegex(RuntimeError, "Ambiguous"):
             upgrades.ready_snapshot([*workers, workers[0]], common, selected)
+
+
+class PendingCheckpointRaceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_history_can_observe_schedule_after_the_earlier_describe_read(self):
+        fixture = ActivityUpgradeEvidenceTest()
+        fixture.case()
+        history = {"events": fixture.original["history_prefix"]}
+        running = types.SimpleNamespace(status="running", run_id="original-run")
+        waiting = types.SimpleNamespace(status="waiting", run_id="original-run")
+        common = types.SimpleNamespace(required=lambda key: "owned-project",
+            retirement_snapshot=lambda: [{"runtime": "python", "worker_id": "previous-worker"}])
+        client = types.SimpleNamespace(start_workflow=AsyncMock())
+        with patch.object(upgrades, "observe", AsyncMock(side_effect=[(None, running, history), (None, waiting, history)])) as read, \
+                patch.object(upgrades.asyncio, "sleep", AsyncMock()), patch.object(upgrades, "emit") as output:
+            await upgrades.start_original(client, common, "activity-upgrade", {"python": "2.5.15"}, "python", "rust")
+        self.assertEqual(read.await_count, 2)
+        self.assertEqual(output.call_args.kwargs["run_id"], "original-run")
+        self.assertEqual(output.call_args.kwargs["history_prefix"], history["events"])
+
+    async def test_an_activity_started_before_replacement_still_refuses(self):
+        fixture = ActivityUpgradeEvidenceTest()
+        fixture.case()
+        history = {"events": fixture.history["events"][:4]}
+        waiting = types.SimpleNamespace(status="waiting", run_id="original-run")
+        common = types.SimpleNamespace(required=lambda key: "owned-project",
+            retirement_snapshot=lambda: [{"runtime": "python", "worker_id": "previous-worker"}])
+        with patch.object(upgrades, "observe", AsyncMock(return_value=(None, waiting, history))), \
+                patch.object(upgrades, "emit"), self.assertRaisesRegex(RuntimeError, "pending|before replacement"):
+            await upgrades.start_original(types.SimpleNamespace(start_workflow=AsyncMock()), common,
+                                          "activity-upgrade", {"python": "2.5.15"}, "python", "rust")
 
 
 if __name__ == "__main__":

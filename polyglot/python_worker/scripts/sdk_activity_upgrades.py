@@ -177,7 +177,9 @@ async def start_original(client, common, scenario, selected, workflow, activity)
     deadline = asyncio.get_running_loop().time() + 20
     while True:
         _, execution, history = await observe(client, workflow_id, workflow)
-        if events(history, "ActivityScheduled"):
+        require(fresh or not events(history, "ActivityStarted"),
+                f"Activity started before replacement: {workflow_id}, run={execution.run_id}, status={execution.status}.")
+        if events(history, "ActivityScheduled") and (fresh or execution.status == "waiting"):
             break
         require(execution.status not in {"failed", "cancelled", "terminated"}, "Original closed before activity scheduling.")
         if asyncio.get_running_loop().time() >= deadline:
