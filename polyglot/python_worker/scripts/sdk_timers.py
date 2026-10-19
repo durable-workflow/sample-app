@@ -148,12 +148,13 @@ def retirement_snapshot() -> list[dict]:
 async def retire_workers(client: Client, scenario: str) -> None:
     workers = retirement_snapshot()
     current = {worker.worker_id: worker for worker in (await client.list_workers()).workers}
+    if any(original["worker_id"] in current and not same_json_value(
+            worker_snapshot(current[original["worker_id"]]), original) for original in workers):
+        raise RuntimeError("Worker registration changed before owned retirement.")
     for original in workers:
         worker_id = original["worker_id"]
         if worker_id not in current:
             continue
-        if not same_json_value(worker_snapshot(current[worker_id]), original):
-            raise RuntimeError("Worker registration changed before owned retirement.")
         try:
             result = await client.deregister_worker(worker_id)
         except Exception as error:
@@ -453,6 +454,17 @@ def check_upgrade_prefix(original: dict, execution, history: dict, scenario: str
     return marker
 
 
+def original_unclaimed_tasks(debug: dict, execution) -> list[dict]:
+    tasks = debug.get("pending_workflow_tasks", [])
+    if (debug.get("workflow_id") != execution.workflow_id or debug.get("run_id") != execution.run_id
+            or not tasks or any(task.get("task_type") != "workflow" or task.get("status") != "ready"
+                or task.get("lease_owner") is not None or type(task.get("attempt_count")) is not int
+                or task["attempt_count"] != 0 or type(task.get("repair_count")) is not int
+                or task["repair_count"] != 0 for task in tasks)):
+        raise RuntimeError("Definition refusal must retain the original ready, unclaimed, unrepaired task.")
+    return tasks
+
+
 async def verify_definition_fence(client: Client, scenario: str) -> None:
     if scenario not in CLASS_UPGRADE_SCENARIOS or UPGRADE_SCENARIOS[scenario][1] != 1:
         raise RuntimeError("Definition refusal requires an original Python class-replacement case.")
@@ -483,13 +495,7 @@ async def verify_definition_fence(client: Client, scenario: str) -> None:
         check_timer_metadata(original["timer"], tail[0]["payload"], "fired")
     debug = control_read(f"/workflows/{quote(execution.workflow_id, safe='')}/runs/"
                          f"{quote(execution.run_id, safe='')}/debug")
-    tasks = debug.get("pending_workflow_tasks", [])
-    if (debug.get("workflow_id") != execution.workflow_id or debug.get("run_id") != execution.run_id
-            or not tasks or any(task.get("task_type") != "workflow" or task.get("status") != "ready"
-                or task.get("lease_owner") is not None or type(task.get("attempt_count")) is not int
-                or task["attempt_count"] != 0 or type(task.get("repair_count")) is not int
-                or task["repair_count"] != 0 for task in tasks)):
-        raise RuntimeError("Definition refusal must retain the original ready, unclaimed, unrepaired task.")
+    tasks = original_unclaimed_tasks(debug, execution)
     emit(phase="definition_fenced", runtime="python", scenario=scenario, workflow_id=execution.workflow_id,
          run_id=execution.run_id, original_definition=fingerprint, replacement_definition=replacement,
          worker_id=workers[0].worker_id, pending_tasks=tasks)
