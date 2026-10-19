@@ -540,6 +540,11 @@ class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
     async def test_matching_timer_and_one_result_pass(self):
         await self.verify(self.history)
 
+    async def test_result_duration_keeps_its_integer_type(self):
+        self.handle.result.return_value["timer_seconds"] = 30.0
+        with self.assertRaises(RuntimeError):
+            await self.verify(self.history)
+
     async def test_pending_waits_for_status_after_timer_history_arrives(self):
         client = types.SimpleNamespace(start_workflow=AsyncMock())
         history = {"events": [event(
@@ -697,6 +702,11 @@ class ConcurrentTimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_original_with_three_concurrent_timers_passes(self):
         await self.verify()
+
+    async def test_result_durations_keep_their_integer_types(self):
+        self.handle.result.return_value["timer_seconds"] = [60, 30.0, 45]
+        with self.assertRaises(RuntimeError):
+            await self.verify()
 
     async def test_worker_recovery_preserves_every_fire_during_the_absence(self):
         with patch.dict("os.environ", {

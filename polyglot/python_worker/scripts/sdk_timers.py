@@ -21,7 +21,10 @@ CONCURRENT_SCENARIOS = {
     "concurrent-worker-restart": "worker-restart",
     "concurrent-server-restart": "server-restart",
     "concurrent-cancellation": "cancellation",
+    "concurrent-sdk-upgrade": "worker-restart",
+    "concurrent-sdk-upgrade-fresh": "completion",
 }
+SDK_UPGRADE_SCENARIOS = {"sdk-upgrade", "sdk-upgrade-fresh", "concurrent-sdk-upgrade", "concurrent-sdk-upgrade-fresh"}
 CLASS_UPGRADE_SCENARIOS = {
     "class-replacement": (False, 1),
     "class-replacement-fresh": (False, 2),
@@ -107,25 +110,86 @@ def active_workers(roster, runtime: str) -> list:
 
 
 def worker_snapshot(worker) -> dict:
-    return {"worker_id": worker.worker_id, "namespace": worker.namespace,
+    snapshot = {"worker_id": worker.worker_id, "namespace": worker.namespace,
             "runtime": worker.runtime, "task_queue": worker.task_queue,
             "workflow_definition_fingerprints": (worker.raw or {}).get("workflow_definition_fingerprints", {})}
+    sdk_version = (worker.raw or {}).get("sdk_version")
+    if sdk_version is not None:
+        snapshot["sdk_version"] = sdk_version
+    return snapshot
+
+
+def sdk_versions(name: str) -> dict:
+    versions = json.loads(required(name))
+    if (not isinstance(versions, dict) or set(versions) != set(RUNTIMES)
+            or any(not isinstance(value, str) or not value.strip() for value in versions.values())):
+        raise RuntimeError("SDK versions must identify one exact package per runtime.")
+    return versions
+
+
+def package_worker(runtime: str) -> dict:
+    selected = next(worker for worker in retirement_snapshot() if worker["runtime"] == runtime)
+    version = sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_VERSIONS")[runtime]
+    if selected.get("sdk_version") != f"durable-workflow-{runtime}/{version}":
+        raise RuntimeError("The owned worker does not identify the selected SDK package.")
+    return {**selected, "package_version": version}
+
+
+def package_upgrade_metadata(runtime: str, scenario: str, history: dict) -> dict:
+    if scenario not in SDK_UPGRADE_SCENARIOS:
+        return {}
+    original = original_pending(runtime, scenario)
+    prefix = original["history_prefix"]
+    if not prefix or not same_json_value(history["events"][:len(prefix)], prefix):
+        raise RuntimeError("SDK replacement rewrote the original history prefix.")
+    if events(history, "VersionMarkerRecorded"):
+        raise RuntimeError("SDK replacement introduced an unrequested version marker.")
+    current = package_worker(runtime)
+    target = sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_TARGETS")[runtime]
+    previous = sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS")[runtime]
+    fresh = scenario.endswith("-fresh")
+    expected_original = target if fresh else previous
+    if (previous == target or original.get("sdk_version") != expected_original
+            or current["package_version"] != target):
+        raise RuntimeError("The original or replacement SDK does not match the selected package upgrade.")
+    if not isinstance(original.get("worker_id"), str) or not original["worker_id"].strip():
+        raise RuntimeError("SDK replay has no original worker identity.")
+    if not fresh and original.get("worker_id") == current["worker_id"]:
+        raise RuntimeError("SDK replay did not use a cold replacement worker.")
+    if runtime == "python":
+        fingerprint = check_upgrade_definition_binding(history)
+        workflow_type = f"polyglot.python.{workflow_suffix(scenario)}"
+        if current["workflow_definition_fingerprints"].get(workflow_type) != fingerprint:
+            raise RuntimeError("SDK replacement changed the bound Python workflow definition.")
+    return {"previous_sdk_version": original["sdk_version"], "sdk_version": target,
+            "original_worker_id": original["worker_id"], "worker_id": current["worker_id"]}
+
+
+def required_timer_types(runtime: str, sdk_packages: bool) -> set[str]:
+    if sdk_packages:
+        return {f"polyglot.{runtime}.timer", f"polyglot.{runtime}.concurrent-timers"}
+    types = {f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers",
+             f"polyglot.{runtime}.unversioned-upgrade-timer", f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"}
+    if runtime == "python":
+        types.update({"polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"})
+    return types
 
 
 def ready_snapshot(roster):
     selected = []
+    expected_versions = sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_VERSIONS") if os.environ.get(
+        "DURABLE_WORKFLOW_TIMER_SDK_VERSIONS") else {}
     for runtime in RUNTIMES:
         matches = active_workers(roster, runtime)
         if len(matches) > 1:
             raise RuntimeError(f"Ambiguous active worker definitions for {runtime}.")
-        types = {f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"}
-        types.update({f"polyglot.{runtime}.unversioned-upgrade-timer",
-                      f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"})
-        if runtime == "python":
-            types.update({"polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"})
+        types = required_timer_types(runtime, bool(expected_versions))
         if len(matches) != 1 or not types <= set(matches[0].supported_workflow_types or []):
             return None
-        selected.append(worker_snapshot(matches[0]))
+        snapshot = worker_snapshot(matches[0])
+        if expected_versions and snapshot.get("sdk_version") != f"durable-workflow-{runtime}/{expected_versions[runtime]}":
+            return None
+        selected.append(snapshot)
     return selected
 
 
@@ -217,6 +281,7 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     concurrent = is_concurrent(scenario)
     suffix = workflow_suffix(scenario)
     delays = timer_delays(scenario)
+    package = package_worker(runtime) if scenario in SDK_UPGRADE_SCENARIOS else None
     await client.start_workflow(
         workflow_type=f"polyglot.{runtime}.{suffix}",
         workflow_id=workflow_id,
@@ -255,6 +320,11 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
         if runtime == "python":
             check_upgrade_definition_binding(history)
         observation.update(version_marker=upgrade_marker(history, scenario), history_prefix=history["events"])
+    if package is not None:
+        if runtime == "python":
+            check_upgrade_definition_binding(history)
+        observation.update(history_prefix=history["events"], sdk_version=package["package_version"],
+                           worker_id=package["worker_id"])
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
          run_id=execution.run_id, status=execution.status, **observation)
     if CONCURRENT_SCENARIOS.get(scenario, scenario) == "cancellation":
@@ -344,7 +414,7 @@ def check_resolved_members(timers: list[dict], resolved: list[dict], outcome: st
 
 
 def check_interruption(scenario: str, scheduled: dict, fired: dict) -> None:
-    lifecycle = CONCURRENT_SCENARIOS.get(scenario, scenario)
+    lifecycle = "worker-restart" if scenario == "sdk-upgrade" else CONCURRENT_SCENARIOS.get(scenario, scenario)
     if lifecycle == "worker-restart":
         stopped = timestamp(required("DURABLE_WORKFLOW_WORKER_STOPPED_AT"))
         restarted = timestamp(required("DURABLE_WORKFLOW_WORKER_RESTART_AT"))
@@ -362,8 +432,8 @@ def check_interruption(scenario: str, scheduled: dict, fired: dict) -> None:
 def interruption_record(scenario: str) -> dict:
     fields = {"worker-restart": ("worker_stopped_at", "worker_restart_at"),
               "server-restart": ("server_stopped_at", "server_restart_at")}
-    return {key: required(f"DURABLE_WORKFLOW_{key.upper()}")
-            for key in fields.get(CONCURRENT_SCENARIOS.get(scenario, scenario), ())}
+    lifecycle = "worker-restart" if scenario == "sdk-upgrade" else CONCURRENT_SCENARIOS.get(scenario, scenario)
+    return {key: required(f"DURABLE_WORKFLOW_{key.upper()}") for key in fields.get(lifecycle, ())}
 
 
 async def cancelled_parallel_history(client: Client, runtime: str, scenario: str):
@@ -419,7 +489,7 @@ async def verify_concurrent(client: Client, runtime: str, scenario: str) -> None
         result = await handle.result(timeout=120, poll_interval=0.25)
         _, execution, history = await observe(client, runtime, scenario)
         expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "timer_seconds": CONCURRENT_SECONDS}
-        if execution.status != "completed" or result != expected:
+        if execution.status != "completed" or not same_json_value(result, expected):
             raise RuntimeError(f"Unexpected concurrent timer outcome: {execution!r}, {result!r}")
     timers = original_parallel_timers(runtime, scenario, execution, history)
     if CONCURRENT_SCENARIOS[scenario] == "cancellation":
@@ -430,7 +500,8 @@ async def verify_concurrent(client: Client, runtime: str, scenario: str) -> None
          run_id=execution.run_id, status=execution.status, result=result,
          interruption=interruption_record(scenario),
          history_events=[item["event_type"] for item in history["events"]],
-         timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")])
+         timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")],
+         **package_upgrade_metadata(runtime, scenario, history))
 
 
 def check_version_introduction(history: dict, scenario: str) -> None:
@@ -612,7 +683,7 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
         result = await handle.result(timeout=120, poll_interval=0.25)
         handle, execution, history = await observe(client, runtime, scenario)
         expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "timer_seconds": TIMER_SECONDS}
-        if not isinstance(result, dict) or any(result.get(key) != value for key, value in expected.items()):
+        if not same_json_value(result, expected):
             raise RuntimeError(f"Unexpected {runtime} result: {result!r}")
         if execution.status != "completed":
             raise RuntimeError(f"Workflow did not complete: {execution!r}")
@@ -634,7 +705,8 @@ async def verify(client: Client, runtime: str, scenario: str) -> None:
          run_id=execution.run_id, status=execution.status, result=result,
          interruption=interruption_record(scenario),
          history_events=[event["event_type"] for event in history["events"]],
-         timer_events=[event for event in history["events"] if event["event_type"].startswith("Timer")])
+         timer_events=[event for event in history["events"] if event["event_type"].startswith("Timer")],
+         **package_upgrade_metadata(runtime, scenario, history))
 
 
 async def main(phase: str, scenario: str) -> None:
@@ -670,6 +742,6 @@ async def main(phase: str, scenario: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose", "ready", "retire", "fenced"))
-    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS, *UPGRADE_SCENARIOS))
+    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS, *UPGRADE_SCENARIOS, "sdk-upgrade", "sdk-upgrade-fresh"))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))

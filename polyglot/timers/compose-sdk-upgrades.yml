@@ -1,0 +1,7 @@
+services:
+  php-same-workflow-worker:
+    image: ${COMPOSE_PROJECT_NAME}-php-sdk-worker-${SDK_TIMERS_PACKAGE_GENERATION:?select previous or current}:latest
+  python-workflow-worker:
+    image: ${COMPOSE_PROJECT_NAME}-python-workflow-worker-${SDK_TIMERS_PACKAGE_GENERATION:?select previous or current}:latest
+  rust-workflow-worker:
+    image: ${COMPOSE_PROJECT_NAME}-rust-workflow-worker-${SDK_TIMERS_PACKAGE_GENERATION:?select previous or current}:latest

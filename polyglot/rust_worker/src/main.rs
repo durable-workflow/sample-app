@@ -36,12 +36,17 @@ struct SignalState {
 async fn main() -> Result<()> {
     verify_official_avro_runtime()?;
 
+    let mode = env::var("POLYGLOT_RUST_MODE").unwrap_or_else(|_| "workflow".into());
+    if mode == "sdk-metadata" {
+        println!("{}", json!({"sdk_identity": durable_workflow::SDK_VERSION}));
+        return Ok(());
+    }
+
     let server_url = required_env("DURABLE_WORKFLOW_SERVER_URL");
     let token = env::var("DURABLE_WORKFLOW_AUTH_TOKEN")
         .ok()
         .filter(|value| !value.is_empty());
     let namespace = env::var("DURABLE_WORKFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
-    let mode = env::var("POLYGLOT_RUST_MODE").unwrap_or_else(|_| "workflow".into());
 
     let client = Client::builder(server_url)
         .token(token)

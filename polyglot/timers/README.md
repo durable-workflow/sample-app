@@ -145,9 +145,49 @@ CI job and does not extend the main forty-original experiment.
 Report these twelve outcomes separately from the forty above in
 [the SDK audit](https://github.com/durable-workflow/.github/issues/122).
 Include the exact runner commit, artifact tuple and original outcomes. Keep
-observer source tests distinct from actual installed-package replay. SDK
-package upgrades, build-ID rollouts and incompatible class adoption remain
-separate cases.
+observer source tests distinct from actual installed-package replay. Build-ID
+rollouts and incompatible class adoption remain separate cases. SDK package
+upgrades use their own command below.
+
+## Upgrade SDK packages with pending timers
+
+With the same prepared checkout and resolved published tuple, run:
+
+```bash
+SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-package-timers \
+  scripts/sdk-timers.sh --sdk-upgrades
+```
+
+This separate twelve-original experiment requires `jq`. Previous SDK versions
+come from [`sdk-upgrade-baselines.json`](sdk-upgrade-baselines.json); targets
+come from the existing qualified artifact tuple. Neither changes the ordinary
+tuple or earlier outcomes. The application source and registered workflow types
+are identical across both builds.
+
+Before admission, build distinct previous/current worker images and verify each
+installed package. PHP reports Composer's installed version/reference, Python
+uses installed package metadata, and Rust reports the SDK identity compiled into
+the executable. The worker roster must identify that exact language/package
+before an original starts. A current image labelled as a previous package must
+fail before workflow admission.
+
+For each SDK, start single and concurrent originals on the previous package,
+kill the workers and let every original timer fire during absence. Cold current
+workers must complete those same runs with unchanged complete history prefixes,
+timer/barrier identities, sequences and deadlines. Python's recorded definition
+must match the replacement's unchanged source. No version marker is authored or
+introduced. Fresh current-package controls use the same application and timer
+durations. All twelve results retain exact scalar types and one completion.
+
+Record the six upgrade outcomes and six fresh controls separately, with actual
+old/new package versions, runner SHA, Server digest and original identities in
+[the SDK audit](https://github.com/durable-workflow/.github/issues/122).
+Existing 20-second pending, 60/90-second absent-worker and 120-second result
+windows stay unchanged. Cleanup removes both generations' task images and the
+isolated stack. A passing run qualifies only the selected package pairs and timer code;
+other durable operations, application changes, build routing and incompatible
+class adoption require separate cases. Source controls do not establish actual
+published-package replay; use the owning run's outcome.
 
 ## Single Rust restart example
 

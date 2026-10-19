@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import types
 import unittest
 from unittest.mock import patch
@@ -12,6 +17,85 @@ import test_sdk_timers as fixtures
 timers = fixtures.timers
 PREVIOUS = {"php": "2.5.0", "python": "2.5.15", "rust": "3.5.4"}
 CURRENT = {"php": "2.5.1", "python": "2.6.0", "rust": "3.5.5"}
+
+FAKE_DOCKER = r'''#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+versions = {runtime: os.environ.get("DURABLE_WORKFLOW_" + runtime.upper() + "_SDK_VERSION")
+            for runtime in ("php", "python", "rust")}
+record = {"args": args, "versions": versions, "generation": os.environ.get("SDK_TIMERS_PACKAGE_GENERATION"),
+          "application": os.environ.get("POLYGLOT_TIMER_APPLICATION"),
+          "php_pin": os.environ.get("DURABLE_WORKFLOW_PHP_SDK_PIN"),
+          "server": os.environ["DURABLE_SERVER_IMAGE"]}
+with open(os.environ["FAKE_DOCKER_LOG"], "a") as stream:
+    stream.write(json.dumps(record) + "\n")
+if args[:2] == ["image", "inspect"]:
+    if args[2] == os.environ["DURABLE_SERVER_IMAGE"]:
+        print("[]")
+        sys.exit(0)
+    sys.exit(1)
+if "run" not in args:
+    sys.exit(0)
+if "/app/scripts/sdk_timers.py" in args:
+    print(json.dumps({"phase": args[-2], "scenario": args[-1]}))
+elif "php-same-workflow-worker" in args:
+    print(json.dumps({"sdk_version": versions["php"], "reference": "constructed"}))
+elif "python-workflow-worker" in args:
+    print(json.dumps({"sdk_version": versions["python"]}))
+elif "rust-workflow-worker" in args:
+    version = versions["rust"]
+    if os.environ.get("FAKE_WRONG_PACKAGE") and record["generation"] == "previous":
+        version = "9.9.9"
+    print(json.dumps({"sdk_identity": "durable-workflow-rust/" + version}))
+'''
+
+
+@unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "runner control requires bash and jq")
+class PackageUpgradeRunnerTest(unittest.TestCase):
+    def run_control(self, *, wrong_package=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / "docker"
+            docker.write_text(FAKE_DOCKER)
+            docker.chmod(0o755)
+            log = root / "commands.jsonl"
+            environment = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
+                "FAKE_DOCKER_LOG": str(log), "SDK_TIMERS_COMPOSE_PROJECT_NAME": "owned-sdk-packages",
+                "DURABLE_SERVER_IMAGE": "server:constructed", "DURABLE_WORKFLOW_CLI_VERSION": "0.0.1",
+                "DURABLE_WORKFLOW_WORKFLOW_VERSION": "0.0.1", "DURABLE_WORKFLOW_WATERLINE_VERSION": "0.0.1",
+                "DURABLE_WORKFLOW_PHP_SDK_PIN": "durable-workflow/sdk:2.5.1@target-reference"}
+            for runtime, version in CURRENT.items():
+                environment[f"DURABLE_WORKFLOW_{runtime.upper()}_SDK_VERSION"] = version
+            if wrong_package:
+                environment["FAKE_WRONG_PACKAGE"] = "1"
+            result = subprocess.run(["bash", "scripts/sdk-timers.sh", "--sdk-upgrades"],
+                cwd=Path(__file__).parents[3], env=environment, capture_output=True, text=True, timeout=15)
+            self.assertTrue(log.exists(), result.stderr or result.stdout)
+            records = [json.loads(line) for line in log.read_text().splitlines()]
+            return result, records
+
+    def test_distinct_packages_are_built_before_admission_and_replacements_keep_application_code(self):
+        result, records = self.run_control()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        builds = [record for record in records if "build" in record["args"]]
+        self.assertEqual([record["versions"] for record in builds], [CURRENT, PREVIOUS])
+        self.assertEqual([record["generation"] for record in builds], ["current", "previous"])
+        self.assertEqual(builds[-1]["php_pin"], f"durable-workflow/sdk:{PREVIOUS['php']}")
+        starts = [record for record in records if "/app/scripts/sdk_timers.py" in record["args"]
+                  and record["args"][-2] == "start"]
+        self.assertEqual([record["args"][-1] for record in starts], [
+            "sdk-upgrade", "sdk-upgrade-fresh", "concurrent-sdk-upgrade", "concurrent-sdk-upgrade-fresh"])
+        self.assertEqual([record["versions"] for record in starts], [PREVIOUS, CURRENT, PREVIOUS, CURRENT])
+        self.assertEqual({record["application"] for record in starts}, {"v2"})
+        self.assertEqual({record["server"] for record in records}, {"server:constructed"})
+        self.assertTrue(any("down" in record["args"] for record in records))
+
+    def test_mislabelled_previous_package_refuses_before_any_original_and_still_cleans_up(self):
+        result, records = self.run_control(wrong_package=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any("/app/scripts/sdk_timers.py" in record["args"]
+                             and record["args"][-2] == "start" for record in records))
+        self.assertTrue(any("down" in record["args"] for record in records))
 
 
 class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
@@ -28,7 +112,7 @@ class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(environment.stop)
         self.workers = [fixtures.WorkerRosterEvidenceTest.worker(runtime) for runtime in timers.RUNTIMES]
         for worker in self.workers:
-            worker.raw["sdk_version"] = CURRENT[worker.runtime]
+            worker.raw["sdk_version"] = f"durable-workflow-{worker.runtime}/{CURRENT[worker.runtime]}"
             for suffix in ("timer", "concurrent-timers"):
                 name = f"polyglot.{worker.runtime}.{suffix}"
                 worker.supported_workflow_types.append(name)
@@ -72,7 +156,7 @@ class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 await self.verify()
 
     async def test_ready_refuses_a_current_image_label_backed_by_the_wrong_sdk(self):
-        self.workers[-1].raw["sdk_version"] = PREVIOUS["rust"]
+        self.workers[-1].raw["sdk_version"] = f"durable-workflow-rust/{PREVIOUS['rust']}"
         self.assertIsNone(timers.ready_snapshot(types.SimpleNamespace(workers=self.workers)))
 
     async def test_ready_refuses_missing_or_non_string_sdk_identity(self):
@@ -80,6 +164,13 @@ class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(value=value):
                 self.workers[-1].raw["sdk_version"] = value
                 self.assertIsNone(timers.ready_snapshot(types.SimpleNamespace(workers=self.workers)))
+
+    async def test_ready_refuses_the_wrong_language_prefix_or_missing_timer_type(self):
+        self.workers[-1].raw["sdk_version"] = f"durable-workflow-python/{CURRENT['rust']}"
+        self.assertIsNone(timers.ready_snapshot(types.SimpleNamespace(workers=self.workers)))
+        self.workers[-1].raw["sdk_version"] = f"durable-workflow-rust/{CURRENT['rust']}"
+        self.workers[-1].supported_workflow_types.remove("polyglot.rust.concurrent-timers")
+        self.assertIsNone(timers.ready_snapshot(types.SimpleNamespace(workers=self.workers)))
 
     async def test_replay_must_preserve_the_complete_original_history_prefix(self):
         self.fixture.history["events"][0]["payload"]["input"] = ["rewritten"]
@@ -100,6 +191,13 @@ class PackageUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.fixture.original["worker_id"] = f"owned-{self.runtime}"
         with self.assertRaisesRegex(RuntimeError, "worker"):
             await self.verify()
+
+    async def test_missing_original_worker_identity_cannot_pass(self):
+        for value in (None, "", True):
+            with self.subTest(value=value):
+                self.fixture.original["worker_id"] = value
+                with self.assertRaisesRegex(RuntimeError, "worker"):
+                    await self.verify()
 
     async def test_worker_replacement_cannot_rebind_the_python_definition(self):
         self.case(concurrent=True)
