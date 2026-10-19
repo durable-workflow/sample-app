@@ -48,7 +48,9 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                                parallel_group_base_sequence=2, parallel_group_size=3,
                                parallel_group_index=index, parallel_group_mode="all")
             scheduled.append(event("TimerScheduled", **payload))
-        prefix = [event("WorkflowStarted", input=["upgrade-python"]), marker, *scheduled]
+        prefix = [event("WorkflowStarted", input=["upgrade-python"],
+                        workflow_definition_fingerprint="sha256:" + ("a" if version == 1 else "b") * 64,
+                        workflow_definition_fingerprint_source="worker"), marker, *scheduled]
         self.history = {"events": [*copy.deepcopy(prefix), *(
             event("TimerFired", **copy.deepcopy(item["payload"]), fired_at=item["payload"]["fire_at"])
             for item in scheduled), event("WorkflowCompleted")]}
@@ -95,6 +97,56 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.result["application_revision"] = "v1"
         with self.assertRaises(RuntimeError):
             await self.verify()
+
+    async def test_unbound_python_class_upgrade_cannot_pass(self):
+        for version in (1, 2):
+            for concurrent in (False, True):
+                with self.subTest(version=version, concurrent=concurrent):
+                    self.case(version=version, concurrent=concurrent)
+                    for prefix in (self.history["events"], self.original["history_prefix"]):
+                        prefix[0]["payload"].pop("workflow_definition_fingerprint")
+                        prefix[0]["payload"].pop("workflow_definition_fingerprint_source")
+                    with self.assertRaisesRegex(RuntimeError, "definition fingerprint"):
+                        await self.verify()
+
+    async def test_definition_binding_must_be_worker_sourced_and_nonempty(self):
+        for key, value in (
+            ("workflow_definition_fingerprint", None), ("workflow_definition_fingerprint", ""),
+            ("workflow_definition_fingerprint", "  "), ("workflow_definition_fingerprint", True),
+            ("workflow_definition_fingerprint", 17),
+            ("workflow_definition_fingerprint_source", None),
+            ("workflow_definition_fingerprint_source", "legacy"),
+        ):
+            with self.subTest(key=key, value=value):
+                self.case()
+                for prefix in (self.history["events"], self.original["history_prefix"]):
+                    prefix[0]["payload"][key] = value
+                with self.assertRaisesRegex(RuntimeError, "definition fingerprint"):
+                    await self.verify()
+
+    async def test_definition_binding_requires_one_original_workflow_start(self):
+        for count in (0, 2):
+            with self.subTest(count=count):
+                self.case()
+                for prefix in (self.history["events"], self.original["history_prefix"]):
+                    start = prefix.pop(0)
+                    prefix[:0] = [copy.deepcopy(start) for _ in range(count)]
+                with self.assertRaisesRegex(RuntimeError, "definition fingerprint"):
+                    await self.verify()
+
+    async def test_unbound_pending_class_cannot_emit_qualified_evidence(self):
+        self.execution.status = "waiting"
+        history = {"events": copy.deepcopy(self.original["history_prefix"])}
+        history["events"][0]["payload"].pop("workflow_definition_fingerprint")
+        for item in timers.events(history, "TimerScheduled"):
+            item["payload"]["fire_at"] = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
+        client = types.SimpleNamespace(start_workflow=AsyncMock())
+        with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_ID": "upgrade"}), \
+                patch.object(timers, "observe", AsyncMock(return_value=(None, self.execution, history))), \
+                patch.object(timers, "emit") as emit:
+            with self.assertRaisesRegex(RuntimeError, "definition fingerprint"):
+                await timers.pending(client, "python", self.scenario)
+        emit.assert_not_called()
 
     async def test_recorded_marker_cannot_be_missing_duplicated_or_changed(self):
         for change in ("missing", "duplicate", "change_id", "version", "max_supported"):
