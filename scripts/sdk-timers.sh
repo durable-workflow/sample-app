@@ -64,9 +64,14 @@ client() {
 }
 
 start() {
-  DURABLE_WORKFLOW_TIMER_PENDING="$(client start "$1")"
+  local status=0
+  DURABLE_WORKFLOW_TIMER_PENDING="$(client start "$1")" || status=$?
   export DURABLE_WORKFLOW_TIMER_PENDING
   printf '%s\n' "$DURABLE_WORKFLOW_TIMER_PENDING"
+  if (( status != 0 )); then
+    client diagnose "$1" || true
+    return "$status"
+  fi
 }
 
 worker_restart() {

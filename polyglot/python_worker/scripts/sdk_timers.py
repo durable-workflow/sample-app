@@ -116,7 +116,10 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
         if execution.status in ("failed", "cancelled", "terminated", "completed"):
             raise RuntimeError(f"{runtime} closed before scheduling its timer: {history!r}")
         if asyncio.get_running_loop().time() >= deadline:
-            raise TimeoutError(f"{runtime} did not schedule its durable timer.")
+            raise TimeoutError(
+                f"{runtime} did not schedule its durable timer: scenario={scenario}, "
+                f"workflow_id={execution.workflow_id}, run_id={execution.run_id}, "
+                f"status={execution.status}, history={history!r}")
         await asyncio.sleep(0.25)
     if len(scheduled) != len(delays) or events(history, "TimerFired") or execution.status != "waiting":
         raise RuntimeError(f"Expected {len(delays)} pending timers and public waiting status: {history!r}")
@@ -446,7 +449,8 @@ async def main(phase: str, scenario: str) -> None:
                 with urlopen(request, timeout=30) as response:
                     rows = json.loads(response.read())["workers"]
                 fields = ("worker_id", "task_queue", "runtime", "sdk_version", "status",
-                          "last_heartbeat_at", "heartbeat_interval_seconds")
+                          "last_heartbeat_at", "heartbeat_interval_seconds",
+                          "supported_workflow_types", "workflow_definition_fingerprints")
                 workers.extend({key: row.get(key) for key in fields} for row in rows)
             emit(phase="worker_diagnostics", scenario=scenario, workers=workers)
             for runtime in RUNTIMES:
