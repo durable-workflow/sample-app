@@ -24,6 +24,107 @@ def event(kind, **payload):
     return {"event_type": kind, "payload": payload}
 
 
+class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.case()
+
+    def case(self, *, version=1, concurrent=False):
+        self.scenario = ("concurrent-" if concurrent else "") + "application-upgrade"
+        if version == 2:
+            self.scenario += "-fresh"
+        self.execution = types.SimpleNamespace(workflow_id="upgrade-python", run_id="original-run", status="completed")
+        delays = [60, 30, 45] if concurrent else [30]
+        if version == 2:
+            delays = [delay + 15 for delay in delays]
+        marker = event("VersionMarkerRecorded", change_id="sample-timer-application", sequence=1,
+                       version=version, min_supported=1, max_supported=version)
+        scheduled = []
+        start = datetime(2026, 10, 5, tzinfo=timezone.utc)
+        for index, delay in enumerate(delays):
+            payload = {"timer_id": f"timer-{index}", "sequence": index + 2, "delay_seconds": delay,
+                       "fire_at": (start + timedelta(seconds=delay)).isoformat()}
+            if concurrent:
+                payload.update(parallel_group_id="original-group", parallel_group_kind="timer",
+                               parallel_group_base_sequence=2, parallel_group_size=3,
+                               parallel_group_index=index, parallel_group_mode="all")
+            scheduled.append(event("TimerScheduled", **payload))
+        prefix = [event("WorkflowStarted", input=["upgrade-python"]), marker, *scheduled]
+        self.history = {"events": [*copy.deepcopy(prefix), *(
+            event("TimerFired", **copy.deepcopy(item["payload"]), fired_at=item["payload"]["fire_at"])
+            for item in scheduled), event("WorkflowCompleted")]}
+        self.original = {"workflow_id": "upgrade-python", "run_id": "original-run",
+                         "version_marker": copy.deepcopy(marker["payload"]), "history_prefix": copy.deepcopy(prefix)}
+        key = "timers" if concurrent else "timer"
+        self.original[key] = [copy.deepcopy(item["payload"]) for item in scheduled] if concurrent else copy.deepcopy(scheduled[0]["payload"])
+        self.result = {"workflow_runtime": "python", "request": "upgrade-python", "application_revision": "v2",
+                       "version": version, "timer_seconds": delays if concurrent else delays[0]}
+
+    async def verify(self):
+        handle = types.SimpleNamespace(result=AsyncMock(return_value=self.result))
+        with patch.object(timers, "observe", AsyncMock(return_value=(handle, self.execution, self.history))), \
+                patch.object(timers, "original_pending", return_value=self.original), patch.object(timers, "emit"):
+            await timers.verify(None, "python", self.scenario)
+
+    async def test_old_and_fresh_branches_complete_on_replacement_definition(self):
+        for version in (1, 2):
+            for concurrent in (False, True):
+                with self.subTest(version=version, concurrent=concurrent):
+                    self.case(version=version, concurrent=concurrent)
+                    await self.verify()
+
+    async def test_replacement_cannot_report_the_old_application(self):
+        self.result["application_revision"] = "v1"
+        with self.assertRaises(RuntimeError):
+            await self.verify()
+
+    async def test_recorded_marker_cannot_be_missing_duplicated_or_changed(self):
+        for change in ("missing", "duplicate", "change_id", "version", "max_supported"):
+            with self.subTest(change=change):
+                self.case()
+                marker = self.history["events"][1]
+                if change == "missing":
+                    self.history["events"].remove(marker)
+                elif change == "duplicate":
+                    self.history["events"].insert(2, copy.deepcopy(marker))
+                else:
+                    marker["payload"][change] = "other" if change == "change_id" else 2
+                with self.assertRaises(RuntimeError):
+                    await self.verify()
+
+    async def test_initial_marker_must_select_the_expected_typed_branch(self):
+        for value in (True, 1.0, 2):
+            with self.subTest(value=value):
+                self.case()
+                self.original["version_marker"]["version"] = value
+                self.history["events"][1]["payload"]["version"] = value
+                self.original["history_prefix"][1]["payload"]["version"] = value
+                with self.assertRaises(RuntimeError):
+                    await self.verify()
+
+    async def test_cold_replay_preserves_the_entire_initial_history_prefix(self):
+        self.history["events"][0]["payload"]["input"] = ["changed"]
+        with self.assertRaises(RuntimeError):
+            await self.verify()
+
+    async def test_result_branch_preserves_scalar_types(self):
+        for key, value in (("version", True), ("version", 1.0), ("timer_seconds", 30.0)):
+            with self.subTest(key=key, value=value):
+                self.case()
+                self.result[key] = value
+                with self.assertRaises(RuntimeError):
+                    await self.verify()
+
+    async def test_single_upgrade_checks_resolved_metadata_and_sequence(self):
+        self.history["events"][-2]["payload"]["sequence"] = 99
+        with self.assertRaises(RuntimeError):
+            await self.verify()
+
+    async def test_upgrade_cannot_replace_the_original_run(self):
+        self.execution.run_id = "replacement-run"
+        with self.assertRaises(RuntimeError):
+            await self.verify()
+
+
 class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.execution = types.SimpleNamespace(workflow_id="timer-rust", run_id="run-1", status="completed")
