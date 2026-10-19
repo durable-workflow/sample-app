@@ -119,6 +119,8 @@ def ready_snapshot(roster):
         if len(matches) > 1:
             raise RuntimeError(f"Ambiguous active worker definitions for {runtime}.")
         types = {f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"}
+        types.update({f"polyglot.{runtime}.unversioned-upgrade-timer",
+                      f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"})
         if runtime == "python":
             types.update({"polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"})
         if len(matches) != 1 or not types <= set(matches[0].supported_workflow_types or []):

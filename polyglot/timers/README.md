@@ -80,7 +80,7 @@ definition for task delivery. A passing version-marker replay alone does not
 establish compatible class deployment. The original definition and history stay
 intact through refusal and restoration.
 Revision one already records its version marker. Introducing versioning into
-an unversioned history is a separate scenario.
+an unversioned history uses the separate command below.
 
 The new concurrent interruption/cancellation cases use a 90-second observation
 window for absent-worker firing and cancelled-history checks, and the existing
@@ -113,6 +113,40 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-timers COMPOSE_PROFILES=timers \
 
 This is focused SDK timer coverage. Nested cancellation scopes and changes
 outside the selected two application definitions need separate qualification.
+
+## Introduce versioning into an existing history
+
+Run the same published tuple with:
+
+```bash
+SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-unversioned-timers \
+  scripts/sdk-timers.sh --unversioned-upgrades
+```
+
+This command runs twelve separate originals: old and fresh single/concurrent
+workflows in each SDK. Revision one schedules its timers without calling a
+version helper. While those timers are pending, replacement processes run
+revision two with `getVersion("sample-timer-application", -1, 2)` or its
+language equivalent. Both helpers ship under unchanged registered wrappers.
+
+The same old runs must resolve the legacy decision `-1`, retain no version
+marker, and complete with their original 30-second or `[60, 30, 45]` timers.
+Their timer sequences still begin at 1. Replay must preserve the complete old
+history prefix and every timer/barrier identity and deadline. It must not insert
+a marker or make room for one by rebasing the original commands.
+
+Fresh revision-two runs must record exactly one version 2 marker with authored
+range -1..2 before their timers, then use 45 seconds or `[75, 45, 60]`. All old and
+fresh results preserve scalar types and complete once. Registration ownership,
+replacement readiness, cleanup, the pending window of 20 seconds and result
+observations of 120 seconds follow the main command. This mode has its own ordinary
+CI job and does not extend the main forty-original experiment.
+
+Report these twelve outcomes separately from the forty above. The command is
+under qualification in [the SDK audit](https://github.com/durable-workflow/.github/issues/122);
+local observer tests do not establish actual installed-package replay. SDK
+package upgrades, build-ID rollouts and incompatible class adoption remain
+separate cases.
 
 ## Single Rust restart example
 

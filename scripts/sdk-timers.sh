@@ -2,13 +2,19 @@
 set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
-  printf '%s\n' 'Usage: scripts/sdk-timers.sh' \
+  printf '%s\n' 'Usage: scripts/sdk-timers.sh [--unversioned-upgrades]' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
     'Replaces compatible business helpers across all SDKs and checks pinned Python class refusal, restoration and fresh v2 runs.' \
+    '--unversioned-upgrades instead runs twelve originals introducing versioning into already pending single/concurrent timers.' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
+fi
+unversioned_only=0
+if [[ "${1:-}" == --unversioned-upgrades && $# == 1 ]]; then
+  unversioned_only=1
+  shift
 fi
 [[ $# == 0 ]] || { printf '%s\n' 'Use --help for usage.' >&2; exit 2; }
 
@@ -99,7 +105,7 @@ server_restart() {
 }
 
 remember_workers() {
-  DURABLE_WORKFLOW_TIMER_WORKERS="$(client ready application-upgrade)"
+  DURABLE_WORKFLOW_TIMER_WORKERS="$(client ready "${1:-application-upgrade}")"
   export DURABLE_WORKFLOW_TIMER_WORKERS
   printf '%s\n' "$DURABLE_WORKFLOW_TIMER_WORKERS"
 }
@@ -113,7 +119,7 @@ replace_workers() {
   worker_generation=$((worker_generation + 1))
   export POLYGLOT_RUST_WORKER_ID="timer-$scenario-$revision-$worker_generation"
   "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
-  remember_workers
+  remember_workers "$scenario"
 }
 
 application_upgrade() {
@@ -141,27 +147,33 @@ class_replacement() {
   client verify "$scenario-fresh"
 }
 
-start completion
-client verify completion
+if (( unversioned_only )); then
+  remember_workers unversioned-upgrade
+  application_upgrade unversioned-upgrade
+  application_upgrade concurrent-unversioned-upgrade
+else
+  start completion
+  client verify completion
 
-start concurrent
-client verify concurrent
+  start concurrent
+  client verify concurrent
 
-worker_restart worker-restart
-server_restart server-restart 32
+  worker_restart worker-restart
+  server_restart server-restart 32
 
-start cancellation
-client verify cancellation
+  start cancellation
+  client verify cancellation
 
-worker_restart concurrent-worker-restart
-server_restart concurrent-server-restart 62
+  worker_restart concurrent-worker-restart
+  server_restart concurrent-server-restart 62
 
-start concurrent-cancellation
-client verify concurrent-cancellation
+  start concurrent-cancellation
+  client verify concurrent-cancellation
 
-remember_workers
-application_upgrade application-upgrade
-application_upgrade concurrent-application-upgrade
-class_replacement class-replacement
-class_replacement concurrent-class-replacement
+  remember_workers
+  application_upgrade application-upgrade
+  application_upgrade concurrent-application-upgrade
+  class_replacement class-replacement
+  class_replacement concurrent-class-replacement
+fi
 printf 'SDK timers pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

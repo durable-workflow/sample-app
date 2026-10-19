@@ -8,7 +8,7 @@ import types
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 
 if "durable_workflow" not in sys.modules:
@@ -304,6 +304,42 @@ class UnversionedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     await self.fixture.verify()
 
 
+class VersionIntroductionAuthoringTest(unittest.TestCase):
+    def test_first_revision_has_no_marker_and_replacement_preserves_both_decisions(self):
+        path = Path(__file__).parents[2] / "python_workflow" / "timer_upgrades.py"
+        spec = importlib.util.spec_from_file_location("timer_upgrade_authoring", path)
+        application = importlib.util.module_from_spec(spec)
+        decorator = types.SimpleNamespace(defn=lambda **_: lambda definition: definition)
+        with patch.object(sys.modules["durable_workflow"], "workflow", decorator, create=True):
+            spec.loader.exec_module(application)
+        for revision, version in (("v1", -1), ("v2", -1), ("v2", 2)):
+            for concurrent in (False, True):
+                with self.subTest(revision=revision, version=version, concurrent=concurrent):
+                    application.applications(revision)
+                    context = types.SimpleNamespace(get_version=Mock(return_value="version-command"),
+                        sleep=Mock(side_effect=lambda seconds: ("timer", seconds)))
+                    definition = (application.IntroductionConcurrentTimers if concurrent
+                                  else application.IntroductionSingleTimer)
+                    execution = definition().run(context, "original-request")
+                    if revision == "v2":
+                        self.assertEqual(next(execution), "version-command")
+                        context.get_version.assert_called_once_with("sample-timer-application", -1, 2)
+                        operation = execution.send(version)
+                    else:
+                        operation = next(execution)
+                        context.get_version.assert_not_called()
+                    delays = [60, 30, 45] if concurrent else [30]
+                    if version == 2:
+                        delays = [delay + 15 for delay in delays]
+                    expected = [("timer", delay) for delay in delays]
+                    self.assertEqual(operation, expected if concurrent else expected[0])
+                    with self.assertRaises(StopIteration) as completed:
+                        next(execution)
+                    self.assertEqual(completed.exception.value, {"workflow_runtime": "python",
+                        "request": "original-request", "application_revision": revision,
+                        "version": version, "timer_seconds": delays if concurrent else delays[0]})
+
+
 class WorkerRosterEvidenceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         environment = patch.dict("os.environ", {"DURABLE_WORKFLOW_NAMESPACE": "default",
@@ -319,6 +355,8 @@ class WorkerRosterEvidenceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def worker(runtime):
         types_ = [f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"]
+        types_ += [f"polyglot.{runtime}.unversioned-upgrade-timer",
+                   f"polyglot.{runtime}.unversioned-upgrade-concurrent-timers"]
         if runtime == "python":
             types_ += ["polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"]
         return types.SimpleNamespace(worker_id=f"owned-{runtime}", namespace="default", runtime=runtime,
