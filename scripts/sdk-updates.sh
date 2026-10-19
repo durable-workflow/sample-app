@@ -11,6 +11,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# == 0 ]] || exit 2
 export SDK_UPDATES_FINISH_RACE_REPETITIONS="${SDK_UPDATES_FINISH_RACE_REPETITIONS:-0}"
+export POLYGLOT_UPDATE_DIAGNOSTICS=1
 [[ "$SDK_UPDATES_FINISH_RACE_REPETITIONS" =~ ^([0-9]|1[0-9]|20)$ ]] || exit 2
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COMPOSE_PROJECT_NAME="${SDK_UPDATES_COMPOSE_PROJECT_NAME:-sample-app-sdk-updates-$(date -u +%Y%m%d%H%M%S)}"

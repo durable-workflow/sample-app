@@ -1,6 +1,45 @@
 use durable_workflow::{
     decode_payload, json, Client, Error, PayloadEnvelope, QueryContext, Result, Value, Worker,
+    WorkflowContext, WorkflowIdentity,
 };
+use std::{future::Future, pin::Pin, task::Poll, time::SystemTime};
+
+fn trace_update(identity: Option<&WorkflowIdentity>, phase: &str, signal: Option<(&str, usize)>) {
+    if let Some(identity) = identity {
+        eprintln!("{}", json!({
+            "scenario": "rust-update-progress",
+            "workflow_id": identity.workflow_id,
+            "run_id": identity.run_id,
+            "phase": phase,
+            "signal_name": signal.map(|(name, _)| name),
+            "signal_index": signal.map(|(_, index)| index),
+            "observed_at_unix_millis": SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis(),
+        }));
+    }
+}
+
+async fn observed_signal(
+    ctx: &WorkflowContext,
+    identity: Option<&WorkflowIdentity>,
+    name: &str,
+    index: usize,
+) -> Result<()> {
+    let mut signal = ctx.wait_signal(name);
+    // Preserve the SDK future's original waker and each poll result.
+    std::future::poll_fn(|cx| {
+        trace_update(identity, "signal_poll_started", Some((name, index)));
+        let result = Pin::new(&mut signal).poll(cx);
+        let phase = match &result {
+            Poll::Pending => "signal_poll_pending",
+            Poll::Ready(Ok(_)) => "signal_poll_resolved",
+            Poll::Ready(Err(_)) => "signal_poll_failed",
+        };
+        trace_update(identity, phase, Some((name, index)));
+        result
+    }).await?;
+    Ok(())
+}
 
 #[derive(Clone, Default)]
 struct Counter {
@@ -62,17 +101,21 @@ fn snapshot(ctx: QueryContext) -> Value {
 }
 
 pub fn register(worker: &mut Worker) {
-    worker.register_replayed_workflow("polyglot.rust.updates", Counter::default, |ctx, input, state| async move {
+    let diagnostics = std::env::var("POLYGLOT_UPDATE_DIAGNOSTICS").as_deref() == Ok("1");
+    worker.register_replayed_workflow("polyglot.rust.updates", Counter::default, move |ctx, input, state| async move {
+        let identity = if diagnostics { Some(ctx.workflow_identity()?) } else { None };
+        trace_update(identity.as_ref(), "workflow_replay_started", None);
         let request = super::first_argument(&input);
         let mut counter = Counter::default();
         for arguments in ctx.updates("increment")? {
             counter.apply(&arguments)?;
         }
         state.update(|state| *state = counter)?;
-        for _ in 0..3 {
-            ctx.wait_signal("updates-touch").await?;
+        for index in 0..3 {
+            observed_signal(&ctx, identity.as_ref(), "updates-touch", index).await?;
         }
-        ctx.wait_signal("updates-finish").await?;
+        observed_signal(&ctx, identity.as_ref(), "updates-finish", 0).await?;
+        trace_update(identity.as_ref(), "workflow_returned", None);
         Ok(json!({"workflow_runtime": "rust", "request": request, "state": state.read(Counter::value)?}))
     });
     worker
@@ -84,10 +127,15 @@ pub fn register(worker: &mut Worker) {
     worker.register_update("polyglot.rust.updates", "echo", |_ctx, input| async move {
         Ok(json!({"handler_runtime": "rust", "request": super::first_argument(&input)}))
     });
-    worker.register_update("polyglot.rust.updates", "increment", |ctx, input| async move {
+    worker.register_update("polyglot.rust.updates", "increment", move |ctx, input| async move {
+        let identity = diagnostics.then(|| WorkflowIdentity {
+            workflow_id: ctx.workflow_id.clone(), run_id: ctx.run_id.clone(),
+        });
+        trace_update(identity.as_ref(), "increment_started", None);
         let mut counter = applied_counter(&ctx)?;
         let request = super::first_argument(&input);
         counter.apply(std::slice::from_ref(&request))?;
+        trace_update(identity.as_ref(), "increment_returned", None);
         Ok(json!({"handler_runtime": "rust", "request": request, "state": counter.value()}))
     });
     worker.register_replayed_query::<Counter, _, _>(
