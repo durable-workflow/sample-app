@@ -136,6 +136,8 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
         check_parallel_timers(timers)
     observation = {"timers": timers} if concurrent else {"timer": timers[0]}
     if scenario in UPGRADE_SCENARIOS:
+        if runtime == "python":
+            check_upgrade_definition_binding(history)
         observation.update(version_marker=upgrade_marker(history, scenario), history_prefix=history["events"])
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
          run_id=execution.run_id, status=execution.status, **observation)
@@ -330,6 +332,15 @@ def upgrade_marker(history: dict, scenario: str) -> dict:
     return marker
 
 
+def check_upgrade_definition_binding(history: dict) -> None:
+    started = events(history, "WorkflowStarted")
+    payload = started[0]["payload"] if len(started) == 1 else {}
+    fingerprint = payload.get("workflow_definition_fingerprint")
+    if (payload.get("workflow_definition_fingerprint_source") != "worker"
+            or not isinstance(fingerprint, str) or not fingerprint.strip()):
+        raise RuntimeError("Python class upgrade requires one original worker-sourced definition fingerprint.")
+
+
 def check_completed_upgrade_timer(history: dict) -> dict:
     if any(len(events(history, kind)) != 1 for kind in ("TimerScheduled", "TimerFired", "WorkflowCompleted")):
         raise RuntimeError("Expected one original scheduled timer, fire and completion after upgrade.")
@@ -346,7 +357,9 @@ def check_completed_upgrade_timer(history: dict) -> dict:
 
 
 async def verify_upgrade(client: Client, runtime: str, scenario: str) -> None:
-    handle, _, _ = await observe(client, runtime, scenario)
+    handle, _, initial_history = await observe(client, runtime, scenario)
+    if runtime == "python":
+        check_upgrade_definition_binding(initial_history)
     result = await handle.result(timeout=120, poll_interval=0.25)
     _, execution, history = await observe(client, runtime, scenario)
     original = original_pending(runtime, scenario)

@@ -53,6 +53,15 @@ definition changes with a fixed published SDK tuple. It does not qualify an
 SDK package upgrade, worker-build routing or a Server version upgrade.
 Replacement definitions use new worker identities, as required by the published
 registration contract. The existing scenarios keep their normal worker IDs.
+
+The application-definition replacement cases remain under qualification in
+[the SDK coverage audit](https://github.com/durable-workflow/.github/issues/122).
+The Python classes advertise different definition fingerprints. Those cases
+require one worker-sourced fingerprint in the original `WorkflowStarted` event;
+an unbound run cannot qualify replacement of a fingerprint-bound class. Server
+requires that recorded definition for task delivery. A passing version-marker
+replay alone does not establish compatible class deployment. The original
+definition and history must remain intact while this boundary is qualified.
 Revision one already records its version marker. Introducing versioning into
 an unversioned history is a separate scenario.
 
