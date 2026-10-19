@@ -5,6 +5,7 @@ if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-timers.sh' \
     'Runs completion, worker SIGKILL/cold replay, Server restart and cooperative cancellation for PHP/Python/Rust timers.' \
     'Runs each interruption/cancellation case for both one timer and three concurrent deadlines in one original per SDK.' \
+    'Also replaces v1 application definitions with v2, preserving pending originals and verifying fresh version-two branches.' \
     'Requires Docker Compose and exact artifact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_TIMERS_COMPOSE_PROJECT_NAME selects an isolated project. All project resources are removed on exit.'
   exit 0
@@ -16,6 +17,7 @@ export COMPOSE_PROJECT_NAME="${SDK_TIMERS_COMPOSE_PROJECT_NAME:-sample-app-sdk-t
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export COMPOSE_PROFILES=timers
 export POLYGLOT_TIMER_COOPERATIVE=1
+export POLYGLOT_TIMER_APPLICATION=v2
 export POLYGLOT_WORKER_DIAGNOSTICS=1
 export DURABLE_WORKFLOW_TIMER_ID="${COMPOSE_PROJECT_NAME}"
 compose=(docker compose --project-directory "$repo_root/polyglot" -f "$repo_root/polyglot/docker-compose.yml")
@@ -90,6 +92,21 @@ server_restart() {
   client verify "$scenario"
 }
 
+application_upgrade() {
+  local scenario="$1"
+  export POLYGLOT_TIMER_APPLICATION=v1
+  export POLYGLOT_RUST_WORKER_ID="timer-$scenario-v1"
+  "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
+  start "$scenario"
+  "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
+  export POLYGLOT_TIMER_APPLICATION=v2
+  export POLYGLOT_RUST_WORKER_ID="timer-$scenario-v2"
+  "${compose[@]}" up -d --wait --force-recreate --no-build "${workers[@]}"
+  client verify "$scenario"
+  start "$scenario-fresh"
+  client verify "$scenario-fresh"
+}
+
 start completion
 client verify completion
 
@@ -107,4 +124,7 @@ server_restart concurrent-server-restart 62
 
 start concurrent-cancellation
 client verify concurrent-cancellation
+
+application_upgrade application-upgrade
+application_upgrade concurrent-application-upgrade
 printf 'SDK timers pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

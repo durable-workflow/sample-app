@@ -22,6 +22,7 @@ if (! class_exists(Client::class)) {
 }
 
 require __DIR__.'/child_workflows.php';
+require __DIR__.'/timer_upgrades.php';
 
 const WORKFLOW_TYPES = [
     'sample-app.child-matrix.php.child',
@@ -31,6 +32,8 @@ const WORKFLOW_TYPES = [
     'polyglot.php.greeter',
     'polyglot.php.timer',
     'polyglot.php.concurrent-timers',
+    'polyglot.php.upgrade-timer',
+    'polyglot.php.upgrade-concurrent-timers',
     'polyglot.php.updates',
     'polyglot.PolyglotWorkflow',
     'polyglot.php-to-python.greeter',
@@ -520,6 +523,8 @@ function configureWorkflows(Worker $worker, PayloadCodec $codec): void
 
         return ['workflow_runtime' => 'php', 'request' => $request, 'timer_seconds' => [60, 30, 45]];
     });
+
+    registerTimerUpgradeApplications($worker, getenv('POLYGLOT_TIMER_APPLICATION') ?: 'v2');
 
     $workflowQueue = getenv('POLYGLOT_WORKFLOW_TASK_QUEUE') ?: 'polyglot-workflow';
     $pythonQueue = getenv('POLYGLOT_PHP2PY_TASK_QUEUE') ?: 'polyglot-php-to-python';

@@ -432,6 +432,7 @@ def verify_replay_fixtures() -> int:
 
 async def main() -> int:
     from child_workflows import CHILD_WORKFLOWS
+    from timer_upgrades import applications
 
     logging.basicConfig(
         level=logging.INFO,
@@ -461,6 +462,7 @@ async def main() -> int:
             capabilities=["cooperative_cancellation"] if cooperative else [],
             workflows=[
                 *CHILD_WORKFLOWS,
+                *applications(os.environ.get("POLYGLOT_TIMER_APPLICATION", "v2")),
                 PythonGreeterWorkflow,
                 PythonTimerWorkflow,
                 PythonConcurrentTimersWorkflow,

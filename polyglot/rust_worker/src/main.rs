@@ -11,6 +11,7 @@ mod children;
 mod namespaces;
 mod search_attributes;
 mod cancellation_client;
+mod timer_upgrades;
 
 const RUST_SAME_WORKFLOW: &str = "polyglot.rust.greeter";
 const RUST_TIMER_WORKFLOW: &str = "polyglot.rust.timer";
@@ -75,13 +76,14 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
     let python_queue = env_value("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python");
     let php_queue = env_value("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php");
     let mut worker = Worker::new(client, rust_queue.clone())
-        .worker_id("rust-workflow-worker")
+        .worker_id(env_value("POLYGLOT_RUST_WORKER_ID", "rust-workflow-worker"))
         .recover_transient_outages(true)
         .cooperative_cancellation(env_value("POLYGLOT_TIMER_COOPERATIVE", "0") == "1")
         .poll_timeout(Duration::from_secs(5));
 
     updates::register(&mut worker);
     children::register(&mut worker, None);
+    timer_upgrades::register(&mut worker, &env_value("POLYGLOT_TIMER_APPLICATION", "v2"))?;
 
     worker.register_activity("polyglot.rust.echo", |_ctx, args| async move {
         Ok(runtime_echo(first_argument(&args)))

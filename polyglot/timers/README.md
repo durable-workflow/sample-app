@@ -12,7 +12,7 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
 Use the prepared Sample App development container with Docker Compose. The
 checked-in artifact tuple selects exact published packages and images. The
 experiment builds workers from those packages, starts a disposable MySQL/Redis
-Server stack, and checks eight cases for each workflow language:
+Server stack, and checks twelve cases for each workflow language:
 
 - Normal completion after the original 30-second deadline, with exactly one
   scheduled timer, matching fire and completed result.
@@ -37,6 +37,22 @@ Server stack, and checks eight cases for each workflow language:
   due time has passed. Repeat for the concurrent group, requiring all three
   matching cancellations and no fire or completion beyond its last original
   deadline.
+- Replace the registered application definition in fresh worker processes,
+  with both one timer and the concurrent group pending. Revision one records
+  version `1` for `sample-timer-application`. Revision two accepts that
+  original decision while adding a new version `2` branch. The old runs must
+  finish once on revision two with their original complete history prefix,
+  version marker, timer identities/deadlines and result branch unchanged.
+- Start fresh single/concurrent runs on revision two. They must record version
+  `2`, use 45 seconds or `[75, 45, 60]`, and finish with that new branch.
+
+Both authored application implementations ship in the scenario workers. The
+command selects the registered definition before each worker starts and uses
+`SIGKILL` plus replacement processes between revisions. This checks application
+definition changes with a fixed published SDK tuple. It does not qualify an
+SDK package upgrade, worker-build routing or a Server version upgrade.
+Replacement definitions use new worker identities, as required by the published
+registration contract. The existing scenarios keep their normal worker IDs.
 
 The new concurrent interruption/cancellation cases use a 90-second observation
 window for absent-worker firing and cancelled-history checks, and the existing
@@ -57,7 +73,7 @@ operator attention or a process supervisor.
 
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
-UTC interval and twenty-four scenario outcomes in the owning GitHub issue. Its exit
+UTC interval and thirty-six scenario outcomes in the owning GitHub issue. Its exit
 trap removes the isolated Compose stack, volumes and task worker images on
 success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:
@@ -67,9 +83,8 @@ COMPOSE_PROJECT_NAME=sample-app-sdk-timers COMPOSE_PROFILES=timers \
   docker compose -f polyglot/docker-compose.yml down --volumes --remove-orphans
 ```
 
-This is focused SDK timer coverage. Nested cancellation scopes and
-timer-bearing application upgrades have separate
-qualification requirements.
+This is focused SDK timer coverage. Nested cancellation scopes and changes
+outside the selected two application definitions need separate qualification.
 
 ## Single Rust restart example
 

@@ -124,6 +124,27 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await self.verify()
 
+    async def test_pending_captures_marker_and_prefix_for_both_versions_and_shapes(self):
+        for version in (1, 2):
+            for concurrent in (False, True):
+                with self.subTest(version=version, concurrent=concurrent):
+                    self.case(version=version, concurrent=concurrent)
+                    self.execution.status = "waiting"
+                    history = {"events": copy.deepcopy(self.original["history_prefix"])}
+                    for item in timers.events(history, "TimerScheduled"):
+                        item["payload"]["fire_at"] = (datetime.now(timezone.utc) + timedelta(
+                            seconds=item["payload"]["delay_seconds"])).isoformat()
+                    client = types.SimpleNamespace(start_workflow=AsyncMock())
+                    with patch.dict("os.environ", {"DURABLE_WORKFLOW_TIMER_ID": "upgrade"}), \
+                            patch.object(timers, "observe", AsyncMock(return_value=(None, self.execution, history))), \
+                            patch.object(timers, "emit") as emit:
+                        await timers.pending(client, "python", self.scenario)
+                    suffix = "concurrent-timers" if concurrent else "timer"
+                    self.assertEqual(client.start_workflow.await_args.kwargs["workflow_type"],
+                                     f"polyglot.python.upgrade-{suffix}")
+                    self.assertEqual(emit.call_args.kwargs["version_marker"]["version"], version)
+                    self.assertEqual(emit.call_args.kwargs["history_prefix"], history["events"])
+
 
 class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

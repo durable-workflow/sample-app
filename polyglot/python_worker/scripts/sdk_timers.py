@@ -21,6 +21,27 @@ CONCURRENT_SCENARIOS = {
     "concurrent-server-restart": "server-restart",
     "concurrent-cancellation": "cancellation",
 }
+UPGRADE_SCENARIOS = {
+    "application-upgrade": (False, 1),
+    "application-upgrade-fresh": (False, 2),
+    "concurrent-application-upgrade": (True, 1),
+    "concurrent-application-upgrade-fresh": (True, 2),
+}
+APPLICATION_CHANGE_ID = "sample-timer-application"
+
+
+def is_concurrent(scenario: str) -> bool:
+    return scenario in CONCURRENT_SCENARIOS or UPGRADE_SCENARIOS.get(scenario, (False, 0))[0]
+
+
+def timer_delays(scenario: str) -> list[int]:
+    delays = CONCURRENT_SECONDS if is_concurrent(scenario) else [TIMER_SECONDS]
+    return [delay + 15 for delay in delays] if UPGRADE_SCENARIOS.get(scenario, (False, 0))[1] == 2 else delays
+
+
+def workflow_suffix(scenario: str) -> str:
+    prefix = "upgrade-" if scenario in UPGRADE_SCENARIOS else ""
+    return prefix + ("concurrent-timers" if is_concurrent(scenario) else "timer")
 
 
 def required(name: str) -> str:
@@ -66,7 +87,7 @@ def check_original(runtime: str, scenario: str, execution, scheduled: dict) -> N
 
 async def observe(client: Client, runtime: str, scenario: str):
     workflow_id = f"{required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{runtime}"
-    suffix = "concurrent-timers" if scenario in CONCURRENT_SCENARIOS else "timer"
+    suffix = workflow_suffix(scenario)
     handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{runtime}.{suffix}")
     execution = await handle.describe()
     if not execution.run_id:
@@ -77,9 +98,9 @@ async def observe(client: Client, runtime: str, scenario: str):
 
 async def pending(client: Client, runtime: str, scenario: str) -> None:
     workflow_id = f"{required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{runtime}"
-    concurrent = scenario in CONCURRENT_SCENARIOS
-    suffix = "concurrent-timers" if concurrent else "timer"
-    delays = CONCURRENT_SECONDS if concurrent else [TIMER_SECONDS]
+    concurrent = is_concurrent(scenario)
+    suffix = workflow_suffix(scenario)
+    delays = timer_delays(scenario)
     await client.start_workflow(
         workflow_type=f"polyglot.{runtime}.{suffix}",
         workflow_id=workflow_id,
@@ -101,7 +122,8 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
         raise RuntimeError(f"Expected {len(delays)} pending timers and public waiting status: {history!r}")
     timers = [item["payload"] for item in scheduled]
     for timer, delay in zip(timers, delays, strict=True):
-        if timer.get("delay_seconds") != delay or not timer.get("timer_id") or not timer.get("fire_at"):
+        if (type(timer.get("delay_seconds")) is not int or timer["delay_seconds"] != delay
+                or not timer.get("timer_id") or not timer.get("fire_at")):
             raise RuntimeError(f"Invalid timer: {timer!r}")
         if timestamp(timer["fire_at"]) <= datetime.now(timezone.utc):
             raise RuntimeError("The pending timer's deadline has already passed.")
@@ -110,6 +132,8 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     if concurrent:
         check_parallel_timers(timers)
     observation = {"timers": timers} if concurrent else {"timer": timers[0]}
+    if scenario in UPGRADE_SCENARIOS:
+        observation.update(version_marker=upgrade_marker(history, scenario), history_prefix=history["events"])
     emit(phase="pending", runtime=runtime, scenario=scenario, workflow_id=workflow_id,
          run_id=execution.run_id, status=execution.status, **observation)
     if CONCURRENT_SCENARIOS.get(scenario, scenario) == "cancellation":
@@ -181,7 +205,7 @@ def original_parallel_timers(runtime: str, scenario: str, execution, history: di
             or not same_json_value([item["payload"] for item in scheduled], original["timers"])):
         raise RuntimeError("Run identity or original scheduled timers changed.")
     timers = [item["payload"] for item in scheduled]
-    if [timer["delay_seconds"] for timer in timers] != CONCURRENT_SECONDS:
+    if [timer["delay_seconds"] for timer in timers] != timer_delays(scenario):
         raise RuntimeError("Authored concurrent timer durations changed.")
     check_parallel_timers(timers)
     return timers
@@ -288,7 +312,67 @@ async def verify_concurrent(client: Client, runtime: str, scenario: str) -> None
          timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")])
 
 
+def upgrade_marker(history: dict, scenario: str) -> dict:
+    markers = events(history, "VersionMarkerRecorded")
+    if len(markers) != 1:
+        raise RuntimeError("Application upgrade requires one original version marker.")
+    marker = markers[0]["payload"]
+    version = UPGRADE_SCENARIOS[scenario][1]
+    if (marker.get("change_id") != APPLICATION_CHANGE_ID or type(marker.get("version")) is not int
+            or marker["version"] != version or type(marker.get("sequence")) is not int):
+        raise RuntimeError("Application upgrade selected a different version decision.")
+    kinds = [item["event_type"] for item in history["events"]]
+    if kinds.index("VersionMarkerRecorded") >= kinds.index("TimerScheduled"):
+        raise RuntimeError("Application version must precede its timer commands.")
+    return marker
+
+
+def check_completed_upgrade_timer(history: dict) -> dict:
+    if any(len(events(history, kind)) != 1 for kind in ("TimerScheduled", "TimerFired", "WorkflowCompleted")):
+        raise RuntimeError("Expected one original scheduled timer, fire and completion after upgrade.")
+    scheduled = events(history, "TimerScheduled")[0]
+    timer = scheduled["payload"]
+    fired = events(history, "TimerFired")[0]["payload"]
+    if timer["timer_id"] != fired["timer_id"]:
+        raise RuntimeError("Application upgrade changed the fired timer identity.")
+    check_timer_metadata(timer, fired, "fired")
+    kinds = [item["event_type"] for item in history["events"]]
+    if not kinds.index("TimerScheduled") < kinds.index("TimerFired") < kinds.index("WorkflowCompleted"):
+        raise RuntimeError("Application upgrade timer history is out of order.")
+    return scheduled
+
+
+async def verify_upgrade(client: Client, runtime: str, scenario: str) -> None:
+    handle, _, _ = await observe(client, runtime, scenario)
+    result = await handle.result(timeout=120, poll_interval=0.25)
+    _, execution, history = await observe(client, runtime, scenario)
+    original = original_pending(runtime, scenario)
+    marker = upgrade_marker(history, scenario)
+    prefix = original["history_prefix"]
+    if (not prefix or not same_json_value(history["events"][:len(prefix)], prefix)
+            or not same_json_value(marker, original["version_marker"])):
+        raise RuntimeError("Application upgrade changed the original history prefix or marker.")
+    delays = timer_delays(scenario)
+    expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "application_revision": "v2",
+                "version": UPGRADE_SCENARIOS[scenario][1],
+                "timer_seconds": delays if is_concurrent(scenario) else delays[0]}
+    if execution.status != "completed" or not same_json_value(result, expected):
+        raise RuntimeError("Application replacement did not complete its expected recorded branch.")
+    if is_concurrent(scenario):
+        timers = original_parallel_timers(runtime, scenario, execution, history)
+        check_completed_parallel(history, timers, scenario)
+    else:
+        check_original(runtime, scenario, execution, check_completed_upgrade_timer(history))
+    emit(phase="verified", runtime=runtime, scenario=scenario, workflow_id=execution.workflow_id,
+         run_id=execution.run_id, status=execution.status, result=result, version_marker=marker,
+         history_events=[item["event_type"] for item in history["events"]],
+         timer_events=[item for item in history["events"] if item["event_type"].startswith("Timer")])
+
+
 async def verify(client: Client, runtime: str, scenario: str) -> None:
+    if scenario in UPGRADE_SCENARIOS:
+        await verify_upgrade(client, runtime, scenario)
+        return
     if scenario in CONCURRENT_SCENARIOS:
         await verify_concurrent(client, runtime, scenario)
         return
@@ -378,6 +462,6 @@ async def main(phase: str, scenario: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose"))
-    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS))
+    parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS, *UPGRADE_SCENARIOS))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))
