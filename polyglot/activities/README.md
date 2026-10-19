@@ -37,8 +37,8 @@ remain separate gates.
 Pending admission has a twenty-second observer bound and each result a
 120-second observer bound. Authored activities retain their thirty-second
 attempt budget and original 120-second total budget; fresh revision-two controls
-use 180 seconds total. No clock, database row or task budget is edited. All
-task images, containers, volumes and networks are removed on exit. The focused
+use 180 seconds total. No clock, database row or task budget is edited. Built
+consumer images, project containers, volumes and networks are removed on exit. The focused
 Action and logs report the actual package pairs, original IDs and outcomes;
 constructed verifier tests alone do not qualify published-package replay.
 

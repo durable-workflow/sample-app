@@ -130,96 +130,112 @@ def original_records(scenario):
     return rows
 
 
-async def main(phase, scenario):
-    from durable_workflow import Client, serializer
-    import sdk_timers as common
+def ready_snapshot(roster, common, selected):
+    workers = []
+    current = selected == common.sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_TARGETS")
+    for runtime in RUNTIMES:
+        matches = common.active_workers(roster, runtime)
+        require(len(matches) <= 1, "Ambiguous active upgrade workers.")
+        if not matches:
+            return None
+        worker = matches[0]
+        if (f"polyglot.{runtime}.activity-upgrade" not in (worker.supported_workflow_types or [])
+                or (worker.raw or {}).get("sdk_version") != f"durable-workflow-{runtime}/{selected[runtime]}"):
+            return None
+        advertised = set(worker.supported_activity_types or [])
+        if (f"polyglot.{runtime}.upgrade-activity" in advertised) != current:
+            return None
+        workers.append(common.worker_snapshot(worker))
+    return workers
 
+
+async def ready_workers(client, common, scenario, selected):
+    deadline = asyncio.get_running_loop().time() + 20
+    while True:
+        workers = ready_snapshot(await client.list_workers(), common, selected)
+        if workers is not None:
+            emit(phase="workers_ready", scenario=scenario, project=common.required("DURABLE_WORKFLOW_TIMER_ID"), workers=workers)
+            return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError("Exact package/role upgrade roster did not become ready.")
+        await asyncio.sleep(0.25)
+
+
+async def observe(client, workflow_id, workflow):
+    handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{workflow}.activity-upgrade")
+    execution = await handle.describe()
+    return handle, execution, await client.get_history(workflow_id, execution.run_id)
+
+
+async def start_original(client, common, scenario, selected, workflow, activity):
     fresh = scenario.endswith("-fresh")
     version = 2 if fresh else 1
+    workflow_id = f"{common.required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{workflow}-{activity}"
+    worker = next(row for row in common.retirement_snapshot() if row["runtime"] == workflow)
+    await client.start_workflow(workflow_type=f"polyglot.{workflow}.activity-upgrade", workflow_id=workflow_id,
+        task_queue=f"polyglot-{workflow}", input=[{"case_id": workflow_id, "activity_runtime": activity, "value": VALUE}])
+    deadline = asyncio.get_running_loop().time() + 20
+    while True:
+        _, execution, history = await observe(client, workflow_id, workflow)
+        if events(history, "ActivityScheduled"):
+            break
+        require(execution.status not in {"failed", "cancelled", "terminated"}, "Original closed before activity scheduling.")
+        if asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError(f"Pending activity did not arrive: {workflow_id}, status={execution.status}.")
+        await asyncio.sleep(0.25)
+    scheduled = check_commands(history, activity, version)
+    if not fresh:
+        require(execution.status == "waiting" and not events(history, "ActivityStarted"),
+                "Previous-package activity was not genuinely pending before replacement.")
+    emit(phase="pending", scenario=scenario, workflow_runtime=workflow, activity_runtime=activity,
+         workflow_id=workflow_id, run_id=execution.run_id, version=version, worker_id=worker["worker_id"],
+         sdk_version=selected[workflow], scheduled=scheduled, history_prefix=history["events"])
+
+
+async def verify_original(client, common, scenario, original, targets, previous):
+    from durable_workflow import serializer
+
+    fresh = scenario.endswith("-fresh")
+    workflow = original["workflow_runtime"]
+    require(type(original.get("version")) is int and original["version"] == (2 if fresh else 1),
+            "Original observation changed its old/fresh version branch.")
+    require(original["sdk_version"] == (targets if fresh else previous)[workflow], "Original used the wrong SDK package.")
+    handle, _, _ = await observe(client, original["workflow_id"], workflow)
+    result = await handle.result(timeout=120, poll_interval=0.25)
+    _, execution, history = await observe(client, original["workflow_id"], workflow)
+    check_completed(original, execution, history, result, common.retirement_snapshot(), targets,
+        common.required("DURABLE_WORKFLOW_WORKER_RESTART_AT"), lambda value: serializer.decode_envelope(value, codec="avro"))
+    emit(phase="verified", scenario=scenario, workflow_runtime=workflow, activity_runtime=original["activity_runtime"],
+         workflow_id=execution.workflow_id, run_id=execution.run_id, result=result,
+         original_sdk=original["sdk_version"], current_sdk=targets[workflow],
+         marker=one(history, "VersionMarkerRecorded")["payload"], scheduled=original["scheduled"],
+         history_events=[row["event_type"] for row in history["events"]])
+
+
+async def main(phase, scenario):
+    from durable_workflow import Client
+    import sdk_timers as common
+
     selected = common.sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_VERSIONS")
     async with Client(common.required("DURABLE_WORKFLOW_SERVER_URL"), namespace="default",
                       control_token=common.required("DURABLE_WORKFLOW_AUTH_TOKEN")) as client:
         if phase == "retire":
             await common.retire_workers(client, scenario)
-            return
-        if phase == "ready":
-            deadline = asyncio.get_running_loop().time() + 20
-            while True:
-                roster, workers = await client.list_workers(), []
-                for runtime in RUNTIMES:
-                    matches = common.active_workers(roster, runtime)
-                    require(len(matches) <= 1, "Ambiguous active upgrade workers.")
-                    if not matches:
-                        break
-                    worker = matches[0]
-                    if (f"polyglot.{runtime}.activity-upgrade" not in worker.supported_workflow_types
-                            or (worker.raw or {}).get("sdk_version") != f"durable-workflow-{runtime}/{selected[runtime]}"):
-                        break
-                    advertised = set(worker.supported_activity_types or [])
-                    if (f"polyglot.{runtime}.upgrade-activity" in advertised) != (selected == common.sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_TARGETS")):
-                        break
-                    workers.append(common.worker_snapshot(worker))
-                if len(workers) == len(RUNTIMES):
-                    emit(phase="workers_ready", scenario=scenario, project=common.required("DURABLE_WORKFLOW_TIMER_ID"), workers=workers)
-                    return
-                if asyncio.get_running_loop().time() >= deadline:
-                    raise TimeoutError("Exact package/role upgrade roster did not become ready.")
-                await asyncio.sleep(0.25)
-
-        async def observe(workflow_id, workflow):
-            handle = client.get_workflow_handle(workflow_id, workflow_type=f"polyglot.{workflow}.activity-upgrade")
-            execution = await handle.describe()
-            return handle, execution, await client.get_history(workflow_id, execution.run_id)
-
-        if phase == "start":
-            workers = common.retirement_snapshot()
-            async def start(workflow, activity):
-                workflow_id = f"{common.required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{workflow}-{activity}"
-                worker = next(row for row in workers if row["runtime"] == workflow)
-                await client.start_workflow(workflow_type=f"polyglot.{workflow}.activity-upgrade", workflow_id=workflow_id,
-                    task_queue=f"polyglot-{workflow}", input=[{"case_id": workflow_id, "activity_runtime": activity, "value": VALUE}])
-                deadline = asyncio.get_running_loop().time() + 20
-                while True:
-                    _, execution, history = await observe(workflow_id, workflow)
-                    if events(history, "ActivityScheduled"):
-                        break
-                    require(execution.status not in {"failed", "cancelled", "terminated"}, "Original closed before activity scheduling.")
-                    if asyncio.get_running_loop().time() >= deadline:
-                        raise TimeoutError(f"Pending activity did not arrive: {workflow_id}, status={execution.status}.")
-                    await asyncio.sleep(0.25)
-                scheduled = check_commands(history, activity, version)
-                if not fresh:
-                    require(execution.status == "waiting" and not events(history, "ActivityStarted"),
-                            "Previous-package activity was not genuinely pending before replacement.")
-                emit(phase="pending", scenario=scenario, workflow_runtime=workflow, activity_runtime=activity,
-                     workflow_id=workflow_id, run_id=execution.run_id, version=version, worker_id=worker["worker_id"],
-                     sdk_version=selected[workflow], scheduled=scheduled, history_prefix=history["events"])
-            await asyncio.gather(*(start(*direction) for direction in DIRECTIONS))
+        elif phase == "ready":
+            await ready_workers(client, common, scenario, selected)
+        elif phase == "start":
+            await asyncio.gather(*(start_original(client, common, scenario, selected, *direction) for direction in DIRECTIONS))
         elif phase == "verify":
             targets = common.sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_TARGETS")
             previous = common.sdk_versions("DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS")
             require(selected == targets and all(previous[runtime] != targets[runtime] for runtime in RUNTIMES),
                     "Verification did not select distinct previous/current packages.")
-            async def verify(original):
-                workflow = original["workflow_runtime"]
-                require(type(original.get("version")) is int and original["version"] == version,
-                        "Original observation changed its old/fresh version branch.")
-                require(original["sdk_version"] == (targets if fresh else previous)[workflow], "Original used the wrong SDK package.")
-                handle, _, _ = await observe(original["workflow_id"], workflow)
-                result = await handle.result(timeout=120, poll_interval=0.25)
-                _, execution, history = await observe(original["workflow_id"], workflow)
-                check_completed(original, execution, history, result, common.retirement_snapshot(), targets,
-                    common.required("DURABLE_WORKFLOW_WORKER_RESTART_AT"), lambda value: serializer.decode_envelope(value, codec="avro"))
-                emit(phase="verified", scenario=scenario, workflow_runtime=workflow, activity_runtime=original["activity_runtime"],
-                     workflow_id=execution.workflow_id, run_id=execution.run_id, result=result,
-                     original_sdk=original["sdk_version"], current_sdk=targets[workflow],
-                     marker=one(history, "VersionMarkerRecorded")["payload"], scheduled=original["scheduled"],
-                     history_events=[row["event_type"] for row in history["events"]])
-            await asyncio.gather(*(verify(original) for original in original_records(scenario)))
+            await asyncio.gather(*(verify_original(client, common, scenario, original, targets, previous)
+                                   for original in original_records(scenario)))
         elif phase == "diagnose":
             for workflow, activity in DIRECTIONS:
                 workflow_id = f"{common.required('DURABLE_WORKFLOW_TIMER_ID')}-{scenario}-{workflow}-{activity}"
-                _, execution, history = await observe(workflow_id, workflow)
+                _, execution, history = await observe(client, workflow_id, workflow)
                 emit(phase="diagnostic", workflow_id=workflow_id, run_id=execution.run_id, status=execution.status,
                      history_events=[row["event_type"] for row in history["events"]])
 

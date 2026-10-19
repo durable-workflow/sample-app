@@ -146,6 +146,44 @@ class ActivityUpgradeEvidenceTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     upgrades.original_records("activity-upgrade")
 
+    def roster_case(self, current):
+        selected = TARGETS if current else {runtime: "1.0.0" for runtime in upgrades.RUNTIMES}
+        workers = [types.SimpleNamespace(runtime=runtime,
+            supported_workflow_types=[f"polyglot.{runtime}.activity-upgrade"],
+            supported_activity_types=[f"polyglot.{runtime}.upgrade-activity"] if current else [],
+            raw={"sdk_version": f"durable-workflow-{runtime}/{selected[runtime]}"})
+            for runtime in upgrades.RUNTIMES]
+        common = types.SimpleNamespace(
+            sdk_versions=lambda key: TARGETS,
+            active_workers=lambda roster, runtime: [worker for worker in roster if worker.runtime == runtime],
+            worker_snapshot=lambda worker: {"runtime": worker.runtime})
+        return workers, common, selected
+
+    def test_previous_roster_cannot_dispatch_activities_and_current_roster_must_dispatch_them(self):
+        for current in (False, True):
+            with self.subTest(current=current):
+                workers, common, selected = self.roster_case(current)
+                self.assertEqual(len(upgrades.ready_snapshot(workers, common, selected)), 3)
+                workers[0].supported_activity_types = [] if current else ["polyglot.php.upgrade-activity"]
+                self.assertIsNone(upgrades.ready_snapshot(workers, common, selected))
+
+    def test_wrong_installed_package_or_missing_workflow_refuses_roster_readiness(self):
+        for wrong in ("package", "workflow", "absent"):
+            with self.subTest(wrong=wrong):
+                workers, common, selected = self.roster_case(True)
+                if wrong == "package":
+                    workers[0].raw["sdk_version"] = "durable-workflow-php/1.0.0"
+                elif wrong == "workflow":
+                    workers[0].supported_workflow_types = []
+                else:
+                    workers.pop()
+                self.assertIsNone(upgrades.ready_snapshot(workers, common, selected))
+
+    def test_ambiguous_registered_workers_are_refused(self):
+        workers, common, selected = self.roster_case(True)
+        with self.assertRaisesRegex(RuntimeError, "Ambiguous"):
+            upgrades.ready_snapshot([*workers, workers[0]], common, selected)
+
 
 if __name__ == "__main__":
     unittest.main()
