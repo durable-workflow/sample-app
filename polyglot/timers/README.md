@@ -101,7 +101,7 @@ operator attention or a process supervisor.
 
 The runner prints the exact tuple, Server digest, timestamps, per-language
 results and persisted timer events. Record the command, Sample App commit,
-UTC interval and thirty-six scenario outcomes in the owning GitHub issue. Its exit
+UTC interval and forty scenario outcomes in the owning GitHub issue. Its exit
 trap removes the isolated Compose stack, volumes and task worker images on
 success or failure. Shared published base images are preserved.
 If interrupted externally, repeat the removal with the same project name:
