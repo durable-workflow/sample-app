@@ -178,6 +178,19 @@ class ApplicationUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await self.verify()
 
+    async def test_initial_marker_bounds_retain_authored_values_and_types(self):
+        for key, value in (("min_supported", None), ("min_supported", True), ("min_supported", 1.0),
+                           ("min_supported", 0), ("min_supported", 2), ("max_supported", None),
+                           ("max_supported", True), ("max_supported", 1.0),
+                           ("max_supported", 0), ("max_supported", 2)):
+            with self.subTest(key=key, value=value):
+                self.case()
+                for marker in (self.history["events"][1]["payload"], self.original["history_prefix"][1]["payload"],
+                               self.original["version_marker"]):
+                    marker[key] = value
+                with self.assertRaises(RuntimeError):
+                    await self.verify()
+
     async def test_result_branch_preserves_scalar_types(self):
         for key, value in (("version", True), ("version", 1.0), ("timer_seconds", 30.0)):
             with self.subTest(key=key, value=value):
