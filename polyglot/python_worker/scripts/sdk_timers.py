@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from durable_workflow import Client
@@ -21,11 +22,18 @@ CONCURRENT_SCENARIOS = {
     "concurrent-server-restart": "server-restart",
     "concurrent-cancellation": "cancellation",
 }
+CLASS_UPGRADE_SCENARIOS = {
+    "class-replacement": (False, 1),
+    "class-replacement-fresh": (False, 2),
+    "concurrent-class-replacement": (True, 1),
+    "concurrent-class-replacement-fresh": (True, 2),
+}
 UPGRADE_SCENARIOS = {
     "application-upgrade": (False, 1),
     "application-upgrade-fresh": (False, 2),
     "concurrent-application-upgrade": (True, 1),
     "concurrent-application-upgrade-fresh": (True, 2),
+    **CLASS_UPGRADE_SCENARIOS,
 }
 APPLICATION_CHANGE_ID = "sample-timer-application"
 
@@ -40,7 +48,8 @@ def timer_delays(scenario: str) -> list[int]:
 
 
 def workflow_suffix(scenario: str) -> str:
-    prefix = "upgrade-" if scenario in UPGRADE_SCENARIOS else ""
+    prefix = "class-upgrade-" if scenario in CLASS_UPGRADE_SCENARIOS else (
+        "upgrade-" if scenario in UPGRADE_SCENARIOS else "")
     return prefix + ("concurrent-timers" if is_concurrent(scenario) else "timer")
 
 
@@ -67,6 +76,98 @@ def same_json_value(left, right) -> bool:
 
 def emit(**record) -> None:
     print(json.dumps(record, sort_keys=True), flush=True)
+
+
+def control_read(path: str) -> dict:
+    request = Request(required("DURABLE_WORKFLOW_SERVER_URL") + "/api" + path,
+        headers={"Authorization": "Bearer " + required("DURABLE_WORKFLOW_AUTH_TOKEN"),
+                 "Accept": "application/json", "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"),
+                 "X-Durable-Workflow-Control-Plane-Version": "2"})
+    with urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
+def active_workers(roster, runtime: str) -> list:
+    return [worker for worker in roster.workers
+            if worker.namespace == required("DURABLE_WORKFLOW_NAMESPACE")
+            and worker.runtime == runtime and worker.task_queue == f"polyglot-{runtime}"
+            and worker.status == "active"]
+
+
+def worker_snapshot(worker) -> dict:
+    return {"worker_id": worker.worker_id, "namespace": worker.namespace,
+            "runtime": worker.runtime, "task_queue": worker.task_queue,
+            "workflow_definition_fingerprints": (worker.raw or {}).get("workflow_definition_fingerprints", {})}
+
+
+def ready_snapshot(roster):
+    selected = []
+    for runtime in RUNTIMES:
+        matches = active_workers(roster, runtime)
+        if len(matches) > 1:
+            raise RuntimeError(f"Ambiguous active worker definitions for {runtime}.")
+        types = {f"polyglot.{runtime}.upgrade-timer", f"polyglot.{runtime}.upgrade-concurrent-timers"}
+        if runtime == "python":
+            types.update({"polyglot.python.class-upgrade-timer", "polyglot.python.class-upgrade-concurrent-timers"})
+        if len(matches) != 1 or not types <= set(matches[0].supported_workflow_types or []):
+            return None
+        selected.append(worker_snapshot(matches[0]))
+    return selected
+
+
+async def ready_workers(client: Client, scenario: str) -> None:
+    deadline = asyncio.get_running_loop().time() + 20
+    while True:
+        roster = await client.list_workers()
+        selected = ready_snapshot(roster)
+        if selected is not None:
+            emit(phase="workers_ready", scenario=scenario, project=required("DURABLE_WORKFLOW_TIMER_ID"),
+                 workers=selected)
+            return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError("The replacement worker roster did not become ready.")
+        await asyncio.sleep(0.25)
+
+
+def retirement_snapshot() -> list[dict]:
+    record = json.loads(required("DURABLE_WORKFLOW_TIMER_WORKERS"))
+    workers = record.get("workers", [])
+    if (record.get("phase") != "workers_ready" or record.get("project") != required("DURABLE_WORKFLOW_TIMER_ID")
+            or len(workers) != len(RUNTIMES) or {worker.get("runtime") for worker in workers} != set(RUNTIMES)):
+        raise RuntimeError("Invalid owned worker retirement snapshot.")
+    for worker in workers:
+        if (worker.get("namespace") != required("DURABLE_WORKFLOW_NAMESPACE")
+                or worker.get("task_queue") != f"polyglot-{worker['runtime']}"
+                or not isinstance(worker.get("worker_id"), str) or not worker["worker_id"].strip()):
+            raise RuntimeError("Worker retirement snapshot has a foreign or missing identity.")
+    if len({worker["worker_id"] for worker in workers}) != len(workers):
+        raise RuntimeError("Worker retirement snapshot repeats an identity.")
+    return workers
+
+
+async def retire_workers(client: Client, scenario: str) -> None:
+    workers = retirement_snapshot()
+    current = {worker.worker_id: worker for worker in (await client.list_workers()).workers}
+    for original in workers:
+        worker_id = original["worker_id"]
+        if worker_id not in current:
+            continue
+        if not same_json_value(worker_snapshot(current[worker_id]), original):
+            raise RuntimeError("Worker registration changed before owned retirement.")
+        try:
+            result = await client.deregister_worker(worker_id)
+        except Exception as error:
+            if getattr(error, "status_code", None) == 404 and getattr(error, "reason", None) == "worker_not_found":
+                continue
+            raise
+        if (result.get("worker_id") != worker_id or result.get("outcome") != "deregistered"
+                or type(result.get("recovered_workflow_task_count")) is not int
+                or result["recovered_workflow_task_count"] != 0):
+            raise RuntimeError("Retirement recovered an unexpected leased task or returned the wrong identity.")
+    remaining = {worker.worker_id for worker in (await client.list_workers()).workers}
+    if remaining & {worker["worker_id"] for worker in workers}:
+        raise RuntimeError("An owned stopped worker registration survived retirement.")
+    emit(phase="workers_retired", scenario=scenario, workers=[worker["worker_id"] for worker in workers])
 
 
 def original_pending(runtime: str, scenario: str) -> dict:
@@ -332,13 +433,66 @@ def upgrade_marker(history: dict, scenario: str) -> dict:
     return marker
 
 
-def check_upgrade_definition_binding(history: dict) -> None:
+def check_upgrade_definition_binding(history: dict) -> str:
     started = events(history, "WorkflowStarted")
     payload = started[0]["payload"] if len(started) == 1 else {}
     fingerprint = payload.get("workflow_definition_fingerprint")
     if (payload.get("workflow_definition_fingerprint_source") != "worker"
             or not isinstance(fingerprint, str) or not fingerprint.strip()):
         raise RuntimeError("Python class upgrade requires one original worker-sourced definition fingerprint.")
+    return fingerprint
+
+
+def check_upgrade_prefix(original: dict, execution, history: dict, scenario: str) -> dict:
+    marker = upgrade_marker(history, scenario)
+    prefix = original["history_prefix"]
+    if (execution.workflow_id != original["workflow_id"] or execution.run_id != original["run_id"]
+            or not prefix or not same_json_value(history["events"][:len(prefix)], prefix)
+            or not same_json_value(marker, original["version_marker"])):
+        raise RuntimeError("Application upgrade changed the original identity, history prefix or marker.")
+    return marker
+
+
+async def verify_definition_fence(client: Client, scenario: str) -> None:
+    if scenario not in CLASS_UPGRADE_SCENARIOS or UPGRADE_SCENARIOS[scenario][1] != 1:
+        raise RuntimeError("Definition refusal requires an original Python class-replacement case.")
+    await fired(client, "python", scenario)
+    await asyncio.sleep(5)
+    _, execution, history = await observe(client, "python", scenario)
+    original = original_pending("python", scenario)
+    check_upgrade_prefix(original, execution, history, scenario)
+    fingerprint = check_upgrade_definition_binding(history)
+    workers = active_workers(await client.list_workers(), "python")
+    workflow_type = f"polyglot.python.{workflow_suffix(scenario)}"
+    replacement = ((workers[0].raw or {}).get("workflow_definition_fingerprints", {}).get(workflow_type)
+                   if len(workers) == 1 else None)
+    if not isinstance(replacement, str) or not replacement or replacement == fingerprint:
+        raise RuntimeError("The active replacement must advertise a different class definition.")
+    tail = history["events"][len(original["history_prefix"]):]
+    if (execution.status not in ("pending", "running", "waiting")
+            or len(tail) != len(timer_delays(scenario))
+            or any(item["event_type"] != "TimerFired" for item in tail)):
+        raise RuntimeError("The incompatible definition changed or completed the original.")
+    if is_concurrent(scenario):
+        timers = original_parallel_timers("python", scenario, execution, history)
+        check_resolved_members(timers, tail, "fired")
+    else:
+        check_original("python", scenario, execution, events(history, "TimerScheduled")[0])
+        if tail[0]["payload"]["timer_id"] != original["timer"]["timer_id"]:
+            raise RuntimeError("The definition refusal changed the original timer identity.")
+        check_timer_metadata(original["timer"], tail[0]["payload"], "fired")
+    debug = control_read(f"/workflows/{quote(execution.workflow_id, safe='')}/runs/"
+                         f"{quote(execution.run_id, safe='')}/debug")
+    tasks = debug.get("pending_workflow_tasks", [])
+    if (debug.get("workflow_id") != execution.workflow_id or debug.get("run_id") != execution.run_id
+            or not tasks or any(task.get("task_type") != "workflow" or task.get("status") != "ready"
+                or task.get("lease_owner") is not None or type(task.get("attempt_count")) is not int
+                or task["attempt_count"] != 0 or type(task.get("repair_count")) is not int
+                or task["repair_count"] != 0 for task in tasks)):
+        raise RuntimeError("Definition refusal must retain the original ready, unclaimed, unrepaired task.")
+    emit(phase="definition_fenced", runtime="python", scenario=scenario, workflow_id=execution.workflow_id,
+         run_id=execution.run_id, original_definition=fingerprint, replacement_definition=replacement,
+         worker_id=workers[0].worker_id, pending_tasks=tasks)
 
 
 def check_completed_upgrade_timer(history: dict) -> dict:
@@ -363,13 +517,10 @@ async def verify_upgrade(client: Client, runtime: str, scenario: str) -> None:
     result = await handle.result(timeout=120, poll_interval=0.25)
     _, execution, history = await observe(client, runtime, scenario)
     original = original_pending(runtime, scenario)
-    marker = upgrade_marker(history, scenario)
-    prefix = original["history_prefix"]
-    if (not prefix or not same_json_value(history["events"][:len(prefix)], prefix)
-            or not same_json_value(marker, original["version_marker"])):
-        raise RuntimeError("Application upgrade changed the original history prefix or marker.")
+    marker = check_upgrade_prefix(original, execution, history, scenario)
     delays = timer_delays(scenario)
-    expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "application_revision": "v2",
+    revision = "v1" if scenario in CLASS_UPGRADE_SCENARIOS and UPGRADE_SCENARIOS[scenario][1] == 1 else "v2"
+    expected = {"workflow_runtime": runtime, "request": execution.workflow_id, "application_revision": revision,
                 "version": UPGRADE_SCENARIOS[scenario][1],
                 "timer_seconds": delays if is_concurrent(scenario) else delays[0]}
     if execution.status != "completed" or not same_json_value(result, expected):
@@ -452,33 +603,33 @@ async def main(phase: str, scenario: str) -> None:
         namespace=required("DURABLE_WORKFLOW_NAMESPACE"),
         control_token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
     ) as client:
+        worker_actions = {"ready": ready_workers, "retire": retire_workers, "fenced": verify_definition_fence}
+        if phase in worker_actions:
+            await worker_actions[phase](client, scenario)
+            return
+        runtimes = ("python",) if scenario in CLASS_UPGRADE_SCENARIOS else RUNTIMES
         if phase == "diagnose":
             workers = []
             for suffix in ("", "?status=stale"):
-                request = Request(required("DURABLE_WORKFLOW_SERVER_URL") + "/api/workers" + suffix,
-                    headers={"Authorization": "Bearer " + required("DURABLE_WORKFLOW_AUTH_TOKEN"),
-                             "Accept": "application/json", "X-Namespace": required("DURABLE_WORKFLOW_NAMESPACE"),
-                             "X-Durable-Workflow-Control-Plane-Version": "2"})
-                with urlopen(request, timeout=30) as response:
-                    rows = json.loads(response.read())["workers"]
+                rows = control_read("/workers" + suffix)["workers"]
                 fields = ("worker_id", "task_queue", "runtime", "sdk_version", "status",
                           "last_heartbeat_at", "heartbeat_interval_seconds",
                           "supported_workflow_types", "workflow_definition_fingerprints")
                 workers.extend({key: row.get(key) for key in fields} for row in rows)
             emit(phase="worker_diagnostics", scenario=scenario, workers=workers)
-            for runtime in RUNTIMES:
+            for runtime in runtimes:
                 _, execution, history = await observe(client, runtime, scenario)
                 emit(phase="run_diagnostics", scenario=scenario, runtime=runtime,
                      workflow_id=execution.workflow_id, run_id=execution.run_id, status=execution.status,
                      history_events=[event["event_type"] for event in history["events"]])
             return
         action = {"start": pending, "fired": fired, "verify": verify}[phase]
-        await asyncio.gather(*(action(client, runtime, scenario) for runtime in RUNTIMES))
+        await asyncio.gather(*(action(client, runtime, scenario) for runtime in runtimes))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose"))
+    parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose", "ready", "retire", "fenced"))
     parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS, *UPGRADE_SCENARIOS))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))

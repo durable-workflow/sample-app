@@ -2,6 +2,9 @@
 
 from durable_workflow import workflow
 
+current_application = None
+current_revision = None
+
 
 def original_application(ctx, concurrent):
     version = yield ctx.get_version("sample-timer-application", 1, 1)
@@ -24,33 +27,52 @@ def execute(ctx, request, application, revision, concurrent):
             "version": version, "timer_seconds": delays if concurrent else delays[0]}
 
 
-@workflow.defn(name="polyglot.python.upgrade-timer")
+@workflow.defn(name="polyglot.python.class-upgrade-timer")
 class OriginalSingleTimer:
     def run(self, ctx, request):
         return (yield from execute(ctx, request, original_application, "v1", False))
 
 
-@workflow.defn(name="polyglot.python.upgrade-timer")
+@workflow.defn(name="polyglot.python.class-upgrade-timer")
 class UpgradedSingleTimer:
     def run(self, ctx, request):
         return (yield from execute(ctx, request, upgraded_application, "v2", False))
 
 
-@workflow.defn(name="polyglot.python.upgrade-concurrent-timers")
+@workflow.defn(name="polyglot.python.class-upgrade-concurrent-timers")
 class OriginalConcurrentTimers:
     def run(self, ctx, request):
         return (yield from execute(ctx, request, original_application, "v1", True))
 
 
-@workflow.defn(name="polyglot.python.upgrade-concurrent-timers")
+@workflow.defn(name="polyglot.python.class-upgrade-concurrent-timers")
 class UpgradedConcurrentTimers:
     def run(self, ctx, request):
         return (yield from execute(ctx, request, upgraded_application, "v2", True))
 
 
+@workflow.defn(name="polyglot.python.upgrade-timer")
+class HelperSingleTimer:
+    def run(self, ctx, request):
+        return (yield from execute(ctx, request, current_application, current_revision, False))
+
+
+@workflow.defn(name="polyglot.python.upgrade-concurrent-timers")
+class HelperConcurrentTimers:
+    def run(self, ctx, request):
+        return (yield from execute(ctx, request, current_application, current_revision, True))
+
+
 def applications(revision):
+    # Select business helpers before Worker construction; registered wrapper classes stay identical.
+    global current_application, current_revision
     if revision == "v1":
-        return [OriginalSingleTimer, OriginalConcurrentTimers]
-    if revision == "v2":
-        return [UpgradedSingleTimer, UpgradedConcurrentTimers]
-    raise ValueError("Unknown timer application revision.")
+        current_application = original_application
+        classes = [OriginalSingleTimer, OriginalConcurrentTimers]
+    elif revision == "v2":
+        current_application = upgraded_application
+        classes = [UpgradedSingleTimer, UpgradedConcurrentTimers]
+    else:
+        raise ValueError("Unknown timer application revision.")
+    current_revision = revision
+    return [*classes, HelperSingleTimer, HelperConcurrentTimers]
