@@ -1,0 +1,7 @@
+services:
+  server:
+    volumes:
+      - type: bind
+        source: ./updates/apache-poll-metadata.conf
+        target: /etc/apache2/conf-enabled/sdk-update-poll-metadata.conf
+        read_only: true
