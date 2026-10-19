@@ -53,6 +53,8 @@ definition changes with a fixed published SDK tuple. It does not qualify an
 SDK package upgrade, worker-build routing or a Server version upgrade.
 Replacement definitions use new worker identities, as required by the published
 registration contract. The existing scenarios keep their normal worker IDs.
+Revision one already records its version marker. Introducing versioning into
+an unversioned history is a separate scenario.
 
 The new concurrent interruption/cancellation cases use a 90-second observation
 window for absent-worker firing and cancelled-history checks, and the existing
