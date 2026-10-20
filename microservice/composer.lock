@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c899dec41bd72bef70a88da991efd236",
+    "content-hash": "b6cc5940b922c7766afb9751ef74930e",
     "packages": [
         {
             "name": "apache/avro",
@@ -707,16 +707,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.7.0",
+            "version": "2.8.0-alpha.748",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "4423774074d66347c627c2c13ac516207e815e05"
+                "reference": "fa5d23009245b0c975a685956131ae1e575e49a3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/4423774074d66347c627c2c13ac516207e815e05",
-                "reference": "4423774074d66347c627c2c13ac516207e815e05",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/fa5d23009245b0c975a685956131ae1e575e49a3",
+                "reference": "fa5d23009245b0c975a685956131ae1e575e49a3",
                 "shasum": ""
             },
             "require": {
@@ -729,41 +729,34 @@
             "replace": {
                 "laravel-workflow/laravel-workflow": "self.version"
             },
-            "require-dev": {
-                "doctrine/dbal": "^3.7",
-                "orchestra/testbench": "^8.0|^11.0",
-                "phpstan/phpstan": "^2.0",
-                "symplify/easy-coding-standard": "^11.0"
-            },
             "suggest": {
                 "durable-workflow/sdk": "Framework-neutral client and remote-worker SDK for the standalone Durable Workflow server."
             },
             "type": "library",
             "extra": {
-                "laravel": {
-                    "providers": [
-                        "Workflow\\Providers\\WorkflowServiceProvider"
-                    ]
-                },
                 "branch-alias": {
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.7.0",
+                    "product-train": "2.8.0",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
+                },
+                "laravel": {
+                    "providers": [
+                        "Workflow\\Providers\\WorkflowServiceProvider"
+                    ]
                 }
             },
             "autoload": {
+                "psr-4": {
+                    "Workflow\\": "src/"
+                },
                 "files": [
                     "src/functions.php",
                     "src/V2/functions.php"
-                ],
-                "psr-4": {
-                    "Workflow\\": "src/"
-                }
+                ]
             },
-            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -773,12 +766,7 @@
                     "email": "support@durable-workflow.com"
                 }
             ],
-            "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
-            "support": {
-                "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.7.0"
-            },
-            "time": "2026-10-20T00:29:36+00:00"
+            "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications."
         },
         {
             "name": "egulias/email-validator",
@@ -8788,7 +8776,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "durable-workflow/workflow": 15
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
