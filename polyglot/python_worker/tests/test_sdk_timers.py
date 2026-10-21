@@ -473,8 +473,9 @@ class BoundClassEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.fixture.history["events"].pop()
         self.worker = WorkerRosterEvidenceTest.worker("python")
         self.debug = {"workflow_id": self.fixture.execution.workflow_id, "run_id": self.fixture.execution.run_id,
-                      "pending_workflow_tasks": [{"task_id": "original-resume", "task_type": "workflow",
-                          "status": "ready", "attempt_count": 0, "repair_count": 0}]}
+                      "pending_workflow_tasks": [], "latest_workflow_task_failure": {
+                          "task_id": "original-resume", "type": "WorkflowEntryArgumentsMismatchError",
+                          "reason": "workflow_entry_arguments_mismatch", "replay_blocked": True}}
 
     async def fenced(self):
         client = types.SimpleNamespace(list_workers=AsyncMock(return_value=types.SimpleNamespace(workers=[self.worker])))
@@ -497,17 +498,21 @@ class BoundClassEvidenceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "different class"):
             await self.fenced()
 
-    async def test_claimed_repaired_or_foreign_tasks_cannot_qualify_refusal(self):
-        for field, value in (("status", "leased"), ("lease_owner", "worker"), ("attempt_count", 1),
-                             ("repair_count", 1), ("attempt_count", False), ("task_type", "activity")):
+    async def test_unknown_unblocked_or_foreign_failures_cannot_qualify_refusal(self):
+        for field, value in (("task_id", ""), ("type", "RuntimeError"),
+                             ("reason", "unknown"), ("replay_blocked", False), ("replay_blocked", 1)):
             with self.subTest(field=field, value=value):
                 self.case()
-                self.debug["pending_workflow_tasks"][0][field] = value
-                with self.assertRaisesRegex(RuntimeError, "ready, unclaimed"):
+                self.debug["latest_workflow_task_failure"][field] = value
+                with self.assertRaisesRegex(RuntimeError, "exact blocked binding failure"):
                     await self.fenced()
         self.case()
         self.debug["run_id"] = "another-run"
-        with self.assertRaisesRegex(RuntimeError, "ready, unclaimed"):
+        with self.assertRaisesRegex(RuntimeError, "exact blocked binding failure"):
+            await self.fenced()
+        self.case()
+        self.debug["pending_workflow_tasks"] = [{"task_id": "automatic-successor"}]
+        with self.assertRaisesRegex(RuntimeError, "exact blocked binding failure"):
             await self.fenced()
 
     async def test_unexpected_history_or_completion_cannot_qualify_refusal(self):
@@ -528,10 +533,33 @@ class BoundClassEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     if version == 2:
                         fixture.scenario += "-fresh"
                     fixture.result["application_revision"] = "v1" if version == 1 else "v2"
-                    await fixture.verify()
-                    fixture.result["application_revision"] = "v2" if version == 1 else "v1"
-                    with self.assertRaises(RuntimeError):
+                    refusal = {"workflow_id": fixture.execution.workflow_id,
+                               "run_id": fixture.execution.run_id,
+                               "blocked_task": {"task_id": "original-resume"}}
+                    if version == 1:
+                        fixture.history["events"].insert(-1, event("RepairRequested",
+                            task_id="original-resume", outcome="repair_dispatched"))
+                        fixture.history["events"][-1]["payload"]["task"] = {
+                            "id": "original-resume", "attempt_count": 2, "repair_count": 1}
+                    with patch.object(timers, "original_entry_refusal", return_value=refusal):
                         await fixture.verify()
+                        fixture.result["application_revision"] = "v2" if version == 1 else "v1"
+                        with self.assertRaises(RuntimeError):
+                            await fixture.verify()
+
+    def test_repair_requires_same_task_exact_claims_and_one_repair(self):
+        self.case()
+        original = {"workflow_id": self.fixture.execution.workflow_id,
+                    "run_id": self.fixture.execution.run_id, "blocked_task": {"task_id": "original-resume"}}
+        for field, value in (("id", "new-task"), ("attempt_count", 1), ("attempt_count", 3),
+                             ("repair_count", 0), ("repair_count", 2), ("repair_count", True)):
+            with self.subTest(field=field, value=value):
+                task = {"id": "original-resume", "attempt_count": 2, "repair_count": 1, field: value}
+                history = {"events": [event("RepairRequested", task_id="original-resume", outcome="repair_dispatched"),
+                                      event("WorkflowCompleted", task=task)]}
+                with patch.object(timers, "original_entry_refusal", return_value=original), \
+                        self.assertRaisesRegex(RuntimeError, "same original task"):
+                    timers.check_class_entry_repair(history, self.fixture.execution, self.fixture.scenario)
 
 
 class TimerEvidenceTest(unittest.IsolatedAsyncioTestCase):

@@ -208,6 +208,7 @@ client() {
     -e DURABLE_WORKFLOW_SERVER_STOPPED_AT -e DURABLE_WORKFLOW_SERVER_RESTART_AT \
     -e DURABLE_WORKFLOW_TIMER_PENDING \
     -e DURABLE_WORKFLOW_TIMER_WORKERS \
+    -e DURABLE_WORKFLOW_TIMER_REFUSAL \
     -e DURABLE_WORKFLOW_TIMER_SDK_VERSIONS -e DURABLE_WORKFLOW_TIMER_SDK_PREVIOUS -e DURABLE_WORKFLOW_TIMER_SDK_TARGETS \
     smoke python "$observer" "$@"
 }
@@ -281,8 +282,11 @@ class_replacement() {
   start "$scenario"
   "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
   replace_workers v2 "$scenario"
-  client fenced "$scenario"
+  DURABLE_WORKFLOW_TIMER_REFUSAL="$(client fenced "$scenario")"
+  export DURABLE_WORKFLOW_TIMER_REFUSAL
+  printf '%s\n' "$DURABLE_WORKFLOW_TIMER_REFUSAL"
   replace_workers v1 "$scenario"
+  client repair "$scenario"
   client verify "$scenario"
   replace_workers v2 "$scenario"
   start "$scenario-fresh"
