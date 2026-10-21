@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use FilesystemIterator;
 use PHPUnit\Framework\TestCase;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
+use Symfony\Component\Process\Process;
 
 final class RedisExtensionBuildContractTest extends TestCase
 {
@@ -109,23 +106,15 @@ final class RedisExtensionBuildContractTest extends TestCase
      */
     private function dockerfiles(): array
     {
-        $dockerfiles = [];
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(
-                $this->repoPath(),
-                FilesystemIterator::SKIP_DOTS,
-            ),
-        );
+        // Build policy applies to this repository's recipes, not installed
+        // packages' independent benchmark and test Dockerfiles.
+        $tracked = (new Process(
+            ['git', 'ls-files', '-z', '--', ':(glob)**/Dockerfile'],
+            $this->repoPath(),
+        ))->mustRun()->getOutput();
+        $dockerfiles = array_values(array_filter(explode("\0", $tracked)));
 
-        /** @var SplFileInfo $file */
-        foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getFilename() === 'Dockerfile') {
-                $dockerfiles[] = ltrim(
-                    str_replace($this->repoPath(), '', $file->getPathname()),
-                    '/',
-                );
-            }
-        }
+        $this->assertNotEmpty($dockerfiles);
 
         sort($dockerfiles);
 
