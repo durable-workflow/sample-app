@@ -312,11 +312,16 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     suffix = workflow_suffix(scenario)
     delays = timer_delays(scenario)
     package = package_worker(runtime) if scenario in SDK_UPGRADE_SCENARIOS else None
+    # The replacement class requires a new entry argument. Old runs retain
+    # their original input; only a fresh v2 run supplies the new shape.
+    workflow_input = [workflow_id]
+    if scenario in CLASS_UPGRADE_SCENARIOS and scenario.endswith("-fresh"):
+        workflow_input.append("v2")
     await client.start_workflow(
         workflow_type=f"polyglot.{runtime}.{suffix}",
         workflow_id=workflow_id,
         task_queue=f"polyglot-{runtime}",
-        input=[workflow_id],
+        input=workflow_input,
     )
     deadline = asyncio.get_running_loop().time() + 20
     while True:

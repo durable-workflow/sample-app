@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import inspect
 import json
 import sys
 import types
@@ -305,6 +306,23 @@ class UnversionedUpgradeEvidenceTest(unittest.IsolatedAsyncioTestCase):
 
 
 class VersionIntroductionAuthoringTest(unittest.TestCase):
+    def test_class_replacement_rejects_original_entry_but_accepts_fresh_v2_input(self):
+        path = Path(__file__).parents[2] / "python_workflow" / "timer_upgrades.py"
+        spec = importlib.util.spec_from_file_location("timer_entry_authoring", path)
+        application = importlib.util.module_from_spec(spec)
+        decorator = types.SimpleNamespace(defn=lambda **_: lambda definition: definition)
+        with patch.object(sys.modules["durable_workflow"], "workflow", decorator, create=True):
+            spec.loader.exec_module(application)
+        for original, replacement in (
+            (application.OriginalSingleTimer, application.UpgradedSingleTimer),
+            (application.OriginalConcurrentTimers, application.UpgradedConcurrentTimers),
+        ):
+            with self.subTest(replacement=replacement.__name__):
+                inspect.signature(original().run).bind(None, "original-request")
+                with self.assertRaises(TypeError):
+                    inspect.signature(replacement().run).bind(None, "original-request")
+                inspect.signature(replacement().run).bind(None, "fresh-request", "v2")
+
     def test_first_revision_has_no_marker_and_replacement_preserves_both_decisions(self):
         path = Path(__file__).parents[2] / "python_workflow" / "timer_upgrades.py"
         spec = importlib.util.spec_from_file_location("timer_upgrade_authoring", path)
@@ -467,7 +485,7 @@ class BoundClassEvidenceTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(timers.asyncio, "sleep", AsyncMock()), patch.object(timers, "emit"):
             await timers.verify_definition_fence(client, self.fixture.scenario)
 
-    async def test_different_class_stays_fenced_after_single_and_group_timers_fire(self):
+    async def test_incompatible_entry_stays_fenced_after_single_and_group_timers_fire(self):
         for concurrent in (False, True):
             with self.subTest(concurrent=concurrent):
                 self.case(concurrent)
