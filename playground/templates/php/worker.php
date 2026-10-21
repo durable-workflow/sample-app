@@ -20,8 +20,10 @@ $worker = new Worker(
     container: $app,
     logger: $app->make(LoggerInterface::class),
 );
-$handlers = array_map(
-    static fn (string $handler): object => $app->make($handler),
-    $configuration->handlers,
-);
-$worker->register(...$handlers)->run($configuration->pollTimeoutSeconds);
+// PSR-11 discovery needs explicit bindings; keep new handler bindings transient.
+foreach ($configuration->handlers as $handler) {
+    if (! $app->bound($handler)) {
+        $app->bind($handler);
+    }
+}
+$worker->register(...$configuration->handlers)->run($configuration->pollTimeoutSeconds);

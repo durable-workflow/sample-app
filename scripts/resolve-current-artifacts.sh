@@ -26,7 +26,8 @@ const path = process.argv[2];
 const expectedSchema = 'durable-workflow.sample-app.polyglot-qualified-artifact-tuple';
 const keys = ['server', 'cli', 'sdk-php', 'sdk-python', 'sdk-rust', 'workflow', 'waterline'];
 const stableV2 = /^2\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
-const stableRust = /^[23]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
+const stablePhp = /^[23]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
+const stableRust = /^[234]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
 
 let tuple;
 try {
@@ -51,9 +52,10 @@ if (unknown.length > 0) {
 
 for (const key of keys) {
   const version = artifacts[key];
-  const supported = key === 'sdk-rust' ? stableRust : stableV2;
+  const supported = key === 'sdk-rust' ? stableRust : key === 'sdk-php' ? stablePhp : stableV2;
   if (typeof version !== 'string' || !supported.test(version)) {
-    throw new Error(`${path} artifact ${key} must be a stable ${key === 'sdk-rust' ? '2.x or 3.x' : '2.x'} version`);
+    const majors = key === 'sdk-rust' ? '2.x, 3.x or 4.x' : key === 'sdk-php' ? '2.x or 3.x' : '2.x';
+    throw new Error(`${path} artifact ${key} must be a stable ${majors} version`);
   }
   process.stdout.write(`${key}=${version}\n`);
 }
@@ -81,6 +83,9 @@ stable_version() {
   local supported_major=2
   local supported_label=2.x
   if [[ "$name" == SAMPLE_APP_RUST_SDK_VERSION ]]; then
+    supported_major='[234]'
+    supported_label='2.x, 3.x or 4.x'
+  elif [[ "$name" == DURABLE_WORKFLOW_PHP_SDK_VERSION ]]; then
     supported_major='[23]'
     supported_label='2.x or 3.x'
   fi

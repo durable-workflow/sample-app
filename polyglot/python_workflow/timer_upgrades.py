@@ -48,7 +48,9 @@ class OriginalSingleTimer:
 
 @workflow.defn(name="polyglot.python.class-upgrade-timer")
 class UpgradedSingleTimer:
-    def run(self, ctx, request):
+    def run(self, ctx, request, application_revision):
+        if application_revision != "v2":
+            raise ValueError("The replacement requires the v2 entry argument.")
         return (yield from execute(ctx, request, upgraded_application, "v2", False))
 
 
@@ -60,7 +62,9 @@ class OriginalConcurrentTimers:
 
 @workflow.defn(name="polyglot.python.class-upgrade-concurrent-timers")
 class UpgradedConcurrentTimers:
-    def run(self, ctx, request):
+    def run(self, ctx, request, application_revision):
+        if application_revision != "v2":
+            raise ValueError("The replacement requires the v2 entry argument.")
         return (yield from execute(ctx, request, upgraded_application, "v2", True))
 
 

@@ -312,11 +312,16 @@ async def pending(client: Client, runtime: str, scenario: str) -> None:
     suffix = workflow_suffix(scenario)
     delays = timer_delays(scenario)
     package = package_worker(runtime) if scenario in SDK_UPGRADE_SCENARIOS else None
+    # The replacement class requires a new entry argument. Old runs retain
+    # their original input; only a fresh v2 run supplies the new shape.
+    workflow_input = [workflow_id]
+    if scenario in CLASS_UPGRADE_SCENARIOS and scenario.endswith("-fresh"):
+        workflow_input.append("v2")
     await client.start_workflow(
         workflow_type=f"polyglot.{runtime}.{suffix}",
         workflow_id=workflow_id,
         task_queue=f"polyglot-{runtime}",
-        input=[workflow_id],
+        input=workflow_input,
     )
     deadline = asyncio.get_running_loop().time() + 20
     while True:
@@ -596,15 +601,40 @@ def check_upgrade_prefix(original: dict, execution, history: dict, scenario: str
     return marker
 
 
-def original_unclaimed_tasks(debug: dict, execution) -> list[dict]:
-    tasks = debug.get("pending_workflow_tasks", [])
+def original_blocked_task(debug: dict, execution) -> dict:
+    failure = debug.get("latest_workflow_task_failure")
     if (debug.get("workflow_id") != execution.workflow_id or debug.get("run_id") != execution.run_id
-            or not tasks or any(task.get("task_type") != "workflow" or task.get("status") != "ready"
-                or task.get("lease_owner") is not None or type(task.get("attempt_count")) is not int
-                or task["attempt_count"] != 0 or type(task.get("repair_count")) is not int
-                or task["repair_count"] != 0 for task in tasks)):
-        raise RuntimeError("Definition refusal must retain the original ready, unclaimed, unrepaired task.")
-    return tasks
+            or debug.get("pending_workflow_tasks") != [] or not isinstance(failure, dict)
+            or not isinstance(failure.get("task_id"), str) or not failure["task_id"].strip()
+            or failure.get("type") != "WorkflowEntryArgumentsMismatchError"
+            or failure.get("reason") != "workflow_entry_arguments_mismatch"
+            or failure.get("replay_blocked") is not True):
+        raise RuntimeError("Entry refusal requires the exact blocked binding failure and no automatic successor.")
+    return failure
+
+
+def original_entry_refusal(scenario: str) -> dict:
+    records = [json.loads(line) for line in required("DURABLE_WORKFLOW_TIMER_REFUSAL").splitlines()]
+    matches = [record for record in records if record.get("phase") == "definition_fenced"
+               and record.get("runtime") == "python" and record.get("scenario") == scenario]
+    if len(matches) != 1:
+        raise RuntimeError("Expected one original entry-refusal observation.")
+    return matches[0]
+
+
+async def repair_class_entry(client: Client, scenario: str) -> None:
+    original = original_entry_refusal(scenario)
+    _, execution, _ = await observe(client, "python", scenario)
+    debug = control_read(f"/workflows/{quote(execution.workflow_id, safe='')}/runs/"
+                         f"{quote(execution.run_id, safe='')}/debug")
+    failure = original_blocked_task(debug, execution)
+    if (original.get("workflow_id") != execution.workflow_id or original.get("run_id") != execution.run_id
+            or original.get("blocked_task") != failure):
+        raise RuntimeError("Entry refusal changed before supported repair.")
+    acknowledgment = await client.repair_workflow(execution.workflow_id)
+    emit(phase="entry_repair_requested", scenario=scenario, runtime="python",
+         workflow_id=execution.workflow_id, run_id=execution.run_id,
+         task_id=failure["task_id"], command_id=acknowledgment.command_id)
 
 
 async def verify_definition_fence(client: Client, scenario: str) -> None:
@@ -637,10 +667,25 @@ async def verify_definition_fence(client: Client, scenario: str) -> None:
         check_timer_metadata(original["timer"], tail[0]["payload"], "fired")
     debug = control_read(f"/workflows/{quote(execution.workflow_id, safe='')}/runs/"
                          f"{quote(execution.run_id, safe='')}/debug")
-    tasks = original_unclaimed_tasks(debug, execution)
+    failure = original_blocked_task(debug, execution)
     emit(phase="definition_fenced", runtime="python", scenario=scenario, workflow_id=execution.workflow_id,
          run_id=execution.run_id, original_definition=fingerprint, replacement_definition=replacement,
-         worker_id=workers[0].worker_id, pending_tasks=tasks)
+         worker_id=workers[0].worker_id, blocked_task=failure)
+
+
+def check_class_entry_repair(history: dict, execution, scenario: str) -> None:
+    original = original_entry_refusal(scenario)
+    repairs = events(history, "RepairRequested")
+    completed = events(history, "WorkflowCompleted")
+    task_id = original.get("blocked_task", {}).get("task_id")
+    task = completed[0]["payload"].get("task", {}) if len(completed) == 1 else {}
+    if (original.get("workflow_id") != execution.workflow_id or original.get("run_id") != execution.run_id
+            or not task_id or len(repairs) != 1 or repairs[0]["payload"].get("task_id") != task_id
+            or repairs[0]["payload"].get("outcome") != "repair_dispatched"
+            or task.get("id") != task_id or type(task.get("attempt_count")) is not int
+            or task["attempt_count"] != 2 or type(task.get("repair_count")) is not int
+            or task["repair_count"] != 1):
+        raise RuntimeError("Supported repair must complete the same original task with one repair and two claims.")
 
 
 def check_completed_upgrade_timer(history: dict) -> dict:
@@ -673,6 +718,8 @@ async def verify_upgrade(client: Client, runtime: str, scenario: str) -> None:
                 "timer_seconds": delays if is_concurrent(scenario) else delays[0]}
     if execution.status != "completed" or not same_json_value(result, expected):
         raise RuntimeError("Application replacement did not complete its expected recorded branch.")
+    if scenario in CLASS_UPGRADE_SCENARIOS and UPGRADE_SCENARIOS[scenario][1] == 1:
+        check_class_entry_repair(history, execution, scenario)
     if is_concurrent(scenario):
         timers = original_parallel_timers(runtime, scenario, execution, history)
         check_completed_parallel(history, timers, scenario)
@@ -760,7 +807,8 @@ async def main(phase: str, scenario: str) -> None:
         namespace=required("DURABLE_WORKFLOW_NAMESPACE"),
         control_token=required("DURABLE_WORKFLOW_AUTH_TOKEN"),
     ) as client:
-        worker_actions = {"ready": ready_workers, "retire": retire_workers, "fenced": verify_definition_fence}
+        worker_actions = {"ready": ready_workers, "retire": retire_workers,
+                          "fenced": verify_definition_fence, "repair": repair_class_entry}
         if phase in worker_actions:
             await worker_actions[phase](client, scenario)
             return
@@ -786,7 +834,7 @@ async def main(phase: str, scenario: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose", "ready", "retire", "fenced"))
+    parser.add_argument("phase", choices=("start", "fired", "verify", "diagnose", "ready", "retire", "fenced", "repair"))
     parser.add_argument("scenario", choices=("completion", "worker-restart", "server-restart", "cancellation", *CONCURRENT_SCENARIOS, *UPGRADE_SCENARIOS, "sdk-upgrade", "sdk-upgrade-fresh"))
     args = parser.parse_args()
     asyncio.run(main(args.phase, args.scenario))
