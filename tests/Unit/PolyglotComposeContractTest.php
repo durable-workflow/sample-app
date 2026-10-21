@@ -26,7 +26,12 @@ final class PolyglotComposeContractTest extends TestCase
         );
 
         foreach ($tuple['artifacts'] as $artifact => $version) {
-            $this->assertMatchesRegularExpression($artifact === 'sdk-rust' ? '/^[23]\.\d+\.\d+$/' : '/^2\.\d+\.\d+$/', $version);
+            $pattern = match ($artifact) {
+                'sdk-rust' => '/^[234]\.\d+\.\d+$/',
+                'sdk-php' => '/^[23]\.\d+\.\d+$/',
+                default => '/^2\.\d+\.\d+$/',
+            };
+            $this->assertMatchesRegularExpression($pattern, $version);
         }
 
         $assignments = $this->resolveArtifacts();
@@ -62,7 +67,43 @@ final class PolyglotComposeContractTest extends TestCase
         $process->run();
 
         $this->assertFalse($process->isSuccessful());
-        $this->assertStringContainsString('must be a stable 2.x or 3.x version', $process->getErrorOutput());
+        $this->assertStringContainsString('must be a stable 2.x, 3.x or 4.x version', $process->getErrorOutput());
+    }
+
+    public function test_current_sdk_majors_resolve_without_changing_frozen_selections(): void
+    {
+        $current = $this->resolveArtifacts([
+            'SAMPLE_APP_RUST_SDK_VERSION' => '4.0.0',
+            'SAMPLE_APP_PHP_SDK_PIN' => 'durable-workflow/sdk:3.0.0',
+        ]);
+
+        $this->assertSame('4.0.0', $current['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
+        $this->assertSame('3.0.0', $current['DURABLE_WORKFLOW_PHP_SDK_VERSION']);
+        $this->assertSame('durable-workflow/sdk:3.0.0', $current['DURABLE_WORKFLOW_PHP_SDK_PIN']);
+
+        $tuple = json_decode((string) file_get_contents($this->path('polyglot/qualified-artifact-tuple.json')), true, flags: JSON_THROW_ON_ERROR);
+        $tuple['artifacts']['sdk-php'] = '3.0.0';
+        $tuple['artifacts']['sdk-rust'] = '4.0.0';
+        $tuplePath = tempnam(sys_get_temp_dir(), 'dw-current-sdk-tuple-');
+        try {
+            file_put_contents($tuplePath, json_encode($tuple, JSON_THROW_ON_ERROR));
+            $resolved = $this->resolveArtifacts(['DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $tuplePath]);
+            $this->assertSame('3.0.0', $resolved['DURABLE_WORKFLOW_PHP_SDK_VERSION']);
+            $this->assertSame('4.0.0', $resolved['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
+            $this->assertSame($tuple['serverComponents']['workflow'], $resolved['DURABLE_SERVER_WORKFLOW_VERSION']);
+        } finally {
+            unlink($tuplePath);
+        }
+
+        foreach ([
+            ['SAMPLE_APP_RUST_SDK_VERSION' => '5.0.0'],
+            ['SAMPLE_APP_PHP_SDK_VERSION' => '4.0.0'],
+            ['SAMPLE_APP_PHP_SDK_VERSION' => '3.0.0-rc.1'],
+        ] as $environment) {
+            $process = new Process([$this->path('scripts/resolve-current-artifacts.sh')], env: $environment);
+            $process->run();
+            $this->assertFalse($process->isSuccessful());
+        }
     }
 
     public function test_server_component_selection_preserves_frozen_workflow_overrides(): void
