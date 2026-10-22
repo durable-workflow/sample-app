@@ -4,9 +4,10 @@ FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd703567
 
 FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS brotli-build
 
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY .devcontainer/docker/verify-php-trust.php /usr/local/share/sample-app/verify-php-trust.php
 COPY docker/brotli /usr/src/brotli-inputs
-RUN php /usr/local/share/sample-app/verify-php-trust.php \
+RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
     && sh /usr/src/brotli-inputs/build.sh
 
 FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli

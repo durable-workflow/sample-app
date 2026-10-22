@@ -59,4 +59,16 @@ final class BrotliImageContractTest extends TestCase
             $this->assertStringContainsString('php /usr/local/share/sample-app/brotli/verify-runtime.php', file_get_contents($root.'/'.$path));
         }
     }
+
+    public function test_package_builder_supplies_the_composer_archive_required_by_its_trust_guard(): void
+    {
+        $root = dirname(__DIR__, 2);
+        foreach (['Dockerfile', '.devcontainer/docker/Dockerfile'] as $path) {
+            $source = file_get_contents($root.'/'.$path);
+            $start = strpos($source, ' AS brotli-build');
+            $builder = substr($source, $start, strpos($source, "\nFROM ", $start) - $start);
+            $this->assertStringContainsString('COPY --from=composer /usr/bin/composer /usr/local/bin/composer', $builder);
+            $this->assertMatchesRegularExpression('~php /usr/local/share/sample-app/verify-(?:runtime|php)-trust\.php /usr/local/bin/composer~', $builder);
+        }
+    }
 }
