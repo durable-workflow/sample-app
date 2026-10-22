@@ -228,10 +228,9 @@ RUN set -eux; \
 COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualified-artifact-tuple.json
 COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
-RUN php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)" \
-    && node /usr/local/share/sample-app/verify-node-trust.mjs
-
 RUN set -eux; \
+    php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
+    node /usr/local/share/sample-app/verify-node-trust.mjs; \
     cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
     test -n "$cli_version"; \
     curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
@@ -248,7 +247,7 @@ RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
     python3 -m venv "$VIRTUAL_ENV"; \
-    curl -fsSL --max-time 120 \
+    curl --proto '=https' --proto-redir '=https' -fsSL --max-time 120 \
         https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl \
         -o /tmp/pip-26.2.2-py3-none-any.whl; \
     printf '%s  %s\n' \
