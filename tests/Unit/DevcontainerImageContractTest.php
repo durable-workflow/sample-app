@@ -110,18 +110,27 @@ final class DevcontainerImageContractTest extends TestCase
         foreach (['test', 'microservice-test'] as $job) {
             $steps = $workflow['jobs'][$job]['steps'];
             $setup = null;
+            $bootstrap = null;
             foreach ($steps as $index => $step) {
+                if (str_starts_with($step['uses'] ?? '', 'durable-workflow/.github/.github/actions/bootstrap-patched-pip@')) {
+                    $bootstrap = $index;
+                    $this->assertSame('4414f6fcdbb8cca75dac1358db5af9aadd8c65f6', explode('@', $step['uses'])[1]);
+                    $this->assertStringContainsString('composer,curl,git', $step['with']['clients']);
+                }
                 if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
                     $setup = $index;
                     break;
                 }
             }
+            $this->assertNotNull($bootstrap);
             $this->assertNotNull($setup);
+            $this->assertLessThan($setup, $bootstrap);
             $this->assertSame('composer:2.10.3', $steps[$setup]['with']['tools']);
             $this->assertSame(
-                'php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"',
-                $steps[$setup + 1]['run'],
+                'durable-workflow/.github/.github/actions/verify-composer-trust@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6',
+                $steps[$setup + 1]['uses'],
             );
+            $this->assertSame($job === 'microservice-test' ? 'microservice' : '.', $steps[$setup + 1]['with']['working-directory'] ?? '.');
         }
     }
 

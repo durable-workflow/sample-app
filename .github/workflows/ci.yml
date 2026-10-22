@@ -46,6 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Select authenticated dependency trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
+        with:
+          clients: pip,python,composer,curl,git,npm
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
@@ -54,11 +62,16 @@ jobs:
           coverage: none
           tools: composer:2.10.3
 
-      - name: Verify Composer and system trust before dependency requests
-        run: php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"
+      - name: Verify actual Composer trust before dependency requests
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify the playground Composer configuration
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
+        with:
+          working-directory: playground/php-runtime
 
       - name: Validate packages and stable artifact tuple
         run: |
@@ -136,6 +149,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Select authenticated dependency trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
+        with:
+          clients: pip,python,composer,curl,git
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
@@ -144,8 +165,10 @@ jobs:
           coverage: none
           tools: composer:2.10.3
 
-      - name: Verify Composer and system trust before dependency requests
-        run: php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"
+      - name: Verify actual Composer trust before dependency requests
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
+        with:
+          working-directory: microservice
 
       - name: Install and test
         env:
@@ -184,7 +207,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Bootstrap patched pip trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@ff93e15dd3d3aa0b5ba8991fe5101a9e1be49c10  # patched-pip
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6 # clean-trust
       - run: python -m pip install PyYAML==6.0.2
       - name: Require centrally approved immutable action commits
         run: >-
