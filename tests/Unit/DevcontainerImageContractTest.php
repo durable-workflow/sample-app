@@ -68,7 +68,11 @@ final class DevcontainerImageContractTest extends TestCase
     public function test_image_checks_effective_trust_before_network_installation(): void
     {
         $dockerfile = (string) file_get_contents($this->path('.devcontainer/docker/Dockerfile'));
-        $this->assertMatchesRegularExpression('/^FROM php:8\.4\.\d+-cli-bookworm@sha256:[a-f0-9]{64}$/m', $dockerfile);
+        preg_match_all('/^FROM (\S+)/mi', $dockerfile, $inputs);
+        $this->assertNotEmpty($inputs[1]);
+        foreach ($inputs[1] as $input) {
+            $this->assertMatchesRegularExpression('/^[^@]+:[^@]+@sha256:[a-f0-9]{64}$/D', $input);
+        }
         $runtime = substr($dockerfile, strrpos($dockerfile, "\nFROM "));
         $verifier = 'php /usr/local/share/sample-app/verify-php-trust.php';
         $firstCheck = strpos($runtime, $verifier);

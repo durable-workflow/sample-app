@@ -2,9 +2,9 @@ FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10
 
 FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
 
-FROM docker:27.5.1-cli AS docker-cli
+FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
 
-FROM rust:1.86.0-slim-bookworm AS rust
+FROM rust:1.86.0-slim-bookworm@sha256:57d415bbd61ce11e2d5f73de068103c7bd9f3188dc132c97cef4a8f62989e944 AS rust
 
 RUN set -eux; \
     rm -rf /usr/local/rustup/downloads /usr/local/rustup/tmp; \
@@ -14,7 +14,7 @@ RUN set -eux; \
     rustc --version; \
     cargo --version
 
-FROM mariadb:11.4 AS mysql-seed
+FROM mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873 AS mysql-seed
 
 ENV MYSQL_ROOT_PASSWORD=password \
     MYSQL_ROOT_HOST=% \

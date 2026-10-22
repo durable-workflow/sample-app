@@ -9,12 +9,14 @@ python -c 'import sys; assert sys.version_info >= (3, 10)'
 python /usr/local/share/sample-app/verify-python-trust.py
 python -c 'import durable_workflow'
 python -m venv --help >/dev/null
-rust_version="$(rustc --version | sed -E 's/^rustc ([0-9]+\.[0-9]+).*/\1/')"
-[[ "$(printf '%s\n' 1.86 "$rust_version" | sort -V | head -n 1)" == "1.86" ]]
+[[ "$(rustc --version | awk '{print $2}')" == "1.86.0" ]]
+[[ "$(cargo --version | awk '{print $2}')" == "1.86.0" ]]
+[[ "$(docker --version | sed -E 's/^Docker version ([^,]+),.*/\1/')" == "27.5.1" ]]
+compose_version="$(docker compose version --short)"
+[[ "${compose_version#v}" == "2.33.0" ]]
 cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"
 [[ -n "$cli_version" ]]
 [[ "$(dw --version | awk '$1 == "dw" { print $2 }')" == "$cli_version" ]]
-docker compose version >/dev/null
 
 for extension in bcmath curl gd intl mbstring pcntl pdo_mysql pdo_sqlite redis zip; do
     php --ri "$extension" >/dev/null
