@@ -3,9 +3,10 @@
 set -euo pipefail
 
 [[ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" == "8.4" ]]
-[[ "$(with-disposable-composer-state composer --no-ansi --version | awk '{print $3}' | cut -d. -f1)" == "2" ]]
-[[ "$(node --version | sed -E 's/^v([0-9]+).*/\1/')" == "22" ]]
+php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"
+node /usr/local/share/sample-app/verify-node-trust.mjs
 python -c 'import sys; assert sys.version_info >= (3, 10)'
+python /usr/local/share/sample-app/verify-python-trust.py
 python -c 'import durable_workflow'
 python -m venv --help >/dev/null
 rust_version="$(rustc --version | sed -E 's/^rustc ([0-9]+\.[0-9]+).*/\1/')"

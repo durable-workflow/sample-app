@@ -1,6 +1,6 @@
-FROM node:22-bookworm-slim AS node
+FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
 
-FROM composer:2 AS composer
+FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
 
 FROM docker:27.5.1-cli AS docker-cli
 
@@ -226,6 +226,10 @@ RUN set -eux; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 
 COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualified-artifact-tuple.json
+COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
+
+RUN php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)" \
+    && node /usr/local/share/sample-app/verify-node-trust.mjs
 
 RUN set -eux; \
     cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
@@ -238,11 +242,22 @@ RUN set -eux; \
     dw --version
 
 COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
+COPY .devcontainer/docker/verify-python-trust.py /usr/local/share/sample-app/verify-python-trust.py
 
 RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
     python3 -m venv "$VIRTUAL_ENV"; \
+    curl -fsSL --max-time 120 \
+        https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl \
+        -o /tmp/pip-26.2.2-py3-none-any.whl; \
+    printf '%s  %s\n' \
+        fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70 \
+        /tmp/pip-26.2.2-py3-none-any.whl | sha256sum --check --strict -; \
+    "$VIRTUAL_ENV/bin/python" -I -m pip --isolated --disable-pip-version-check install \
+        --no-index --no-deps --upgrade /tmp/pip-26.2.2-py3-none-any.whl; \
+    rm /tmp/pip-26.2.2-py3-none-any.whl; \
+    "$VIRTUAL_ENV/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; \
     "$VIRTUAL_ENV/bin/pip" install \
         --no-input \
         --no-cache-dir \
