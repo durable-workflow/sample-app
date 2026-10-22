@@ -1,6 +1,20 @@
 FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
 
+FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS brotli-build
+
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY docker/verify-runtime-trust.php /usr/local/share/sample-app/verify-runtime-trust.php
+COPY docker/brotli /usr/src/brotli-inputs
+RUN php /usr/local/share/sample-app/verify-runtime-trust.php /usr/local/bin/composer \
+    && sh /usr/src/brotli-inputs/build.sh
+
 FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS base
+
+COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
+RUN dpkg -i /usr/local/share/sample-app/brotli/libbrotli1_*.deb \
+        /usr/local/share/sample-app/brotli/libbrotli-dev_*.deb \
+    && php /usr/local/share/sample-app/brotli/verify-runtime.php \
+    && rm /usr/local/share/sample-app/brotli/*.deb
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
@@ -11,6 +25,7 @@ RUN php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v compo
     curl ffmpeg git libnspr4 libnss3 libpq-dev libzip-dev unzip \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
     && sh /usr/local/bin/install-phpredis \
+    && php /usr/local/share/sample-app/brotli/verify-runtime.php \
     && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
     && rm -rf /var/lib/apt/lists/*
 
@@ -67,6 +82,7 @@ RUN node /usr/local/share/sample-app/verify-node-trust.mjs \
     && npx playwright install --with-deps chromium \
     && node docker/playwright-smoke.js \
     && node /usr/local/share/sample-app/verify-node-trust.mjs \
+    && php /usr/local/share/sample-app/brotli/verify-runtime.php \
     && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
     && (cp .env.example .env 2>/dev/null || echo "APP_KEY=" > .env) \
     && php artisan key:generate --force \

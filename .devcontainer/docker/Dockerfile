@@ -2,6 +2,14 @@ FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10
 
 FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
 
+FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS brotli-build
+
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY .devcontainer/docker/verify-php-trust.php /usr/local/share/sample-app/verify-php-trust.php
+COPY docker/brotli /usr/src/brotli-inputs
+RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
+    && sh /usr/src/brotli-inputs/build.sh
+
 FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
 
 FROM rust:1.86.0-slim-bookworm@sha256:57d415bbd61ce11e2d5f73de068103c7bd9f3188dc132c97cef4a8f62989e944 AS rust
@@ -85,6 +93,12 @@ RUN set -eux; \
     test -s /tmp/sample-app-mysql-seed.tar
 
 FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
+
+COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
+RUN dpkg -i /usr/local/share/sample-app/brotli/libbrotli1_*.deb \
+        /usr/local/share/sample-app/brotli/libbrotli-dev_*.deb \
+    && php /usr/local/share/sample-app/brotli/verify-runtime.php \
+    && rm /usr/local/share/sample-app/brotli/*.deb
 
 ARG VCS_REF=unknown
 ARG DURABLE_WORKFLOW_CLI_VERSION
@@ -205,6 +219,7 @@ RUN set -eux; \
         fi; \
     done; \
     apt-get install -y --no-install-recommends build-essential pkg-config; \
+    php /usr/local/share/sample-app/brotli/verify-runtime.php; \
     groupadd --gid 1000 laravel; \
     useradd --create-home --gid laravel --shell /bin/bash --uid 1000 laravel; \
     passwd --delete laravel; \
@@ -368,7 +383,8 @@ RUN chmod +x /usr/local/bin/seed-mysql-volume /usr/local/bin/start-container \
         /usr/local/bin/wait-for-devcontainer-identity \
     && DEVCONTAINER_DEPENDENCY_SCOPE=baked \
         DEVCONTAINER_SSH_HOST_KEY_STATE=absent \
-        gosu laravel verify-devcontainer-image
+        gosu laravel verify-devcontainer-image \
+    && php /usr/local/share/sample-app/brotli/verify-runtime.php
 
 EXPOSE 22 80 5173
 

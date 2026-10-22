@@ -14,7 +14,7 @@ final class ProductionImageTrustContractTest extends TestCase
         preg_match_all('/^FROM (\S+)/mi', $source, $inputs);
         $external = array_values(array_filter($inputs[1], static fn (string $input): bool => $input !== 'base'));
 
-        $this->assertCount(3, $external);
+        $this->assertCount(4, $external);
         foreach ($external as $input) {
             $this->assertMatchesRegularExpression('/^[^@]+:[^@]+@sha256:[a-f0-9]{64}$/D', $input);
         }
