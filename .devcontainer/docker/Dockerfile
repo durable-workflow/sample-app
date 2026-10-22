@@ -84,7 +84,7 @@ RUN set -eux; \
         .; \
     test -s /tmp/sample-app-mysql-seed.tar
 
-FROM php:8.4-cli-bookworm
+FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
 
 ARG VCS_REF=unknown
 ARG DURABLE_WORKFLOW_CLI_VERSION
@@ -117,8 +117,11 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
+COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN set -eux; \
+    php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 4 && PHP_VERSION_ID >= 80427 ? 0 : 1);'; \
+    php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
     echo "${TZ}" > /etc/timezone; \
     apt-get update; \
@@ -226,7 +229,6 @@ RUN set -eux; \
     rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 
 COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualified-artifact-tuple.json
-COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN set -eux; \
     php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \

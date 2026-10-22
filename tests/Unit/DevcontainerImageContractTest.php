@@ -65,6 +65,27 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('evidence_type', $script);
     }
 
+    public function test_image_checks_effective_trust_before_network_installation(): void
+    {
+        $dockerfile = (string) file_get_contents($this->path('.devcontainer/docker/Dockerfile'));
+        $this->assertMatchesRegularExpression('/^FROM php:8\.4\.\d+-cli-bookworm@sha256:[a-f0-9]{64}$/m', $dockerfile);
+        $runtime = substr($dockerfile, strrpos($dockerfile, "\nFROM "));
+        $verifier = 'php /usr/local/share/sample-app/verify-php-trust.php';
+        $firstCheck = strpos($runtime, $verifier);
+        $firstDownload = strpos($runtime, 'apt-get update');
+        $lastInstall = strrpos($runtime, 'apt-get install');
+        $recheck = strrpos($runtime, $verifier);
+        $nodeCheck = strpos($runtime, 'node /usr/local/share/sample-app/verify-node-trust.mjs');
+        $cliDownload = strpos($runtime, 'curl -fsSL');
+
+        foreach ([$firstCheck, $firstDownload, $lastInstall, $recheck, $nodeCheck, $cliDownload] as $position) {
+            $this->assertIsInt($position);
+        }
+        $this->assertLessThan($firstDownload, $firstCheck);
+        $this->assertGreaterThan($lastInstall, $recheck);
+        $this->assertLessThan($cliDownload, $nodeCheck);
+    }
+
     public function test_pull_request_build_cannot_publish_or_use_registry_credentials(): void
     {
         $workflow = (string) file_get_contents($this->path('.github/workflows/devcontainer-image-pr.yml'));
