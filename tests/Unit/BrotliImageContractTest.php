@@ -71,4 +71,22 @@ final class BrotliImageContractTest extends TestCase
             $this->assertMatchesRegularExpression('~php /usr/local/share/sample-app/verify-(?:runtime|php)-trust\.php /usr/local/bin/composer~', $builder);
         }
     }
+
+    public function test_full_inventory_uses_the_image_verification_role(): void
+    {
+        $root = dirname(__DIR__, 2);
+        $qualifier = file_get_contents($root.'/scripts/ci/qualify-devcontainer-image.sh');
+        $this->assertStringContainsString(
+            '"${compose[@]}" exec -T --user root laravel php /usr/local/share/sample-app/brotli/verify-runtime.php',
+            $qualifier,
+        );
+        $this->assertStringNotContainsString(
+            '/brotli/verify-runtime.php',
+            file_get_contents($root.'/.devcontainer/docker/verify-image.sh'),
+        );
+        $this->assertStringContainsString(
+            '&& php /usr/local/share/sample-app/brotli/verify-runtime.php',
+            file_get_contents($root.'/.devcontainer/docker/Dockerfile'),
+        );
+    }
 }

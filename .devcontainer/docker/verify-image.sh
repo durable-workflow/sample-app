@@ -4,7 +4,6 @@ set -euo pipefail
 
 [[ "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" == "8.4" ]]
 php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"
-php /usr/local/share/sample-app/brotli/verify-runtime.php
 node /usr/local/share/sample-app/verify-node-trust.mjs
 python -c 'import sys; assert sys.version_info >= (3, 10)'
 python /usr/local/share/sample-app/verify-python-trust.py
