@@ -12,16 +12,41 @@ permissions:
 
 jobs:
   compose:
-    name: docker compose sample workflows
-    runs-on: ubuntu-latest
+    name: docker compose sample workflows (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
     env:
-      COMPOSE_PROJECT_NAME: sample-app-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_PROJECT_NAME: sample-app-smoke-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
       APP_PORT: '0'
+      SAMPLE_APP_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build and start stack
-        run: docker compose up -d --build --wait app worker
+      - name: Build the production input without a prior cache
+        run: |
+          test "$(git rev-parse HEAD)" = "$SAMPLE_APP_COMMIT"
+          docker compose build --pull --no-cache app
+      - name: Start the qualified build
+        run: docker compose up -d --wait app worker
+      - name: Verify the copied runtime and browser
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          image_id="$(docker compose images -q app)"
+          test "$(docker image inspect "$image_id" --format '{{.Os}}/{{.Architecture}}')" = "$EXPECTED_PLATFORM"
+          test "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SAMPLE_APP_COMMIT"
+          docker image inspect "$image_id" --format 'image={{.Id}} platform={{.Os}}/{{.Architecture}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
+          docker compose exec -T app node docker/verify-node-trust.mjs
+          docker compose exec -T app node --test tests/Node/ProductionNodeTrustTest.mjs
+          docker compose exec -T app php /usr/local/share/sample-app/verify-runtime-trust.php /usr/bin/composer
+          docker compose exec -T app node docker/playwright-smoke.js
       - name: Run embedded workflow samples
         run: scripts/compose-smoke.sh
       - name: Dump logs
@@ -30,3 +55,15 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down -v --remove-orphans
+
+  qualify:
+    name: docker compose sample workflows
+    needs: [compose]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require both native image jobs
+        env:
+          IMAGE_RESULT: ${{ needs.compose.result }}
+        run: test "$IMAGE_RESULT" = success

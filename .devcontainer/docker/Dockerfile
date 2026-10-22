@@ -1,10 +1,10 @@
-FROM node:22-bookworm-slim AS node
+FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
 
-FROM composer:2 AS composer
+FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
 
-FROM docker:27.5.1-cli AS docker-cli
+FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
 
-FROM rust:1.86.0-slim-bookworm AS rust
+FROM rust:1.86.0-slim-bookworm@sha256:57d415bbd61ce11e2d5f73de068103c7bd9f3188dc132c97cef4a8f62989e944 AS rust
 
 RUN set -eux; \
     rm -rf /usr/local/rustup/downloads /usr/local/rustup/tmp; \
@@ -14,7 +14,7 @@ RUN set -eux; \
     rustc --version; \
     cargo --version
 
-FROM mariadb:11.4 AS mysql-seed
+FROM mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873 AS mysql-seed
 
 ENV MYSQL_ROOT_PASSWORD=password \
     MYSQL_ROOT_HOST=% \
@@ -84,7 +84,7 @@ RUN set -eux; \
         .; \
     test -s /tmp/sample-app-mysql-seed.tar
 
-FROM php:8.4-cli-bookworm
+FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
 
 ARG VCS_REF=unknown
 ARG DURABLE_WORKFLOW_CLI_VERSION
@@ -117,8 +117,11 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
+COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN set -eux; \
+    php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 4 && PHP_VERSION_ID >= 80427 ? 0 : 1);'; \
+    php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
     echo "${TZ}" > /etc/timezone; \
     apt-get update; \
@@ -228,6 +231,8 @@ RUN set -eux; \
 COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualified-artifact-tuple.json
 
 RUN set -eux; \
+    php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
+    node /usr/local/share/sample-app/verify-node-trust.mjs; \
     cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
     test -n "$cli_version"; \
     curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
@@ -238,11 +243,22 @@ RUN set -eux; \
     dw --version
 
 COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
+COPY .devcontainer/docker/verify-python-trust.py /usr/local/share/sample-app/verify-python-trust.py
 
 RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
     python3 -m venv "$VIRTUAL_ENV"; \
+    curl --proto '=https' --proto-redir '=https' -fsSL --max-time 120 \
+        https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl \
+        -o /tmp/pip-26.2.2-py3-none-any.whl; \
+    printf '%s  %s\n' \
+        fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70 \
+        /tmp/pip-26.2.2-py3-none-any.whl | sha256sum --check --strict -; \
+    "$VIRTUAL_ENV/bin/python" -I -m pip --isolated --disable-pip-version-check install \
+        --no-index --no-deps --upgrade /tmp/pip-26.2.2-py3-none-any.whl; \
+    rm /tmp/pip-26.2.2-py3-none-any.whl; \
+    "$VIRTUAL_ENV/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; \
     "$VIRTUAL_ENV/bin/pip" install \
         --no-input \
         --no-cache-dir \

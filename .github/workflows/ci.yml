@@ -46,16 +46,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Select authenticated dependency trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        with:
+          clients: pip,python,composer,curl,git,npm
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, redis, bcmath, gd, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:2.10.3
+
+      - name: Verify actual Composer trust before dependency requests
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify the playground Composer configuration
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        with:
+          working-directory: playground/php-runtime
 
       - name: Validate packages and stable artifact tuple
         run: |
@@ -89,6 +105,12 @@ jobs:
               echo "REDIS_PORT=${{ job.services.redis.ports['6379'] }}"
             } >> "$GITHUB_ENV"
           fi
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.4'
+      - name: Verify Node before running application tooling
+        run: node docker/verify-node-trust.mjs
 
       - name: Run application tests
         env:
@@ -133,13 +155,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Select authenticated dependency trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        with:
+          clients: pip,python,composer,curl,git
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, bcmath, gd, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:2.10.3
+
+      - name: Verify actual Composer trust before dependency requests
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        with:
+          working-directory: microservice
 
       - name: Install and test
         env:
@@ -177,6 +212,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.13'
+      - name: Bootstrap patched pip trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
       - run: python -m pip install PyYAML==6.0.2
       - name: Require centrally approved immutable action commits
         run: >-

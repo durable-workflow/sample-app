@@ -65,6 +65,31 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('evidence_type', $script);
     }
 
+    public function test_image_checks_effective_trust_before_network_installation(): void
+    {
+        $dockerfile = (string) file_get_contents($this->path('.devcontainer/docker/Dockerfile'));
+        preg_match_all('/^FROM (\S+)/mi', $dockerfile, $inputs);
+        $this->assertNotEmpty($inputs[1]);
+        foreach ($inputs[1] as $input) {
+            $this->assertMatchesRegularExpression('/^[^@]+:[^@]+@sha256:[a-f0-9]{64}$/D', $input);
+        }
+        $runtime = substr($dockerfile, strrpos($dockerfile, "\nFROM "));
+        $verifier = 'php /usr/local/share/sample-app/verify-php-trust.php';
+        $firstCheck = strpos($runtime, $verifier);
+        $firstDownload = strpos($runtime, 'apt-get update');
+        $lastInstall = strrpos($runtime, 'apt-get install');
+        $recheck = strrpos($runtime, $verifier);
+        $nodeCheck = strpos($runtime, 'node /usr/local/share/sample-app/verify-node-trust.mjs');
+        $cliDownload = strpos($runtime, 'curl -fsSL');
+
+        foreach ([$firstCheck, $firstDownload, $lastInstall, $recheck, $nodeCheck, $cliDownload] as $position) {
+            $this->assertIsInt($position);
+        }
+        $this->assertLessThan($firstDownload, $firstCheck);
+        $this->assertGreaterThan($lastInstall, $recheck);
+        $this->assertLessThan($cliDownload, $nodeCheck);
+    }
+
     public function test_pull_request_build_cannot_publish_or_use_registry_credentials(): void
     {
         $workflow = (string) file_get_contents($this->path('.github/workflows/devcontainer-image-pr.yml'));
@@ -76,6 +101,37 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('docker/login-action', $workflow);
         $this->assertStringNotContainsString('secrets.', $workflow);
         $this->assertStringNotContainsString('packages: write', $workflow);
+    }
+
+    public function test_composer_jobs_check_trust_before_dependency_resolution(): void
+    {
+        $workflow = Yaml::parseFile($this->path('.github/workflows/ci.yml'));
+
+        foreach (['test', 'microservice-test'] as $job) {
+            $steps = $workflow['jobs'][$job]['steps'];
+            $setup = null;
+            $bootstrap = null;
+            foreach ($steps as $index => $step) {
+                if (str_starts_with($step['uses'] ?? '', 'durable-workflow/.github/.github/actions/bootstrap-patched-pip@')) {
+                    $bootstrap = $index;
+                    $this->assertSame('75587fc33ff40c34f32ef777293dad56bb6f48c7', explode('@', $step['uses'])[1]);
+                    $this->assertStringContainsString('composer,curl,git', $step['with']['clients']);
+                }
+                if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
+                    $setup = $index;
+                    break;
+                }
+            }
+            $this->assertNotNull($bootstrap);
+            $this->assertNotNull($setup);
+            $this->assertLessThan($setup, $bootstrap);
+            $this->assertSame('composer:2.10.3', $steps[$setup]['with']['tools']);
+            $this->assertSame(
+                'durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7',
+                $steps[$setup + 1]['uses'],
+            );
+            $this->assertSame($job === 'microservice-test' ? 'microservice' : '.', $steps[$setup + 1]['with']['working-directory'] ?? '.');
+        }
     }
 
     public function test_main_publication_builds_both_architectures_before_promotion(): void
