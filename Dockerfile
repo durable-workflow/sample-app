@@ -8,7 +8,7 @@ COPY docker/verify-runtime-trust.php docker/verify-node-trust.mjs /usr/local/sha
 
 RUN php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
     && apt-get update && apt-get install -y --no-install-recommends \
-    curl ffmpeg libnspr4 libnss3 libpq-dev libzip-dev unzip git \
+    curl ffmpeg git libnspr4 libnss3 libpq-dev libzip-dev unzip \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
     && sh /usr/local/bin/install-phpredis \
     && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
@@ -41,7 +41,7 @@ FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10
 WORKDIR /app
 COPY docker/verify-node-trust.mjs /usr/local/share/sample-app/verify-node-trust.mjs
 COPY package.json package-lock.json* ./
-RUN node /usr/local/share/sample-app/verify-node-trust.mjs && npm ci
+RUN node /usr/local/share/sample-app/verify-node-trust.mjs && npm ci --ignore-scripts
 
 COPY resources/ resources/
 COPY vite.config.js ./
@@ -52,6 +52,7 @@ FROM base AS production
 
 ARG SAMPLE_APP_COMMIT=
 ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}
+LABEL org.opencontainers.image.revision="${SAMPLE_APP_COMMIT}"
 
 COPY --from=vendor /app /app
 COPY --from=assets /usr/local/bin/node /usr/local/bin/node
@@ -66,14 +67,10 @@ RUN node /usr/local/share/sample-app/verify-node-trust.mjs \
     && npx playwright install --with-deps chromium \
     && node docker/playwright-smoke.js \
     && node /usr/local/share/sample-app/verify-node-trust.mjs \
-    && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)"
-
-# Create .env so artisan commands work at build time
-RUN cp .env.example .env 2>/dev/null || echo "APP_KEY=" > .env
-RUN php artisan key:generate --force
-
-# Publish Waterline assets
-RUN php artisan vendor:publish --tag=waterline-assets --force 2>/dev/null || true
+    && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
+    && (cp .env.example .env 2>/dev/null || echo "APP_KEY=" > .env) \
+    && php artisan key:generate --force \
+    && (php artisan vendor:publish --tag=waterline-assets --force 2>/dev/null || true)
 
 COPY docker/entrypoint.sh /usr/local/bin/app-entrypoint
 RUN chmod +x /usr/local/bin/app-entrypoint

@@ -17,4 +17,4 @@ for (const pem of certificates) {
         assert(!blocked.has(commonName), 'Blocked certificate in the effective Node default CA store');
     }
 }
-console.log(JSON.stringify({ node: process.versions.node, default_roots: certificates.length, blocked_roots: 0 }));
+console.log(JSON.stringify({ node: process.versions.node, architecture: process.arch, default_roots: certificates.length, blocked_roots: 0 }));

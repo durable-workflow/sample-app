@@ -26,14 +26,23 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: sample-app-smoke-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
       APP_PORT: '0'
+      SAMPLE_APP_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the production input without a prior cache
-        run: docker compose build --pull --no-cache app
+        run: |
+          test "$(git rev-parse HEAD)" = "$SAMPLE_APP_COMMIT"
+          docker compose build --pull --no-cache app
       - name: Start the qualified build
         run: docker compose up -d --wait app worker
       - name: Verify the copied runtime and browser
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
         run: |
+          image_id="$(docker compose images -q app)"
+          test "$(docker image inspect "$image_id" --format '{{.Os}}/{{.Architecture}}')" = "$EXPECTED_PLATFORM"
+          test "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SAMPLE_APP_COMMIT"
+          docker image inspect "$image_id" --format 'image={{.Id}} platform={{.Os}}/{{.Architecture}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
           docker compose exec -T app node docker/verify-node-trust.mjs
           docker compose exec -T app node --test tests/Node/ProductionNodeTrustTest.mjs
           docker compose exec -T app php /usr/local/share/sample-app/verify-runtime-trust.php /usr/bin/composer

@@ -36,6 +36,7 @@ final class ProductionImageTrustContractTest extends TestCase
             $this->assertIsInt($position);
         }
         $this->assertLessThan($assetDownload, $assetCheck);
+        $this->assertStringContainsString('npm ci --ignore-scripts', $source);
         $this->assertGreaterThan($assetDownload, $finalCheck);
         $this->assertLessThan($browserDownload, $finalCheck);
     }
