@@ -103,6 +103,28 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('packages: write', $workflow);
     }
 
+    public function test_composer_jobs_check_trust_before_dependency_resolution(): void
+    {
+        $workflow = Yaml::parseFile($this->path('.github/workflows/ci.yml'));
+
+        foreach (['test', 'microservice-test'] as $job) {
+            $steps = $workflow['jobs'][$job]['steps'];
+            $setup = null;
+            foreach ($steps as $index => $step) {
+                if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
+                    $setup = $index;
+                    break;
+                }
+            }
+            $this->assertNotNull($setup);
+            $this->assertSame('composer:2.10.3', $steps[$setup]['with']['tools']);
+            $this->assertSame(
+                'php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"',
+                $steps[$setup + 1]['run'],
+            );
+        }
+    }
+
     public function test_main_publication_builds_both_architectures_before_promotion(): void
     {
         $workflow = Yaml::parseFile($this->path('.github/workflows/devcontainer-image.yml'));

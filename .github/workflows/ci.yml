@@ -52,7 +52,10 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, redis, bcmath, gd, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:2.10.3
+
+      - name: Verify Composer and system trust before dependency requests
+        run: php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
@@ -139,7 +142,10 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, pdo_mysql, bcmath, gd, zip
           coverage: none
-          tools: composer:v2
+          tools: composer:2.10.3
+
+      - name: Verify Composer and system trust before dependency requests
+        run: php "$GITHUB_WORKSPACE/.devcontainer/docker/verify-php-trust.php" "$(command -v composer)"
 
       - name: Install and test
         env:
