@@ -122,6 +122,7 @@ run_in_ready_devcontainer laravel .devcontainer/post-create.sh
 "${compose[@]}" up --detach --no-build --wait
 
 run_in_ready_devcontainer laravel bash -euc '
+  php /usr/local/share/sample-app/brotli/verify-runtime.php
   for command in php composer python3 rustc cargo dw rg node npm docker; do
     command -v "$command" >/dev/null
   done

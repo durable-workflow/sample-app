@@ -46,6 +46,7 @@ jobs:
           docker compose exec -T app node docker/verify-node-trust.mjs
           docker compose exec -T app node --test tests/Node/ProductionNodeTrustTest.mjs
           docker compose exec -T app php /usr/local/share/sample-app/verify-runtime-trust.php /usr/bin/composer
+          docker compose exec -T app php /usr/local/share/sample-app/brotli/verify-runtime.php
           docker compose exec -T app node docker/playwright-smoke.js
       - name: Run embedded workflow samples
         run: scripts/compose-smoke.sh
