@@ -2,12 +2,27 @@
 
 declare(strict_types=1);
 
-Phar::loadPhar($argv[1]);
-require 'phar://composer.phar/vendor/autoload.php';
+function refuseTrust(string $reason): never
+{
+    fwrite(STDERR, $reason.PHP_EOL);
+    if (getenv('GITHUB_ACTIONS') === 'true') {
+        echo '::error title=Composer trust refusal::'.strtr($reason, [
+            '%' => '%25', "\r" => '%0D', "\n" => '%0A',
+        ]).PHP_EOL;
+    }
+    exit(1);
+}
+
+try {
+    Phar::loadPhar($argv[1]);
+    require_once 'phar://composer.phar/vendor/autoload.php';
+} catch (Throwable $error) {
+    refuseTrust('Cannot inspect the actual Composer PHAR: '.$error->getMessage());
+}
 
 $version = Composer\Composer::VERSION;
 if (!str_starts_with($version, '2.') || version_compare($version, '2.10.3', '<')) {
-    throw new RuntimeException('Composer 2.10.3 or newer on the 2 line is required.');
+    refuseTrust('Composer 2.10.3 or newer on the 2 line is required.');
 }
 
 $paths = [
@@ -18,16 +33,16 @@ $paths = [
 foreach (array_unique($paths) as $path) {
     $bundle = file_get_contents($path);
     if ($bundle === false || !preg_match_all('/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $bundle, $certificates)) {
-        throw new RuntimeException('Cannot inspect effective CA bundle: '.$path);
+        refuseTrust('Cannot inspect effective CA bundle: '.$path);
     }
     foreach ($certificates[0] as $certificate) {
         $parsed = openssl_x509_parse($certificate);
         if ($parsed === false) {
-            throw new RuntimeException('Invalid certificate in effective CA bundle: '.$path);
+            refuseTrust('Invalid certificate in effective CA bundle: '.$path);
         }
         $subject = $parsed['subject']['CN'] ?? '';
         if (in_array($subject, ['AAA Certificate Services', 'emSign ECC Root CA - G3'], true)) {
-            throw new RuntimeException('Blocked certificate in effective CA bundle: '.$path);
+            refuseTrust('Blocked certificate in effective CA bundle: '.$path);
         }
     }
     echo 'Verified PHP/Composer CA bundle: '.$path.PHP_EOL;
