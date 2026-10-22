@@ -55,3 +55,15 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down -v --remove-orphans
+
+  qualify:
+    name: docker compose sample workflows
+    needs: [compose]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require both native image jobs
+        env:
+          IMAGE_RESULT: ${{ needs.compose.result }}
+        run: test "$IMAGE_RESULT" = success
