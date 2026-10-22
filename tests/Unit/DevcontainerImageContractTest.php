@@ -114,7 +114,7 @@ final class DevcontainerImageContractTest extends TestCase
             foreach ($steps as $index => $step) {
                 if (str_starts_with($step['uses'] ?? '', 'durable-workflow/.github/.github/actions/bootstrap-patched-pip@')) {
                     $bootstrap = $index;
-                    $this->assertSame('4414f6fcdbb8cca75dac1358db5af9aadd8c65f6', explode('@', $step['uses'])[1]);
+                    $this->assertSame('75587fc33ff40c34f32ef777293dad56bb6f48c7', explode('@', $step['uses'])[1]);
                     $this->assertStringContainsString('composer,curl,git', $step['with']['clients']);
                 }
                 if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
@@ -127,7 +127,7 @@ final class DevcontainerImageContractTest extends TestCase
             $this->assertLessThan($setup, $bootstrap);
             $this->assertSame('composer:2.10.3', $steps[$setup]['with']['tools']);
             $this->assertSame(
-                'durable-workflow/.github/.github/actions/verify-composer-trust@4414f6fcdbb8cca75dac1358db5af9aadd8c65f6',
+                'durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7',
                 $steps[$setup + 1]['uses'],
             );
             $this->assertSame($job === 'microservice-test' ? 'microservice' : '.', $steps[$setup + 1]['with']['working-directory'] ?? '.');
