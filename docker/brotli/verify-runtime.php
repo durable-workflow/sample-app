@@ -2,18 +2,20 @@
 
 declare(strict_types=1);
 
+final class BrotliRuntimeRefused extends RuntimeException {}
+
 function brotliCommand(array $command): string
 {
     $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     if (!is_resource($process)) {
-        throw new RuntimeException('Cannot inspect the Brotli runtime.');
+        throw new BrotliRuntimeRefused('Cannot inspect the Brotli runtime.');
     }
     $output = stream_get_contents($pipes[1]);
     $error = stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
     if (proc_close($process) !== 0) {
-        throw new RuntimeException(implode(' ', $command).' failed: '.trim($error));
+        throw new BrotliRuntimeRefused(implode(' ', $command).' failed: '.trim($error));
     }
 
     return $output;
@@ -23,7 +25,7 @@ function brotliElfMentionsDecoder(string $path): bool
 {
     $input = fopen($path, 'rb');
     if ($input === false) {
-        throw new RuntimeException('Cannot inspect '.$path);
+        throw new BrotliRuntimeRefused('Cannot inspect '.$path);
     }
     try {
         if (fread($input, 4) !== "\x7fELF") {
@@ -49,7 +51,7 @@ function brotliInspectFile(SplFileInfo $file, array $owned): int
     $path = $file->getPathname();
     if (str_starts_with($file->getFilename(), 'libbrotlidec.so') && !$file->isDir()
         && !isset($owned[realpath($path) ?: $path])) {
-        throw new RuntimeException('A decoder is outside the patched package: '.$path);
+        throw new BrotliRuntimeRefused('A decoder is outside the patched package: '.$path);
     }
     if (!$file->isFile() || $file->isLink() || !brotliElfMentionsDecoder($path)) {
         return 0;
@@ -61,7 +63,7 @@ function brotliInspectFile(SplFileInfo $file, array $owned): int
         return 0;
     }
     if (!isset($owned[realpath($match[1]) ?: $match[1]])) {
-        throw new RuntimeException('An ELF consumer does not load the patched decoder: '.$path);
+        throw new BrotliRuntimeRefused('An ELF consumer does not load the patched decoder: '.$path);
     }
 
     return 1;
@@ -72,7 +74,7 @@ function verifyBrotliRuntime(): void
     $expected = trim((string) file_get_contents(__DIR__.'/version'));
     $actual = trim(brotliCommand(['dpkg-query', '-W', '-f=${Version}', 'libbrotli1']));
     if ($actual !== $expected) {
-        throw new RuntimeException('libbrotli1 is '.$actual.'; expected the reviewed backport '.$expected.'.');
+        throw new BrotliRuntimeRefused('libbrotli1 is '.$actual.'; expected the reviewed backport '.$expected.'.');
     }
     $owned = [];
     foreach (explode("\n", brotliCommand(['dpkg-query', '-L', 'libbrotli1'])) as $path) {
@@ -84,7 +86,7 @@ function verifyBrotliRuntime(): void
         }
     }
     if ($owned === []) {
-        throw new RuntimeException('The patched package owns no decoder.');
+        throw new BrotliRuntimeRefused('The patched package owns no decoder.');
     }
 
     $consumers = 0;
@@ -100,7 +102,7 @@ function verifyBrotliRuntime(): void
         }
     }
     if ($consumers === 0) {
-        throw new RuntimeException('No system Brotli consumer was inspected.');
+        throw new BrotliRuntimeRefused('No system Brotli consumer was inspected.');
     }
     echo brotliCommand([__DIR__.'/verify-system-brotli']);
     echo json_encode(['package' => $actual, 'elf_consumers' => $consumers], JSON_THROW_ON_ERROR).PHP_EOL;

@@ -8,7 +8,7 @@
 int main(void) {
     const char *marker = BrotliDecoderErrorString((BrotliDecoderErrorCode)-17);
     Dl_info origin = {0};
-    void *symbol = dlsym(RTLD_DEFAULT, "BrotliDecoderErrorString");
+    const void *symbol = dlsym(RTLD_DEFAULT, "BrotliDecoderErrorString");
     unsigned version = BrotliDecoderVersion();
     if (!symbol || !dladdr(symbol, &origin) || !origin.dli_fname) {
         fputs("Cannot resolve the loaded Brotli decoder.\n", stderr);
@@ -25,8 +25,10 @@ int main(void) {
 
     /* Only valid bytes produced here are decoded; no malformed corpus is used. */
     const unsigned char input[] = "Durable Workflow ordinary Brotli response";
-    unsigned char encoded[1024], decoded[sizeof(input)];
-    size_t encoded_size = sizeof(encoded), decoded_size = sizeof(decoded);
+    unsigned char encoded[1024];
+    unsigned char decoded[sizeof(input)];
+    size_t encoded_size = sizeof(encoded);
+    size_t decoded_size = sizeof(decoded);
     if (!BrotliEncoderCompress(4, 22, BROTLI_MODE_GENERIC, sizeof(input) - 1,
                               input, &encoded_size, encoded) ||
         BrotliDecoderDecompress(encoded_size, encoded, &decoded_size, decoded) !=
