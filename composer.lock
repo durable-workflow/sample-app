@@ -929,16 +929,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.9.0",
+            "version": "2.11.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "2bc1ba0b57df34b74de02427d2225bd8e4dc6322"
+                "reference": "a730773a3dcdf4c6d4ea0297f6c9010ccc0603f9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/2bc1ba0b57df34b74de02427d2225bd8e4dc6322",
-                "reference": "2bc1ba0b57df34b74de02427d2225bd8e4dc6322",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/a730773a3dcdf4c6d4ea0297f6c9010ccc0603f9",
+                "reference": "a730773a3dcdf4c6d4ea0297f6c9010ccc0603f9",
                 "shasum": ""
             },
             "require": {
@@ -979,7 +979,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.9.0",
+                    "product-train": "2.11.2",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -1006,9 +1006,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.9.0"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.11.2"
             },
-            "time": "2026-10-21T02:33:14+00:00"
+            "time": "2026-10-23T05:00:17+00:00"
         },
         {
             "name": "egulias/email-validator",
