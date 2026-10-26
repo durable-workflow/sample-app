@@ -46,11 +46,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
       - name: Select authenticated dependency trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
         with:
           clients: pip,python,composer,curl,git,npm
 
@@ -63,13 +63,13 @@ jobs:
           tools: composer:2.10.3
 
       - name: Verify actual Composer trust before dependency requests
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Verify the playground Composer configuration
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
         with:
           working-directory: playground/php-runtime
 
@@ -155,11 +155,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
       - name: Select authenticated dependency trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
         with:
           clients: pip,python,composer,curl,git
 
@@ -172,7 +172,7 @@ jobs:
           tools: composer:2.10.3
 
       - name: Verify actual Composer trust before dependency requests
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
         with:
           working-directory: microservice
 
@@ -209,11 +209,11 @@ jobs:
           ref: main
           path: .central-action-policy
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
       - name: Bootstrap patched pip trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@75587fc33ff40c34f32ef777293dad56bb6f48c7 # clean-trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@865cdb0ce4b6dd7ce84c61d5fda5b13e3e5ab7c2 # clean-trust
       - run: python -m pip install PyYAML==6.0.2
       - name: Require centrally approved immutable action commits
         run: >-
