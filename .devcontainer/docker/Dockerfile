@@ -6,9 +6,13 @@ FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc71
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY .devcontainer/docker/verify-php-trust.php /usr/local/share/sample-app/verify-php-trust.php
-COPY docker/brotli /usr/src/brotli-inputs
+COPY docker/brotli/version docker/brotli/install-vendor.sh docker/brotli/verify-runtime.php docker/brotli/verify-system-brotli.c /usr/src/brotli-inputs/
 RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
-    && sh /usr/src/brotli-inputs/build.sh
+    && sh /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs gcc libc6-dev \
+    && mkdir -p /out \
+    && cc -O2 /usr/src/brotli-inputs/verify-system-brotli.c -lbrotlidec -lbrotlienc -ldl -o /out/verify-system-brotli \
+    && /out/verify-system-brotli \
+    && cp /usr/src/brotli-inputs/version /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs/verify-runtime.php /out/
 
 FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
 
@@ -95,10 +99,9 @@ RUN set -eux; \
 FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
 
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
-RUN dpkg -i /usr/local/share/sample-app/brotli/libbrotli1_*.deb \
-        /usr/local/share/sample-app/brotli/libbrotli-dev_*.deb \
+RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh /usr/local/share/sample-app/brotli \
     && php /usr/local/share/sample-app/brotli/verify-runtime.php \
-    && rm /usr/local/share/sample-app/brotli/*.deb
+    && rm -rf /var/lib/apt/lists/*
 
 ARG VCS_REF=unknown
 ARG DURABLE_WORKFLOW_CLI_VERSION
