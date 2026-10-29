@@ -51,7 +51,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker = new PolyglotWorker();
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
         $method = new ReflectionMethod($worker, 'processTask');
-        $method->setAccessible(true);
         $task = [
             'workflow_type' => 'polyglot.php.greeter',
             'workflow_id' => 'codec-rejection',
@@ -169,7 +168,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'runWorkflowWorker');
-        $method->setAccessible(true);
         $status = $method->invoke(
             $worker,
             $client,
@@ -225,7 +223,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'runWorkflowWorker');
-        $method->setAccessible(true);
         $status = $method->invoke(
             $worker,
             $client,
@@ -310,7 +307,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'runWorkflowWorker');
-        $method->setAccessible(true);
         $status = $method->invoke(
             $worker,
             $client,
@@ -409,7 +405,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'runQueryWorker');
-        $method->setAccessible(true);
         $status = $method->invoke(
             $worker,
             $client,
@@ -473,7 +468,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'runActivityWorker');
-        $method->setAccessible(true);
         $status = $method->invoke(
             $worker,
             $client,
@@ -1030,7 +1024,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'processTask');
-        $method->setAccessible(true);
         $method->invoke($worker, $client, 'php-worker', 'polyglot-php-to-python', $task);
 
         $this->assertCount(1, $requests);
@@ -1067,7 +1060,6 @@ final class PolyglotWorkerReplayTest extends TestCase
         $worker->setOutput(new OutputStyle(new ArrayInput([]), new NullOutput()));
 
         $method = new ReflectionMethod($worker, 'processQueryTask');
-        $method->setAccessible(true);
         $method->invoke($worker, $client, 'php-worker', $task);
 
         $this->assertCount(1, $requests);

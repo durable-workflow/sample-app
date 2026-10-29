@@ -92,7 +92,6 @@ class PolyglotServerClientTest extends TestCase
     {
         $client = new ServerClient(new HttpFactory(), 'http://server:8080', 'test-token', 'default');
         $method = new ReflectionMethod($client, 'requestTimeoutForPoll');
-        $method->setAccessible(true);
 
         $this->assertSame(1, $method->invoke($client, 0));
         $this->assertSame(16, $method->invoke($client, 1));
