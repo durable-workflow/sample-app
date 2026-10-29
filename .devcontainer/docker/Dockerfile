@@ -323,7 +323,7 @@ RUN set -eux; \
     playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
     test -n "$playwright_version"; \
     npm install --global --no-audit --no-fund "playwright@${playwright_version}"; \
-    playwright install --with-deps --only-shell chromium; \
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 playwright install --with-deps --only-shell chromium; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*
 
