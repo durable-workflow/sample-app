@@ -342,6 +342,10 @@ RUN set -eux; \
         --locked \
         --manifest-path=/tmp/sample-app-rust-playground/Cargo.toml \
         --bins; \
+    install -d -m 0755 /usr/local/share/sample-app/rust; \
+    install -m 0644 /tmp/sample-app-rust-playground/Cargo.toml \
+        /tmp/sample-app-rust-playground/Cargo.lock /usr/local/share/sample-app/rust/; \
+    find "$CARGO_HOME/registry/src" -type f -name Cargo.lock -delete; \
     rm -rf "$CARGO_TARGET_DIR/debug/incremental" /tmp/sample-app-rust-playground; \
     gosu laravel test -d "$CARGO_HOME/registry/cache"; \
     gosu laravel test -d "$CARGO_TARGET_DIR/debug/deps"; \

@@ -2,12 +2,17 @@
   "oras_image": "ghcr.io/oras-project/oras@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb",
   "trivy_image": "aquasec/trivy:0.76.1@sha256:2e6c00d711ab4ae41d8a30c2c1fd3bd3b62704c177bb120f95012e939edfb3df",
   "database_repository": "ghcr.io/aquasecurity/trivy-db:2",
+  "sbom_generator_image": "docker/buildkit-syft-scanner@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315",
+  "sbom_creator": "Tool: syft-v1.51.0",
+  "cargo_lock_path": "usr/local/share/sample-app/rust/Cargo.lock",
+  "cargo_source": "acquired package info from rust cargo manifest: /usr/local/share/sample-app/rust/Cargo.lock",
   "required_package_types": [
     "debian",
     "composer",
     "gobinary",
     "node-pkg",
-    "python-pkg"
+    "python-pkg",
+    "cargo"
   ],
   "exceptions": [
     {

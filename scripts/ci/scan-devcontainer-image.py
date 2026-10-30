@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 import uuid
 from urllib.parse import parse_qsl, unquote
 
@@ -26,6 +27,42 @@ REPOSITORIES = {"ghcr.io/durable-workflow/sample-app-devcontainer", "docker.io/d
 
 def purl_key(value):
     return unquote(value.split("?", 1)[0].split("#", 1)[0])
+
+
+def expected_cargo_inventory():
+    lock_path = DIRECTORY.parents[1] / "playground/templates/rust/Cargo.lock"
+    raw = lock_path.read_bytes()
+    packages = tomllib.loads(raw.decode())["package"]
+    return {"pkg:cargo/" + package["name"] + "@" + package["version"]
+            for package in packages if package.get("source")}, hashlib.sha256(raw).hexdigest()
+
+
+def verify_cargo_inventory(spdx, expected, lock_digest, policy):
+    if policy["sbom_creator"] not in spdx.get("creationInfo", {}).get("creators", []):
+        raise ValueError("Platform SBOM does not identify the pinned generator version")
+    files = [file for file in spdx.get("files", [])
+             if file.get("fileName", "").removeprefix("./").removeprefix("/") == policy["cargo_lock_path"]]
+    if len(files) != 1:
+        raise ValueError("SBOM must identify exactly one retained Cargo.lock file")
+    hashes = [checksum["checksumValue"] for checksum in files[0].get("checksums", [])
+              if checksum.get("algorithm") == "SHA256"]
+    if hashes != [lock_digest]:
+        raise ValueError("Attested Cargo.lock checksum disagrees with the source lock digest")
+    seen = set()
+    for package in spdx["packages"]:
+        for reference in package.get("externalRefs", []):
+            if reference.get("referenceType") != "purl" or not reference["referenceLocator"].startswith("pkg:cargo/"):
+                continue
+            key = purl_key(reference["referenceLocator"])
+            if key in seen or package.get("sourceInfo") != policy["cargo_source"]:
+                raise ValueError("Cargo inventory contains duplicate packages or an unreviewed source graph")
+            name, version = key.removeprefix("pkg:cargo/").rsplit("@", 1)
+            if name != package.get("name") or version != package.get("versionInfo"):
+                raise ValueError("Cargo package identity disagrees with its attested PURL")
+            seen.add(key)
+    if not expected or seen != expected:
+        raise ValueError("Platform SBOM omitted or changed the authoritative Cargo lock inventory")
+    return len(seen)
 
 
 def scanner_spdx(spdx):
@@ -226,7 +263,9 @@ def scan(images, output, policy, expected_revision=None, cache_directory=None, t
                 identities.append(dict(identity, repository=repository))
 
         summaries = []
+        expected_cargo, cargo_lock_digest = expected_cargo_inventory()
         for architecture, spdx in platform_inputs.items():
+            cargo_packages = verify_cargo_inventory(spdx, expected_cargo, cargo_lock_digest, policy)
             sbom = work / f"{architecture}.spdx.json"
             converted, mappings = scanner_spdx(spdx)
             sbom.write_text(json.dumps(converted))
@@ -241,7 +280,8 @@ def scan(images, output, policy, expected_revision=None, cache_directory=None, t
             database = database_metadata(cache / "db/metadata.json")
             assessment = assess_report(report, spdx, policy)
             summaries.append(dict(assessment, platform="linux/" + architecture, database=database,
-                                  debian_source_mappings=mappings))
+                                  debian_source_mappings=mappings, cargo_packages=cargo_packages,
+                                  cargo_lock_sha256=cargo_lock_digest))
         summary = {"index_digest": index_digest, "scanner": policy["trivy_image"],
                    "identities": identities, "platforms": summaries}
         (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

@@ -1,3 +1,4 @@
+import copy
 import datetime as dt
 import importlib.util
 import json
@@ -136,6 +137,71 @@ class ScanPolicyTests(unittest.TestCase):
             path.write_text(json.dumps(metadata))
             with self.assertRaisesRegex(ValueError, "expired"):
                 SCAN.database_metadata(path, now)
+
+
+class CargoInventoryTests(unittest.TestCase):
+    def setUp(self):
+        self.policy = json.loads((DIRECTORY / "devcontainer-security.json").read_text())
+        self.expected = {"pkg:cargo/durable-workflow@4.1.0", "pkg:cargo/rustls@0.23.45"}
+        self.digest = "a" * 64
+        self.spdx = {"creationInfo": {"creators": [self.policy["sbom_creator"]]}, "packages": [
+            {"name": key.split("/")[-1].split("@")[0], "versionInfo": key.rsplit("@", 1)[-1],
+             "sourceInfo": self.policy["cargo_source"],
+             "externalRefs": [{"referenceType": "purl", "referenceLocator": key}]} for key in sorted(self.expected)]}
+        self.spdx["files"] = [{"fileName": self.policy["cargo_lock_path"],
+                               "checksums": [{"algorithm": "SHA256", "checksumValue": self.digest}]}]
+
+    def verify(self):
+        return SCAN.verify_cargo_inventory(self.spdx, self.expected, self.digest, self.policy)
+
+    def test_exact_authoritative_graph_is_required(self):
+        self.assertEqual(self.verify(), 2)
+        self.spdx["packages"].pop()
+        with self.assertRaisesRegex(ValueError, "omitted or changed"):
+            self.verify()
+
+    def test_cached_dependency_graph_cannot_be_substituted(self):
+        self.spdx["packages"][0]["sourceInfo"] = "acquired package info from rust cargo manifest: /home/laravel/.cargo/registry/src/unreviewed/Cargo.lock"
+        with self.assertRaisesRegex(ValueError, "unreviewed source"):
+            self.verify()
+
+    def test_duplicate_or_inconsistent_package_version_is_refused(self):
+        self.spdx["packages"][0]["versionInfo"] += ".new"
+        with self.assertRaisesRegex(ValueError, "disagrees"):
+            self.verify()
+        self.spdx["packages"][0]["versionInfo"] = self.spdx["packages"][0]["externalRefs"][0]["referenceLocator"].rsplit("@", 1)[-1]
+        name = self.spdx["packages"][0]["name"]
+        self.spdx["packages"][0]["name"] = "unreviewed"
+        with self.assertRaisesRegex(ValueError, "disagrees"):
+            self.verify()
+        self.spdx["packages"][0]["name"] = name
+        self.spdx["packages"].append(dict(self.spdx["packages"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self.verify()
+
+    def test_unpinned_generator_version_is_refused(self):
+        self.spdx["creationInfo"]["creators"] = ["Tool: syft-unreviewed"]
+        with self.assertRaisesRegex(ValueError, "pinned generator"):
+            self.verify()
+
+    def test_retained_lock_file_digest_must_be_unambiguous_and_exact(self):
+        file = self.spdx["files"][0]
+        for files in [[], [dict(file, fileName="different/Cargo.lock")], [file, copy.deepcopy(file)],
+                      [dict(file, checksums=[])],
+                      [dict(file, checksums=[{"algorithm": "SHA256", "checksumValue": "b" * 64}])],
+                      [dict(file, checksums=file["checksums"] * 2)]]:
+            with self.subTest(files=files):
+                self.spdx["files"] = files
+                with self.assertRaisesRegex(ValueError, "Cargo.lock"):
+                    self.verify()
+
+    def test_source_lock_includes_the_published_sdk_and_declared_direct_dependencies(self):
+        expected, digest = SCAN.expected_cargo_inventory()
+        self.assertIn("pkg:cargo/durable-workflow@4.1.0", expected)
+        self.assertIn("pkg:cargo/serde_json@1.0.150", expected)
+        self.assertIn("pkg:cargo/tokio@1.47.1", expected)
+        self.assertNotIn("pkg:cargo/durable-workflow-sample-playground@0.1.0", expected)
+        self.assertRegex(digest, r"^[a-f0-9]{64}$")
 
 
 class DebianSourceIdentityTests(unittest.TestCase):

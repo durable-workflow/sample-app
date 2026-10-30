@@ -48,6 +48,9 @@ test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/clie
 test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json
 test -d "${CARGO_HOME}/registry/cache"
 test -d "${CARGO_TARGET_DIR}/debug/deps"
+test -s /usr/local/share/sample-app/rust/Cargo.toml
+test -s /usr/local/share/sample-app/rust/Cargo.lock
+[[ -z "$(find "$CARGO_HOME/registry/src" -type f -name Cargo.lock -print -quit)" ]]
 
 verify-prepared-permissions \
     /home/laravel/.cargo \
