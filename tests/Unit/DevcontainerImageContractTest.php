@@ -101,6 +101,17 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('docker/login-action', $workflow);
         $this->assertStringNotContainsString('secrets.', $workflow);
         $this->assertStringNotContainsString('packages: write', $workflow);
+
+        $jobs = Yaml::parse($workflow)['jobs'];
+        $matrix = $jobs['qualify']['strategy']['matrix']['include'];
+        $this->assertSame(['linux/amd64', 'linux/arm64'], array_column($matrix, 'platform'));
+        $this->assertSame(['ubuntu-24.04', 'ubuntu-24.04-arm'], array_column($matrix, 'runner'));
+        $this->assertFalse($jobs['qualify']['strategy']['fail-fast']);
+        $this->assertSame('always()', $jobs['validate']['if']);
+        $this->assertSame(['qualify'], $jobs['validate']['needs']);
+        $gate = $jobs['validate']['steps'][0];
+        $this->assertSame('${{ needs.qualify.result }}', $gate['env']['QUALIFICATION_RESULT']);
+        $this->assertSame('test "$QUALIFICATION_RESULT" = success', $gate['run']);
     }
 
     public function test_composer_jobs_check_trust_before_dependency_resolution(): void
