@@ -20,7 +20,9 @@ rm -rf "$python_probe_dir"
 [[ "$(cargo --version | awk '{print $2}')" == "1.99.1" ]]
 [[ "$(docker --version | sed -E 's/^Docker version ([^,]+),.*/\1/')" == "29.9.2" ]]
 compose_version="$(docker compose version --short)"
-[[ "${compose_version#v}" == "5.6.1" ]]
+[[ "${compose_version#v}" == "5.6.1+sample.1" ]]
+[[ "$(npm --version)" == "12.2.1+sample.1" ]]
+[[ "$(gosu --version)" == '1.20 (go1.27.3 on linux/'* ]]
 cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"
 [[ -n "$cli_version" ]]
 [[ "$(dw --version | awk '$1 == "dw" { print $2 }')" == "$cli_version" ]]
