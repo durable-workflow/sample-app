@@ -3,9 +3,12 @@
 
 import ssl
 import sys
+from importlib.metadata import version
 
 import pip
 from pip._vendor import certifi as pip_certifi
+from pip._vendor import urllib3
+from pip._vendor.packaging.version import Version
 
 
 def verify_bundle(path):
@@ -22,8 +25,12 @@ def verify_bundle(path):
     print(f"Verified Python CA bundle: {path}")
 
 
-if tuple(int(part) for part in pip.__version__.split(".")) < (26, 2, 2):
+if Version(pip.__version__) < Version("26.2.2"):
     raise RuntimeError(f"Patched pip 26.2.2 or newer is required, found {pip.__version__}")
+if Version(urllib3.__version__) < Version("2.8.0"):
+    raise RuntimeError(f"Patched pip-bundled urllib3 2.8.0 or newer is required, found {urllib3.__version__}")
+if Version(version("setuptools")) < Version("78.1.1"):
+    raise RuntimeError("Patched setuptools 78.1.1 or newer is required")
 
 verify_bundle(ssl.get_default_verify_paths().cafile)
 verify_bundle(pip_certifi.where())

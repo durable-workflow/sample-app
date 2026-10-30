@@ -265,20 +265,17 @@ RUN set -eux; \
 
 COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
 COPY .devcontainer/docker/verify-python-trust.py /usr/local/share/sample-app/verify-python-trust.py
+COPY docker/python /usr/local/share/sample-app/python
 
 RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
+    python3 /usr/local/share/sample-app/python/build-pip.py /tmp/sample-app-python-wheels; \
+    rm /usr/local/share/sample-app/python/build-pip.py /usr/local/share/sample-app/python/pip-urllib3.patch; \
     python3 -m venv "$VIRTUAL_ENV"; \
-    curl --proto '=https' --proto-redir '=https' -fsSL --max-time 120 \
-        https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl \
-        -o /tmp/pip-26.2.2-py3-none-any.whl; \
-    printf '%s  %s\n' \
-        fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70 \
-        /tmp/pip-26.2.2-py3-none-any.whl | sha256sum --check --strict -; \
     "$VIRTUAL_ENV/bin/python" -I -m pip --isolated --disable-pip-version-check install \
-        --no-index --no-deps --upgrade /tmp/pip-26.2.2-py3-none-any.whl; \
-    rm /tmp/pip-26.2.2-py3-none-any.whl; \
+        --no-index --no-deps --upgrade /tmp/sample-app-python-wheels/*.whl; \
+    rm -rf /tmp/sample-app-python-wheels; \
     "$VIRTUAL_ENV/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; \
     "$VIRTUAL_ENV/bin/pip" install \
         --no-input \
