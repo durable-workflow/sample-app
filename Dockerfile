@@ -1,6 +1,6 @@
-FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
+FROM composer:2.11.0@sha256:278dfc7bd35169965d03f87194816f43bf4e6b6ea61707c2114e52ad12fe24ce AS composer
 
-FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS brotli-build
+FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76 AS brotli-build
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY docker/verify-runtime-trust.php /usr/local/share/sample-app/verify-runtime-trust.php
@@ -12,7 +12,7 @@ RUN php /usr/local/share/sample-app/verify-runtime-trust.php /usr/local/bin/comp
     && /out/verify-system-brotli \
     && cp /usr/src/brotli-inputs/version /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs/verify-runtime.php /out/
 
-FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS base
+FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76 AS base
 
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
 RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh /usr/local/share/sample-app/brotli \
@@ -24,7 +24,8 @@ COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
 COPY docker/verify-runtime-trust.php docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     curl ffmpeg git libnspr4 libnss3 libpq-dev libzip-dev unzip \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
     && sh /usr/local/bin/install-phpredis \
@@ -54,12 +55,15 @@ COPY . .
 RUN composer dump-autoload --optimize
 
 # ── Frontend assets ──────────────────────────────────────
-FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS assets
+FROM node:22.23.4-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS assets
 
 WORKDIR /app
 COPY docker/verify-node-trust.mjs /usr/local/share/sample-app/verify-node-trust.mjs
+COPY docker/install-npm.sh /usr/local/bin/install-npm
 COPY package.json package-lock.json* ./
-RUN node /usr/local/share/sample-app/verify-node-trust.mjs && npm ci --ignore-scripts
+RUN node /usr/local/share/sample-app/verify-node-trust.mjs \
+    && sh /usr/local/bin/install-npm \
+    && npm ci --ignore-scripts
 
 COPY resources/ resources/
 COPY vite.config.js ./
