@@ -84,7 +84,9 @@ jobs:
           pull: true
           push: true
           provenance: mode=max
-          sbom: 'generator=docker/buildkit-syft-scanner@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315,"SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger"'
+          # A custom selection resets the scanner to directory defaults. Restore
+          # all five image-only catalogers in pinned Syft alongside Cargo.
+          sbom: 'generator=docker/buildkit-syft-scanner@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315,"SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger,+bitnami-cataloger,+conan-info-cataloger,+javascript-package-cataloger,+php-composer-installed-cataloger,+ruby-installed-gemspec-cataloger"'
           tags: |
             ${{ env.GHCR_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
             ${{ env.DOCKERHUB_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
