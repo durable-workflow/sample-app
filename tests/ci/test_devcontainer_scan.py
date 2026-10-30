@@ -18,7 +18,7 @@ class ScanPolicyTests(unittest.TestCase):
                        "Results": [{"Type": kind, "Packages": [{"Name": "fixture"}], "Vulnerabilities": []}
                                    for kind in self.policy["required_package_types"]]}
         rule = self.policy["exceptions"][0]
-        self.spdx = {"packages": [self.package(rule["purl"], rule["source"]),
+        self.spdx = {"packages": [self.package(rule["purl"], rule["sources"][0]),
                                   self.package(rule["requires_packages"][0], "installed pip") ]}
 
     def package(self, purl, source):
@@ -78,6 +78,42 @@ class ScanPolicyTests(unittest.TestCase):
         rule = self.policy["exceptions"][0]
         self.spdx["packages"] = self.spdx["packages"][:1]
         self.assertEqual(len(self.assess(self.finding(identifier=rule["ids"][0], purl=rule["purl"]))["blocked"]), 1)
+
+    def test_every_component_negative_requires_exact_package_version_and_source(self):
+        for rule in self.policy["exceptions"]:
+            for source in rule["sources"]:
+                for identifier in rule["ids"]:
+                    with self.subTest(purl=rule["purl"], source=source, identifier=identifier):
+                        self.spdx["packages"] = [self.package(rule["purl"], source)] + [
+                            self.package(parent, "required component") for parent in rule["requires_packages"]
+                            if parent != rule["purl"]]
+                        finding = self.finding(identifier, purl=rule["purl"], fixed=None, severity="CRITICAL")
+                        result = self.assess(finding)
+                        self.assertEqual(len(result["component_negatives"]), 1)
+                        self.assertEqual(result["component_negatives"][0]["evidence"], rule["evidence"])
+                        self.spdx["packages"][0]["sourceInfo"] = "unreviewed source"
+                        self.assertEqual(len(self.assess(finding)["blocked"]), 1)
+                        self.spdx["packages"][0] = self.package(rule["purl"], source)
+                        self.assertEqual(len(self.assess(dict(finding, InstalledVersion=finding["InstalledVersion"] + ".new"))["blocked"]), 1)
+                        self.spdx["packages"][0] = self.package(rule["purl"] + ".new", source)
+                        self.assertEqual(len(self.assess(self.finding(identifier, purl=rule["purl"] + ".new",
+                            fixed=None, severity="CRITICAL"))["blocked"]), 1)
+
+    def test_every_reviewed_critical_requires_exact_package_version_and_source(self):
+        for rule in self.policy["reviewed_unfixed_critical"]:
+            for source in rule["sources"]:
+                with self.subTest(purl=rule["purl"], source=source):
+                    self.spdx["packages"] = [self.package(rule["purl"], source)]
+                    finding = self.finding(rule["ids"][0], purl=rule["purl"], fixed=None, severity="CRITICAL")
+                    self.assertEqual(len(self.assess(finding)["reviewed_unfixed_critical"]), 1)
+                    self.assertEqual(len(self.assess(dict(finding, FixedVersion="new-supported-fix"))["blocked"]), 1)
+                    self.spdx["packages"][0]["sourceInfo"] = "unreviewed source"
+                    self.assertEqual(len(self.assess(finding)["blocked"]), 1)
+                    self.spdx["packages"][0] = self.package(rule["purl"], source)
+                    self.assertEqual(len(self.assess(dict(finding, InstalledVersion=finding["InstalledVersion"] + ".new"))["blocked"]), 1)
+                    self.spdx["packages"][0] = self.package(rule["purl"] + ".new", source)
+                    self.assertEqual(len(self.assess(self.finding(rule["ids"][0], purl=rule["purl"] + ".new",
+                        fixed=None, severity="CRITICAL"))["blocked"]), 1)
 
     def test_missing_inventory_cannot_be_reported_as_clean(self):
         self.report["Results"][0]["Packages"] = []

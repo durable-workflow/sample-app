@@ -122,13 +122,14 @@ def assess_report(report, spdx, policy):
             waiver = next((rule for rule in policy["exceptions"]
                            if row["id"] in rule["ids"] and key == rule["purl"]
                            and any(parent in components for parent in rule["requires_packages"]) and matches
-                           and exact_version and all(package.get("sourceInfo") == rule["source"] for package in matches)), None)
+                           and exact_version and all(package.get("sourceInfo") in rule["sources"] for package in matches)), None)
             residual = next((rule for rule in policy["reviewed_unfixed_critical"]
                              if row["id"] in rule["ids"] and key == rule["purl"]
                              and rule["distribution"] == "debian/12" and matches and exact_version
                              and all(package.get("sourceInfo") in rule["sources"] for package in matches)), None)
             if waiver:
-                exempted.append(dict(row, reason=waiver["reason"], evidence=waiver["evidence"]))
+                exempted.append(dict(row, reason=waiver["reason"], evidence=waiver["evidence"],
+                                     vendor_evidence=waiver.get("vendor_evidence", [])))
             elif row["severity"] == "CRITICAL" and not row["fixed"] and residual:
                 reviewed_critical.append(dict(row, reason=residual["reason"], evidence=residual["evidence"],
                                               vendor_evidence=residual["vendor_evidence"]))
