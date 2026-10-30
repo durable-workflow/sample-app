@@ -45,6 +45,11 @@ class ScanPolicyTests(unittest.TestCase):
     def test_unknown_unfixed_critical_is_blocked(self):
         self.assertEqual(len(self.assess(self.finding(fixed=None, severity="CRITICAL"))["blocked"]), 1)
 
+    def test_fixed_finding_in_an_additional_cargo_graph_is_still_blocked(self):
+        key = "pkg:cargo/vendor-fixture-dependency@1.0"
+        self.spdx["packages"].append(self.package(key, "installed SDK integration fixture/Cargo.lock"))
+        self.assertEqual(len(self.assess(self.finding(purl=key))["blocked"]), 1)
+
     def test_exact_reviewed_unfixed_critical_remains_visible_with_evidence(self):
         for rule in self.policy["reviewed_unfixed_critical"]:
             for source in rule["sources"]:
@@ -162,8 +167,15 @@ class CargoInventoryTests(unittest.TestCase):
 
     def test_cached_dependency_graph_cannot_be_substituted(self):
         self.spdx["packages"][0]["sourceInfo"] = "acquired package info from rust cargo manifest: /home/laravel/.cargo/registry/src/unreviewed/Cargo.lock"
-        with self.assertRaisesRegex(ValueError, "unreviewed source"):
+        with self.assertRaisesRegex(ValueError, "authoritative"):
             self.verify()
+
+    def test_other_cargo_graphs_remain_visible_without_replacing_the_authoritative_graph(self):
+        extra = copy.deepcopy(self.spdx["packages"][0])
+        extra["sourceInfo"] = "acquired package info from rust cargo manifest: /vendor/sdk/tests/Cargo.lock"
+        self.spdx["packages"].append(extra)
+        self.assertEqual(self.verify(), 2)
+        self.assertEqual(len(self.spdx["packages"]), 3)
 
     def test_duplicate_or_inconsistent_package_version_is_refused(self):
         self.spdx["packages"][0]["versionInfo"] += ".new"
