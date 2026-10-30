@@ -270,8 +270,7 @@ COPY docker/python /usr/local/share/sample-app/python
 RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
-    python3 /usr/local/share/sample-app/python/build-pip.py /tmp/sample-app-python-wheels; \
-    rm /usr/local/share/sample-app/python/build-pip.py /usr/local/share/sample-app/python/pip-urllib3.patch; \
+    python3 /usr/local/share/sample-app/python/build-pip.py /tmp/sample-app-python-wheels --seed; \
     python3 -m venv "$VIRTUAL_ENV"; \
     "$VIRTUAL_ENV/bin/python" -I -m pip --isolated --disable-pip-version-check install \
         --no-index --no-deps --upgrade /tmp/sample-app-python-wheels/*.whl; \
@@ -324,6 +323,8 @@ RUN set -eux; \
     test -n "$playwright_version"; \
     npm install --global --no-audit --no-fund "playwright@${playwright_version}"; \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 playwright install --with-deps --only-shell chromium; \
+    python3 /usr/local/share/sample-app/python/build-pip.py --clean-seeds; \
+    rm /usr/local/share/sample-app/python/build-pip.py /usr/local/share/sample-app/python/pip-urllib3.patch; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*
 

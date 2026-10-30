@@ -7,6 +7,7 @@
   "patch_generation": {
     "pip_commit": "b3b696fe2122f2339d782517559bfade2cb6b879",
     "vendoring_version": "1.4.0",
+    "diff_context_lines": 0,
     "command": "MSGPACK_PUREPYTHON=1 vendoring sync -v"
   },
   "artifacts": {

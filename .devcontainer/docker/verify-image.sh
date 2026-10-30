@@ -8,7 +8,14 @@ node /usr/local/share/sample-app/verify-node-trust.mjs
 python -c 'import sys; assert sys.version_info >= (3, 10)'
 python /usr/local/share/sample-app/verify-python-trust.py
 python -c 'import durable_workflow'
-python -m venv --help >/dev/null
+python_probe_dir="$(mktemp -d)"
+if ! python -m venv "$python_probe_dir" \
+    || ! "$python_probe_dir/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; then
+    rm -rf "$python_probe_dir"
+    echo 'Fresh Python virtual environment failed qualification.' >&2
+    exit 1
+fi
+rm -rf "$python_probe_dir"
 [[ "$(rustc --version | awk '{print $2}')" == "1.99.1" ]]
 [[ "$(cargo --version | awk '{print $2}')" == "1.99.1" ]]
 [[ "$(docker --version | sed -E 's/^Docker version ([^,]+),.*/\1/')" == "29.9.2" ]]

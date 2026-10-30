@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import zipfile
 
@@ -75,8 +76,10 @@ def build(inputs, patch, output):
 
         wheel("unpack", wheels["pip"], "--dest", root)
         unpacked = root / f"pip-{config['pip_upstream_version']}"
-        subprocess.run(["git", "apply", "--check", "-p2", str(patch.resolve())], cwd=unpacked, check=True)
-        subprocess.run(["git", "apply", "-p2", str(patch.resolve())], cwd=unpacked, check=True)
+        # The exact upstream wheel SHA fixes the complete patch base. Zero
+        # context keeps patch-format blank lines out of whitespace checks.
+        subprocess.run(["git", "apply", "--check", "--unidiff-zero", "-p2", str(patch.resolve())], cwd=unpacked, check=True)
+        subprocess.run(["git", "apply", "--unidiff-zero", "-p2", str(patch.resolve())], cwd=unpacked, check=True)
 
         upstream = config["pip_upstream_version"]
         version = config["pip_version"]
@@ -101,9 +104,61 @@ def build(inputs, patch, output):
                           "record_entries": entries, "setuptools": config["setuptools_version"]}))
 
 
+def seed_environments(output):
+    directory = pathlib.Path(sysconfig.get_config_var("WHEEL_PKG_DIR") or "")
+    if directory != pathlib.Path("/usr/share/python-wheels"):
+        raise ValueError("Expected Debian's ensurepip wheel directory")
+    replacements = []
+    for project in ("pip", "setuptools"):
+        original = list(directory.glob(f"{project}-*.whl"))
+        fixed = list(output.glob(f"{project}-*.whl"))
+        if len(original) != 1 or len(fixed) != 1:
+            raise ValueError(f"Ambiguous ensurepip seed wheel: {project}")
+        owner = subprocess.check_output(["dpkg-query", "--search", str(original[0])], text=True)
+        if not owner.startswith(f"python3-{project}-whl: "):
+            raise ValueError(f"Unexpected ensurepip seed package: {project}")
+        replacements.append((original[0], fixed[0]))
+    for original, fixed in replacements:
+        diverted = original.with_suffix(".whl.distribution")
+        # Register the local replacement so package upgrades cannot overwrite
+        # the maintained seed. Do not ship the retired vulnerable archive.
+        subprocess.run(["dpkg-divert", "--local", "--rename", "--add", "--divert",
+                        str(diverted), str(original)], check=True)
+        diverted.unlink()
+        shutil.copyfile(fixed, directory / fixed.name)
+
+
+def clean_retired_seeds():
+    directory = pathlib.Path("/usr/share/python-wheels")
+    for project in ("pip", "setuptools"):
+        files = subprocess.check_output(["dpkg-query", "--listfiles", f"python3-{project}-whl"], text=True)
+        originals = [pathlib.Path(line) for line in files.splitlines()
+                     if pathlib.Path(line).parent == directory
+                     and pathlib.Path(line).name.startswith(f"{project}-") and line.endswith(".whl")]
+        if len(originals) != 1:
+            raise ValueError(f"Ambiguous distribution seed file: {project}")
+        original = originals[0]
+        actual = subprocess.check_output(["dpkg-divert", "--truename", str(original)], text=True).strip()
+        diverted = original.with_suffix(".whl.distribution")
+        if actual != str(diverted) or original.exists():
+            raise ValueError(f"Ensurepip seed diversion was lost: {project}")
+        # A later package reconciliation can refresh the retired archive at
+        # its diverted path. It must not be retained in the published image.
+        diverted.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output", type=pathlib.Path)
+    parser.add_argument("output", nargs="?", type=pathlib.Path)
+    parser.add_argument("--seed", action="store_true", help="Replace Debian ensurepip seeds inside the image")
+    parser.add_argument("--clean-seeds", action="store_true", help="Remove retired seed archives after final apt operations")
     args = parser.parse_args()
-    directory = pathlib.Path(__file__).resolve().parent
-    build(directory / "tools.json", directory / "pip-urllib3.patch", args.output.resolve())
+    if args.clean_seeds:
+        clean_retired_seeds()
+    else:
+        if args.output is None:
+            parser.error("output is required when building Python tooling")
+        directory = pathlib.Path(__file__).resolve().parent
+        build(directory / "tools.json", directory / "pip-urllib3.patch", args.output.resolve())
+        if args.seed:
+            seed_environments(args.output.resolve())
