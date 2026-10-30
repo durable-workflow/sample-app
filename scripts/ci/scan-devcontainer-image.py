@@ -2,6 +2,7 @@
 """Verify both public registries and scan both exact platform SBOMs before promotion."""
 
 import argparse
+import copy
 import datetime as dt
 import hashlib
 import importlib.util
@@ -13,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote
 
 sys.dont_write_bytecode = True
 DIRECTORY = pathlib.Path(__file__).resolve().parent
@@ -25,6 +26,73 @@ REPOSITORIES = {"ghcr.io/durable-workflow/sample-app-devcontainer", "docker.io/d
 
 def purl_key(value):
     return unquote(value.split("?", 1)[0].split("#", 1)[0])
+
+
+def scanner_spdx(spdx):
+    """Translate attested Debian source qualifiers into Trivy's SPDX dialect.
+
+    Trivy 0.76.1 ignores Syft's upstream PURL qualifier. Its SPDX decoder reads
+    source package identity from `built package from: NAME VERSION` instead.
+    Keep the verified original untouched for policy/evidence and check every
+    translated identity against the scanner's returned package inventory.
+    """
+    converted = copy.deepcopy(spdx)
+    mappings = {}
+    for package in converted["packages"]:
+        references = [ref["referenceLocator"] for ref in package.get("externalRefs", [])
+                      if ref.get("referenceType") == "purl" and ref["referenceLocator"].startswith("pkg:deb/debian/")]
+        if not references:
+            if package.get("sourceInfo", "").startswith("acquired package info from DPKG DB:"):
+                raise ValueError("Debian package is missing its attested PURL")
+            continue
+        if len(references) != 1:
+            raise ValueError("Ambiguous Debian package identity")
+        purl = references[0]
+        key = purl_key(purl)
+        name, version = key.removeprefix("pkg:deb/debian/").rsplit("@", 1)
+        if name != package["name"] or version != package["versionInfo"]:
+            raise ValueError("Debian PURL disagrees with the attested package")
+        qualifiers = parse_qsl(purl.partition("?")[2].split("#", 1)[0], keep_blank_values=True)
+        if len(dict(qualifiers)) != len(qualifiers):
+            raise ValueError("Duplicate Debian PURL qualifiers")
+        upstream = dict(qualifiers).get("upstream", name)
+        source_name, separator, source_version = upstream.partition("@")
+        if not separator:
+            source_version = version
+        if not re.fullmatch(r"[a-z0-9][a-z0-9+.-]*", source_name) or not re.fullmatch(r"[0-9][A-Za-z0-9.+:~-]*", source_version):
+            raise ValueError("Invalid Debian source package identity")
+        mapping = {"name": name, "version": version, "source_name": source_name, "source_version": source_version}
+        if key in mappings:
+            raise ValueError("Duplicate or conflicting Debian source package identities")
+        mappings[key] = mapping
+        package["sourceInfo"] = f"built package from: {source_name} {source_version}"
+    if not mappings:
+        raise ValueError("Attested SBOM has no Debian source inventory")
+    return converted, mappings
+
+
+def verify_source_mappings(report, mappings):
+    expected = {}
+    for row in mappings.values():
+        version = row["source_version"]
+        epoch, separator, remainder = version.partition(":")
+        epoch, version = (int(epoch), remainder) if separator else (0, version)
+        upstream, separator, release = version.rpartition("-")
+        upstream, release = (upstream, release) if separator else (version, "")
+        expected[(row["name"], row["version"])] = (row["source_name"], epoch, upstream, release)
+    seen = set()
+    for result in report.get("Results", []):
+        if result.get("Type") != "debian":
+            continue
+        for package in result.get("Packages", []):
+            key = (package["Name"], package["Version"])
+            identity = (package.get("SrcName"), package.get("SrcEpoch") or 0,
+                        package.get("SrcVersion"), package.get("SrcRelease") or "")
+            if key not in expected or identity != expected[key]:
+                raise ValueError("Scanner lost or changed an attested Debian source identity")
+            seen.add(key)
+    if seen != set(expected):
+        raise ValueError("Scanner omitted an attested Debian package")
 
 
 def assess_report(report, spdx, policy):
@@ -159,7 +227,8 @@ def scan(images, output, policy, expected_revision=None, cache_directory=None, t
         summaries = []
         for architecture, spdx in platform_inputs.items():
             sbom = work / f"{architecture}.spdx.json"
-            sbom.write_text(json.dumps(spdx))
+            converted, mappings = scanner_spdx(spdx)
+            sbom.write_text(json.dumps(converted))
             raw = container(policy["trivy_image"], ["sbom", "--cache-dir", "/cache", "--timeout", "5m",
                 "--db-repository", policy["database_repository"], "--list-all-pkgs", "--scanners", "vuln",
                 "--ignorefile", "/dev/null", "--severity", "HIGH,CRITICAL", "--distro", "debian/12",
@@ -167,9 +236,11 @@ def scan(images, output, policy, expected_revision=None, cache_directory=None, t
                 network=tool_network)
             report = json.loads(raw)
             (output / f"{architecture}.trivy.json").write_bytes(raw)
+            verify_source_mappings(report, mappings)
             database = database_metadata(cache / "db/metadata.json")
             assessment = assess_report(report, spdx, policy)
-            summaries.append(dict(assessment, platform="linux/" + architecture, database=database))
+            summaries.append(dict(assessment, platform="linux/" + architecture, database=database,
+                                  debian_source_mappings=mappings))
         summary = {"index_digest": index_digest, "scanner": policy["trivy_image"],
                    "identities": identities, "platforms": summaries}
         (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

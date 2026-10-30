@@ -102,5 +102,79 @@ class ScanPolicyTests(unittest.TestCase):
                 SCAN.database_metadata(path, now)
 
 
+class DebianSourceIdentityTests(unittest.TestCase):
+    def setUp(self):
+        aliases = [("libaom3", "aom", "3.6.0-1+deb12u3"),
+                   ("libmbedcrypto7", "mbedtls", "2.28.3-1"),
+                   ("linux-libc-dev", "linux", "6.1.190-1"),
+                   ("zlib1g", "zlib", "1:1.2.13.dfsg-1")]
+        self.spdx = {"packages": [{"name": name, "versionInfo": version,
+            "sourceInfo": "acquired package info from DPKG DB: /var/lib/dpkg/status",
+            "externalRefs": [{"referenceType": "purl", "referenceLocator":
+                f"pkg:deb/debian/{name}@{version}?arch=amd64&upstream={upstream}"}]}
+            for name, upstream, version in aliases]}
+
+    def test_source_aliases_are_preserved_without_mutating_attested_evidence(self):
+        original = json.dumps(self.spdx, sort_keys=True)
+        converted, mappings = SCAN.scanner_spdx(self.spdx)
+        self.assertEqual(json.dumps(self.spdx, sort_keys=True), original)
+        for package in converted["packages"]:
+            key = SCAN.purl_key(package["externalRefs"][0]["referenceLocator"])
+            row = mappings[key]
+            self.assertEqual(package["sourceInfo"], f'built package from: {row["source_name"]} {row["source_version"]}')
+            self.assertNotEqual(row["name"], row["source_name"])
+
+    def test_explicit_source_version_survives_binary_version_and_epoch_difference(self):
+        package = self.spdx["packages"][0]
+        package.update(name="cpp", versionInfo="4:12.2.0-3")
+        package["externalRefs"][0]["referenceLocator"] = "pkg:deb/debian/cpp@4%3A12.2.0-3?upstream=gcc-defaults%401.203"
+        converted, _ = SCAN.scanner_spdx(self.spdx)
+        self.assertEqual(converted["packages"][0]["sourceInfo"], "built package from: gcc-defaults 1.203")
+
+    def test_scanner_must_return_each_exact_source_alias_and_version(self):
+        _, mappings = SCAN.scanner_spdx(self.spdx)
+        packages = [
+            {"Name": "libaom3", "Version": "3.6.0-1+deb12u3", "SrcName": "aom", "SrcVersion": "3.6.0", "SrcRelease": "1+deb12u3"},
+            {"Name": "libmbedcrypto7", "Version": "2.28.3-1", "SrcName": "mbedtls", "SrcVersion": "2.28.3", "SrcRelease": "1"},
+            {"Name": "linux-libc-dev", "Version": "6.1.190-1", "SrcName": "linux", "SrcVersion": "6.1.190", "SrcRelease": "1"},
+            {"Name": "zlib1g", "Version": "1:1.2.13.dfsg-1", "SrcName": "zlib", "SrcEpoch": 1, "SrcVersion": "1.2.13.dfsg", "SrcRelease": "1"},
+        ]
+        report = {"Results": [{"Type": "debian", "Packages": packages}]}
+        packages[0]["SrcEpoch"] = None
+        SCAN.verify_source_mappings(report, mappings)
+        for package in packages:
+            with self.subTest(name=package["Name"]):
+                source = package.pop("SrcName")
+                with self.assertRaisesRegex(ValueError, "lost or changed"):
+                    SCAN.verify_source_mappings(report, mappings)
+                package["SrcName"] = source
+        packages[-1]["SrcEpoch"] = None
+        with self.assertRaisesRegex(ValueError, "lost or changed"):
+            SCAN.verify_source_mappings(report, mappings)
+        packages[-1]["SrcEpoch"] = 1
+        packages.pop()
+        with self.assertRaisesRegex(ValueError, "omitted"):
+            SCAN.verify_source_mappings(report, mappings)
+
+    def test_malformed_or_conflicting_attested_debian_identity_is_refused(self):
+        package = self.spdx["packages"][0]
+        reference = package["externalRefs"][0]
+        original = reference["referenceLocator"]
+        for bad in [original + "&upstream=other", original.replace("upstream=aom", "upstream="),
+                    original.replace("upstream=aom", "upstream=aom%40"), original.replace("libaom3@", "other@")]:
+            with self.subTest(purl=bad):
+                reference["referenceLocator"] = bad
+                with self.assertRaises(ValueError):
+                    SCAN.scanner_spdx(self.spdx)
+        package["externalRefs"] = []
+        with self.assertRaisesRegex(ValueError, "missing"):
+            SCAN.scanner_spdx(self.spdx)
+
+    def test_duplicate_attested_debian_package_is_refused(self):
+        self.spdx["packages"].append(dict(self.spdx["packages"][0]))
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            SCAN.scanner_spdx(self.spdx)
+
+
 if __name__ == "__main__":
     unittest.main()
