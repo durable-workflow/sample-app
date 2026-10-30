@@ -3,6 +3,9 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import subprocess
+import sys
+import tempfile
 import unittest
 
 MODULE = pathlib.Path(__file__).resolve().parents[2] / "scripts/ci/verify-devcontainer-attestations.py"
@@ -74,6 +77,29 @@ class AttestationTests(unittest.TestCase):
                 self.assertEqual(identity["image_digest"], IMAGE)
                 self.assertEqual(identity["platform"], platform)
                 self.assertEqual(identity["distro"], "debian/12")
+
+    def test_cli_emits_verified_data_without_writing_files_and_refuses_invalid_digest(self):
+        raw, digest, blobs = bundle()
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = pathlib.Path(temporary)
+            (directory / "index.json").write_bytes(raw)
+            for key, data in blobs.items():
+                (directory / (key[7:] + ".json")).write_bytes(data)
+            before = {path.name: path.read_bytes() for path in directory.iterdir()}
+            command = [sys.executable, str(MODULE), str(directory)]
+            result = subprocess.run(command + [digest, "linux/amd64", "--revision", REVISION],
+                                    capture_output=True, text=True, check=True)
+            payload = json.loads(result.stdout)
+            self.assertEqual(set(payload), {"identity", "spdx"})
+            self.assertEqual(payload["identity"]["image_digest"], IMAGE)
+            self.assertEqual(payload["identity"]["revision"], REVISION)
+            self.assertEqual(payload["spdx"]["packages"][0]["name"], "base-files")
+            refused = subprocess.run(command + ["sha256:" + "0" * 64, "linux/amd64"],
+                                     capture_output=True, text=True)
+            self.assertEqual(refused.returncode, 1)
+            self.assertEqual(refused.stdout, "")
+            self.assertIn("digest mismatch", refused.stderr)
+            self.assertEqual({path.name: path.read_bytes() for path in directory.iterdir()}, before)
 
     def test_wrong_index_digest_is_refused(self):
         raw, _, blobs = bundle()

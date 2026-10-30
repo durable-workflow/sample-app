@@ -308,7 +308,7 @@ PHP);
         $startContainer = file_get_contents($this->path('.devcontainer/docker/start-container')) ?: '';
         $compose = Yaml::parseFile($this->path('.devcontainer/docker/docker-compose.yml'));
 
-        $this->assertMatchesRegularExpression('/^FROM rust:1\.86\.0-slim-bookworm@sha256:[0-9a-f]{64} AS rust$/m', $dockerfile);
+        $this->assertMatchesRegularExpression('/^FROM rust:1\.99\.1-slim-bookworm@sha256:[0-9a-f]{64} AS rust$/m', $dockerfile);
         $this->assertStringContainsString('python3-venv', $dockerfile);
         $this->assertStringContainsString('polyglot/qualified-artifact-tuple.json', $dockerfile);
         $this->assertStringContainsString('playground/php-runtime/composer.json playground/php-runtime/composer.lock', $dockerfile);

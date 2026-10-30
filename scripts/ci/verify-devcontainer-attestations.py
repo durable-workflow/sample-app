@@ -106,7 +106,6 @@ def main():
     parser.add_argument("index_digest")
     parser.add_argument("platform", choices=("linux/amd64", "linux/arm64"))
     parser.add_argument("--revision")
-    parser.add_argument("--output", required=True, type=pathlib.Path)
     args = parser.parse_args()
 
     def fetch(digest):
@@ -116,10 +115,9 @@ def main():
     try:
         spdx, identity = verify_platform((args.directory / "index.json").read_bytes(), args.index_digest,
                                          args.platform, fetch, args.revision)
-        args.output.write_text(json.dumps(spdx) + "\n", encoding="utf-8")
     except (ValueError, KeyError, OSError, TypeError) as error:
         parser.exit(1, f"Devcontainer attestation refused: {error}\n")
-    print(json.dumps(identity, sort_keys=True))
+    print(json.dumps({"identity": identity, "spdx": spdx}, sort_keys=True))
 
 
 if __name__ == "__main__":

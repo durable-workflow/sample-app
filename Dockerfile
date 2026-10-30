@@ -86,7 +86,7 @@ COPY .env.example /app/.env.example
 RUN node /usr/local/share/sample-app/verify-node-trust.mjs \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 npx playwright install --with-deps chromium \
+    && PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 ./node_modules/.bin/playwright install --with-deps chromium \
     && node docker/playwright-smoke.js \
     && node /usr/local/share/sample-app/verify-node-trust.mjs \
     && php /usr/local/share/sample-app/brotli/verify-runtime.php \

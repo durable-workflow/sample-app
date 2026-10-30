@@ -155,10 +155,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.clean_seeds:
         clean_retired_seeds()
-    else:
-        if args.output is None:
-            parser.error("output is required when building Python tooling")
+    elif args.output is not None:
+        output = args.output.resolve()
         directory = pathlib.Path(__file__).resolve().parent
-        build(directory / "tools.json", directory / "pip-urllib3.patch", args.output.resolve())
+        build(directory / "tools.json", directory / "pip-urllib3.patch", output)
         if args.seed:
-            seed_environments(args.output.resolve())
+            seed_environments(output)
+    else:
+        parser.error("output is required when building Python tooling")

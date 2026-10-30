@@ -30,7 +30,7 @@ final class ProductionImageTrustContractTest extends TestCase
         $assetCheck = strpos($source, $guard);
         $assetDownload = strpos($source, 'npm ci');
         $finalCheck = strpos($source, $guard, $assetDownload);
-        $browserDownload = strpos($source, 'npx playwright install');
+        $browserDownload = strpos($source, './node_modules/.bin/playwright install');
 
         foreach ([$assetCheck, $assetDownload, $finalCheck, $browserDownload] as $position) {
             $this->assertIsInt($position);
