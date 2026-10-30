@@ -16,6 +16,37 @@ RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer
 
 FROM docker:29.9.2-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb AS docker-cli
 
+FROM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS go-tools
+
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+COPY docker/go-tools/compose-go-net.patch /tmp/compose-go-net.patch
+RUN set -eux; \
+    curl --fail --location --proto '=https' \
+        https://codeload.github.com/tianon/gosu/tar.gz/29b939aa5bd4dc588af765b8248f6e39150d2565 -o /tmp/gosu.tar.gz; \
+    echo '2b70da8a5480fafedc16bb1fc91b572f064d03df736cbd91a616af2f1b66ab51  /tmp/gosu.tar.gz' | sha256sum --check -; \
+    mkdir -p /usr/src/gosu /out; \
+    tar --extract --gzip --file=/tmp/gosu.tar.gz --strip-components=1 --directory=/usr/src/gosu; \
+    cd /usr/src/gosu; \
+    go build -mod=readonly -trimpath -ldflags='-d -w' -buildvcs=false -o /out/gosu .; \
+    go mod verify; \
+    go version -m /out/gosu; \
+    /out/gosu --version; \
+    /out/gosu nobody id; \
+    curl --fail --location --proto '=https' \
+        https://codeload.github.com/docker/compose/tar.gz/6cbc19a3fd59e305fb814dca4d854a4fb67d2941 -o /tmp/compose.tar.gz; \
+    echo '2293b570f258dfc6e38e0bfdd3fa0e710324a7cf0449994304b524af8fb4f06c  /tmp/compose.tar.gz' | sha256sum --check -; \
+    mkdir -p /usr/src/compose; \
+    tar --extract --gzip --file=/tmp/compose.tar.gz --strip-components=1 --directory=/usr/src/compose; \
+    cd /usr/src/compose; \
+    git apply --unidiff-zero --check /tmp/compose-go-net.patch; \
+    git apply --unidiff-zero /tmp/compose-go-net.patch; \
+    go build -mod=readonly -trimpath \
+        -ldflags='-s -w -X github.com/docker/compose/v5/internal.Version=5.6.1+sample.1' \
+        -buildvcs=false -o /out/docker-compose ./cmd; \
+    go mod verify; \
+    go version -m /out/docker-compose; \
+    /out/docker-compose version
+
 FROM rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400 AS rust
 
 RUN set -eux; \
@@ -130,7 +161,8 @@ WORKDIR /var/www/html
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
-COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=go-tools /out/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=go-tools /out/gosu /usr/local/bin/gosu
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
@@ -150,7 +182,6 @@ RUN set -eux; \
         default-mysql-client \
         ffmpeg \
         git \
-        gosu \
         libcap2-bin \
         libcurl4-openssl-dev \
         libfreetype6-dev \
