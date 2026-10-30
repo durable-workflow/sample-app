@@ -154,7 +154,7 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('provenance: mode=max', $source);
         $policy = json_decode(file_get_contents($this->path('scripts/ci/devcontainer-security.json')), true, flags: JSON_THROW_ON_ERROR);
         $this->assertStringContainsString('generator='.$policy['sbom_generator_image'], $source);
-        $this->assertStringContainsString('SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger', $source);
+        $this->assertStringContainsString('SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger,+bitnami-cataloger,+conan-info-cataloger,+javascript-package-cataloger,+php-composer-installed-cataloger,+ruby-installed-gemspec-cataloger', $source);
         $this->assertStringContainsString('DEVCONTAINER_REQUIRE_ANONYMOUS_PULL', $source);
         $this->assertStringContainsString('Publish main channel', $source);
         $this->assertStringContainsString('scripts/ci/scan-devcontainer-image.py', $source);
