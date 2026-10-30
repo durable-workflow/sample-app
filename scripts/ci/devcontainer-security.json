@@ -1,0 +1,47 @@
+{
+  "oras_image": "ghcr.io/oras-project/oras@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb",
+  "trivy_image": "aquasec/trivy:0.76.1@sha256:2e6c00d711ab4ae41d8a30c2c1fd3bd3b62704c177bb120f95012e939edfb3df",
+  "database_repository": "ghcr.io/aquasecurity/trivy-db:2",
+  "required_package_types": ["debian", "composer", "gobinary", "node-pkg", "python-pkg"],
+  "exceptions": [
+    {
+      "ids": ["CVE-2026-114613", "GHSA-j586-36cw-2gc2", "GHSA-6v7p-g79w-8964"],
+      "purl": "pkg:pypi/msgpack@1.1.2",
+      "source": "acquired package info from SBOM: /opt/sample-app-playground/python/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json",
+      "requires_packages": ["pkg:pypi/pip@26.2.2", "pkg:pypi/pip@26.2.2+sample.1"],
+      "reason": "This exact pip wheel contains only msgpack's pure-Python fallback, not the affected C/Cython extension.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6514801704"
+    },
+    {
+      "ids": ["CVE-2025-47273", "GHSA-5rjg-fvgr-3xxf"],
+      "purl": "pkg:pypi/setuptools@70.3.0",
+      "source": "acquired package info from SBOM: /opt/sample-app-playground/python/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json",
+      "requires_packages": ["pkg:pypi/pip@26.2.2", "pkg:pypi/pip@26.2.2+sample.1"],
+      "reason": "This exact pip wheel vendors pkg_resources only. It does not contain the affected setuptools PackageIndex/download implementation.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6514801704"
+    }
+  ],
+  "reviewed_unfixed_critical": [
+    {
+      "ids": ["CVE-2026-6653"],
+      "purl": "pkg:deb/debian/libxml2@2.9.14+dfsg-1.3~deb12u6",
+      "distribution": "debian/12",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libxml2/copyright, /var/lib/dpkg/info/libxml2:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libxml2/copyright, /var/lib/dpkg/info/libxml2:arm64.md5sums"
+      ],
+      "reason": "Debian postpones this minor issue on Bookworm; the fix requires libxml2 2.11. Reviewed Sample source has no untrusted XML/entity-resolution parsing path; arbitrary workspace execution adds no authority.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6515851941",
+      "vendor_evidence": ["https://security-tracker.debian.org/tracker/CVE-2026-6653"]
+    },
+    {
+      "ids": ["CVE-2025-7458"],
+      "purl": "pkg:deb/debian/sqlite3@3.40.1-2+deb12u2",
+      "distribution": "debian/12",
+      "sources": ["acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/sqlite3/copyright, /var/lib/dpkg/info/sqlite3.md5sums, /var/lib/dpkg/info/sqlite3.list"],
+      "reason": "Bookworm has no supported fix and classifies this minor/no-DSA. The upstream defect requires arbitrary SQL; reviewed application-controlled queries expose no arbitrary-SQL endpoint. Changed identity/source or a demonstrated SQL-injection path invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6515851941",
+      "vendor_evidence": ["https://security-tracker.debian.org/tracker/CVE-2025-7458", "https://sqlite.org/cves.html#cve_2025_7458"]
+    }
+  ]
+}
