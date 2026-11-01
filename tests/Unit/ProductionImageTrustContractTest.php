@@ -19,7 +19,7 @@ final class ProductionImageTrustContractTest extends TestCase
             $this->assertMatchesRegularExpression('/^[^@]+:[^@]+@sha256:[a-f0-9]{64}$/D', $input);
         }
         $this->assertStringContainsString('node:22.23.4-bookworm-slim@', $source);
-        $this->assertStringContainsString('composer:2.10.3@', $source);
+        $this->assertStringContainsString('composer:2.11.0@', $source);
         $this->assertStringContainsString('php:8.4.27-cli-bookworm@', $source);
     }
 
@@ -30,7 +30,7 @@ final class ProductionImageTrustContractTest extends TestCase
         $assetCheck = strpos($source, $guard);
         $assetDownload = strpos($source, 'npm ci');
         $finalCheck = strpos($source, $guard, $assetDownload);
-        $browserDownload = strpos($source, 'npx playwright install');
+        $browserDownload = strpos($source, './node_modules/.bin/playwright install');
 
         foreach ([$assetCheck, $assetDownload, $finalCheck, $browserDownload] as $position) {
             $this->assertIsInt($position);

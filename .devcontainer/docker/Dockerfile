@@ -1,18 +1,53 @@
-FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
+FROM node:22.23.4-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS node
 
-FROM composer:2.10.3@sha256:da624c2c705d54e2f5a9bb77a5dc6c7d091711433ebefd7035672e84c2010fee AS composer
+FROM composer:2.11.0@sha256:278dfc7bd35169965d03f87194816f43bf4e6b6ea61707c2114e52ad12fe24ce AS composer
 
-FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05 AS brotli-build
+FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76 AS brotli-build
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY .devcontainer/docker/verify-php-trust.php /usr/local/share/sample-app/verify-php-trust.php
-COPY docker/brotli /usr/src/brotli-inputs
+COPY docker/brotli/version docker/brotli/install-vendor.sh docker/brotli/verify-runtime.php docker/brotli/verify-system-brotli.c /usr/src/brotli-inputs/
 RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
-    && sh /usr/src/brotli-inputs/build.sh
+    && sh /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs gcc libc6-dev \
+    && mkdir -p /out \
+    && cc -O2 /usr/src/brotli-inputs/verify-system-brotli.c -lbrotlidec -lbrotlienc -ldl -o /out/verify-system-brotli \
+    && /out/verify-system-brotli \
+    && cp /usr/src/brotli-inputs/version /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs/verify-runtime.php /out/
 
-FROM docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c AS docker-cli
+FROM docker:29.9.2-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb AS docker-cli
 
-FROM rust:1.86.0-slim-bookworm@sha256:57d415bbd61ce11e2d5f73de068103c7bd9f3188dc132c97cef4a8f62989e944 AS rust
+FROM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS go-tools
+
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+COPY docker/go-tools/compose-go-net.patch /tmp/compose-go-net.patch
+RUN set -eux; \
+    curl --fail --location --proto '=https' \
+        https://codeload.github.com/tianon/gosu/tar.gz/29b939aa5bd4dc588af765b8248f6e39150d2565 -o /tmp/gosu.tar.gz; \
+    echo '2b70da8a5480fafedc16bb1fc91b572f064d03df736cbd91a616af2f1b66ab51  /tmp/gosu.tar.gz' | sha256sum --check -; \
+    mkdir -p /usr/src/gosu /out; \
+    tar --extract --gzip --file=/tmp/gosu.tar.gz --strip-components=1 --directory=/usr/src/gosu; \
+    cd /usr/src/gosu; \
+    go build -mod=readonly -trimpath -ldflags='-d -w' -buildvcs=false -o /out/gosu .; \
+    go mod verify; \
+    go version -m /out/gosu; \
+    /out/gosu --version; \
+    /out/gosu nobody id; \
+    curl --fail --location --proto '=https' \
+        https://codeload.github.com/docker/compose/tar.gz/6cbc19a3fd59e305fb814dca4d854a4fb67d2941 -o /tmp/compose.tar.gz; \
+    echo '2293b570f258dfc6e38e0bfdd3fa0e710324a7cf0449994304b524af8fb4f06c  /tmp/compose.tar.gz' | sha256sum --check -; \
+    mkdir -p /usr/src/compose; \
+    tar --extract --gzip --file=/tmp/compose.tar.gz --strip-components=1 --directory=/usr/src/compose; \
+    cd /usr/src/compose; \
+    git apply --unidiff-zero --check /tmp/compose-go-net.patch; \
+    git apply --unidiff-zero /tmp/compose-go-net.patch; \
+    go build -mod=readonly -trimpath \
+        -ldflags='-s -w -X github.com/docker/compose/v5/internal.Version=5.6.1+sample.1' \
+        -buildvcs=false -o /out/docker-compose ./cmd; \
+    go mod verify; \
+    go version -m /out/docker-compose; \
+    /out/docker-compose version
+
+FROM rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400 AS rust
 
 RUN set -eux; \
     rm -rf /usr/local/rustup/downloads /usr/local/rustup/tmp; \
@@ -22,7 +57,7 @@ RUN set -eux; \
     rustc --version; \
     cargo --version
 
-FROM mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873 AS mysql-seed
+FROM mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 AS mysql-seed
 
 ENV MYSQL_ROOT_PASSWORD=password \
     MYSQL_ROOT_HOST=% \
@@ -92,13 +127,12 @@ RUN set -eux; \
         .; \
     test -s /tmp/sample-app-mysql-seed.tar
 
-FROM php:8.4.27-cli-bookworm@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
+FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76
 
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
-RUN dpkg -i /usr/local/share/sample-app/brotli/libbrotli1_*.deb \
-        /usr/local/share/sample-app/brotli/libbrotli-dev_*.deb \
+RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh /usr/local/share/sample-app/brotli \
     && php /usr/local/share/sample-app/brotli/verify-runtime.php \
-    && rm /usr/local/share/sample-app/brotli/*.deb
+    && rm -rf /var/lib/apt/lists/*
 
 ARG VCS_REF=unknown
 ARG DURABLE_WORKFLOW_CLI_VERSION
@@ -127,10 +161,12 @@ WORKDIR /var/www/html
 COPY --from=node /usr/local/ /usr/local/
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
-COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=go-tools /out/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=go-tools /out/gosu /usr/local/bin/gosu
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
+COPY docker/install-npm.sh /usr/local/bin/install-npm
 COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN set -eux; \
@@ -139,13 +175,13 @@ RUN set -eux; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
     echo "${TZ}" > /etc/timezone; \
     apt-get update; \
+    apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         default-mysql-client \
         ffmpeg \
         git \
-        gosu \
         libcap2-bin \
         libcurl4-openssl-dev \
         libfreetype6-dev \
@@ -157,7 +193,6 @@ RUN set -eux; \
         libzip-dev \
         openssh-server \
         python3 \
-        python3-pip \
         python3-venv \
         redis-tools \
         ripgrep \
@@ -225,7 +260,8 @@ RUN set -eux; \
     passwd --delete laravel; \
     install -d -m 0775 -o laravel -g laravel /home/laravel/.cargo /home/laravel/.composer /ms-playwright /var/www/html; \
     ln -s /usr/bin/python3 /usr/local/bin/python; \
-    ln -s /usr/bin/pip3 /usr/local/bin/pip; \
+    ln -s "$VIRTUAL_ENV/bin/pip" /usr/local/bin/pip; \
+    ln -s "$VIRTUAL_ENV/bin/pip3" /usr/local/bin/pip3; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*; \
     setcap 'cap_net_bind_service=+ep' "$(command -v php)"; \
@@ -248,6 +284,7 @@ COPY polyglot/qualified-artifact-tuple.json /usr/local/share/sample-app/qualifie
 RUN set -eux; \
     php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
     node /usr/local/share/sample-app/verify-node-trust.mjs; \
+    sh /usr/local/bin/install-npm; \
     cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
     test -n "$cli_version"; \
     curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
@@ -259,20 +296,16 @@ RUN set -eux; \
 
 COPY playground/templates/python/requirements.txt /tmp/sample-app-python-playground-requirements.txt
 COPY .devcontainer/docker/verify-python-trust.py /usr/local/share/sample-app/verify-python-trust.py
+COPY docker/python /usr/local/share/sample-app/python
 
 RUN set -eux; \
     python_sdk_version="$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["sdk-python"];')"; \
     python_distribution_version="$(printf '%s' "$python_sdk_version" | sed 's/-rc\./rc/')"; \
+    python3 /usr/local/share/sample-app/python/build-pip.py /tmp/sample-app-python-wheels --seed; \
     python3 -m venv "$VIRTUAL_ENV"; \
-    curl --proto '=https' --proto-redir '=https' -fsSL --max-time 120 \
-        https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl \
-        -o /tmp/pip-26.2.2-py3-none-any.whl; \
-    printf '%s  %s\n' \
-        fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70 \
-        /tmp/pip-26.2.2-py3-none-any.whl | sha256sum --check --strict -; \
     "$VIRTUAL_ENV/bin/python" -I -m pip --isolated --disable-pip-version-check install \
-        --no-index --no-deps --upgrade /tmp/pip-26.2.2-py3-none-any.whl; \
-    rm /tmp/pip-26.2.2-py3-none-any.whl; \
+        --no-index --no-deps --upgrade /tmp/sample-app-python-wheels/*.whl; \
+    rm -rf /tmp/sample-app-python-wheels; \
     "$VIRTUAL_ENV/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; \
     "$VIRTUAL_ENV/bin/pip" install \
         --no-input \
@@ -309,6 +342,10 @@ RUN set -eux; \
         --locked \
         --manifest-path=/tmp/sample-app-rust-playground/Cargo.toml \
         --bins; \
+    install -d -m 0755 /usr/local/share/sample-app/rust; \
+    install -m 0644 /tmp/sample-app-rust-playground/Cargo.toml \
+        /tmp/sample-app-rust-playground/Cargo.lock /usr/local/share/sample-app/rust/; \
+    find "$CARGO_HOME/registry/src" -type f -name Cargo.lock -delete; \
     rm -rf "$CARGO_TARGET_DIR/debug/incremental" /tmp/sample-app-rust-playground; \
     gosu laravel test -d "$CARGO_HOME/registry/cache"; \
     gosu laravel test -d "$CARGO_TARGET_DIR/debug/deps"; \
@@ -320,7 +357,9 @@ RUN set -eux; \
     playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
     test -n "$playwright_version"; \
     npm install --global --no-audit --no-fund "playwright@${playwright_version}"; \
-    playwright install --with-deps --only-shell chromium; \
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 playwright install --with-deps --only-shell chromium; \
+    python3 /usr/local/share/sample-app/python/build-pip.py --clean-seeds; \
+    rm /usr/local/share/sample-app/python/build-pip.py /usr/local/share/sample-app/python/pip-urllib3.patch; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/tmp/*
 

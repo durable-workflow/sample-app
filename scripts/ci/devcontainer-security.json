@@ -1,0 +1,314 @@
+{
+  "oras_image": "ghcr.io/oras-project/oras@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb",
+  "trivy_image": "aquasec/trivy:0.76.1@sha256:2e6c00d711ab4ae41d8a30c2c1fd3bd3b62704c177bb120f95012e939edfb3df",
+  "database_repository": "ghcr.io/aquasecurity/trivy-db:2",
+  "sbom_generator_image": "docker/buildkit-syft-scanner@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315",
+  "sbom_creator": "Tool: syft-v1.51.0",
+  "cargo_lock_path": "usr/local/share/sample-app/rust/Cargo.lock",
+  "cargo_source": "acquired package info from rust cargo manifest: /usr/local/share/sample-app/rust/Cargo.lock",
+  "required_package_types": [
+    "debian",
+    "composer",
+    "gobinary",
+    "node-pkg",
+    "python-pkg",
+    "cargo"
+  ],
+  "exceptions": [
+    {
+      "ids": [
+        "CVE-2026-114613",
+        "GHSA-j586-36cw-2gc2",
+        "GHSA-6v7p-g79w-8964"
+      ],
+      "purl": "pkg:pypi/msgpack@1.1.2",
+      "requires_packages": [
+        "pkg:pypi/pip@26.2.2",
+        "pkg:pypi/pip@26.2.2+sample.1"
+      ],
+      "reason": "This exact pip wheel contains only msgpack's pure-Python fallback, not the affected C/Cython extension.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6514801704",
+      "sources": [
+        "acquired package info from SBOM: /opt/sample-app-playground/python/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2025-47273",
+        "GHSA-5rjg-fvgr-3xxf"
+      ],
+      "purl": "pkg:pypi/setuptools@70.3.0",
+      "requires_packages": [
+        "pkg:pypi/pip@26.2.2",
+        "pkg:pypi/pip@26.2.2+sample.1"
+      ],
+      "reason": "This exact pip wheel vendors pkg_resources only. It does not contain the affected setuptools PackageIndex/download implementation.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6514801704",
+      "sources": [
+        "acquired package info from SBOM: /opt/sample-app-playground/python/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2023-45853"
+      ],
+      "purl": "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/zlib1g/copyright, /var/lib/dpkg/info/zlib1g:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/zlib1g/copyright, /var/lib/dpkg/info/zlib1g:arm64.md5sums"
+      ],
+      "reason": "Bookworm does not build the affected MiniZip code from this exact src:zlib version; the reviewed image contains no MiniZip paths.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2023-45853"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2025-47917"
+      ],
+      "purl": "pkg:deb/debian/libmbedcrypto7@2.28.3-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:arm64.md5sums"
+      ],
+      "reason": "The affected mbedtls_x509_string_to_names function is in the absent X.509 library, not this installed crypto-only component.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2025-47917",
+        "https://github.com/Mbed-TLS/mbedtls-docs/blob/main/security-advisories/mbedtls-security-advisory-2025-06-7.md"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/libmbedcrypto7@2.28.3-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-34873"
+      ],
+      "purl": "pkg:deb/debian/libmbedcrypto7@2.28.3-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:arm64.md5sums"
+      ],
+      "reason": "Upstream affects Mbed TLS 3.5.0 and later; this exact 2.28.3 component is outside that range.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://mbed-tls.readthedocs.io/en/latest/security-advisories/mbedtls-security-advisory-2026-03-client-impersonation-while-resuming-tls13-session/"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/libmbedcrypto7@2.28.3-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-34875"
+      ],
+      "purl": "pkg:deb/debian/libmbedcrypto7@2.28.3-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libmbedcrypto7/copyright, /var/lib/dpkg/info/libmbedcrypto7:arm64.md5sums"
+      ],
+      "reason": "Upstream affects Mbed TLS 3.5.0 and later; this exact 2.28.3 component is outside that range.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://mbed-tls.readthedocs.io/en/latest/security-advisories/mbedtls-security-advisory-2026-03-ffdh-buffer-overflow/"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/libmbedcrypto7@2.28.3-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-60002"
+      ],
+      "purl": "pkg:deb/debian/openssh-server@1:9.2p1-2+deb12u10",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/openssh-client/copyright, /var/lib/dpkg/info/openssh-server.conffiles, /var/lib/dpkg/info/openssh-server.md5sums, /var/lib/dpkg/info/openssh-server.config, /var/lib/dpkg/info/openssh-server.list, /var/lib/dpkg/info/openssh-server.postinst, /var/lib/dpkg/info/openssh-server.postrm, /var/lib/dpkg/info/openssh-server.preinst, /var/lib/dpkg/info/openssh-server.prerm, /var/lib/dpkg/info/openssh-server.templates"
+      ],
+      "reason": "The affected ssh(1) client host-key re-exchange implementation is absent from this server component.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-60002",
+        "https://www.openssh.org/releasenotes.html#10.4p1"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/openssh-server@1:9.2p1-2+deb12u10"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-60002"
+      ],
+      "purl": "pkg:deb/debian/openssh-sftp-server@1:9.2p1-2+deb12u10",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/openssh-client/copyright, /var/lib/dpkg/info/openssh-sftp-server.md5sums, /var/lib/dpkg/info/openssh-sftp-server.list"
+      ],
+      "reason": "The affected ssh(1) client host-key re-exchange implementation is absent from this SFTP server component.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-60002",
+        "https://www.openssh.org/releasenotes.html#10.4p1"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/openssh-sftp-server@1:9.2p1-2+deb12u10"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-90037"
+      ],
+      "purl": "pkg:deb/debian/linux-libc-dev@6.1.190-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:arm64.md5sums"
+      ],
+      "reason": "Affected NFSD kernel runtime code is absent from the exact userspace header package (977 headers, zero ELF objects); this container uses its host kernel.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-90037"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/linux-libc-dev@6.1.190-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-98805"
+      ],
+      "purl": "pkg:deb/debian/linux-libc-dev@6.1.190-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:arm64.md5sums"
+      ],
+      "reason": "Affected TIPC kernel encryption code is absent from the exact userspace header package (977 headers, zero ELF objects); this container uses its host kernel.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-98805"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/linux-libc-dev@6.1.190-1"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2026-99083"
+      ],
+      "purl": "pkg:deb/debian/linux-libc-dev@6.1.190-1",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/linux-libc-dev/copyright, /var/lib/dpkg/info/linux-libc-dev:arm64.md5sums"
+      ],
+      "reason": "Affected ksmbd kernel runtime code is absent from the exact userspace header package (977 headers, zero ELF objects); this container uses its host kernel.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-99083"
+      ],
+      "requires_packages": [
+        "pkg:deb/debian/linux-libc-dev@6.1.190-1"
+      ]
+    }
+  ],
+  "reviewed_unfixed_critical": [
+    {
+      "ids": [
+        "CVE-2026-6653"
+      ],
+      "purl": "pkg:deb/debian/libxml2@2.9.14+dfsg-1.3~deb12u6",
+      "distribution": "debian/12",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libxml2/copyright, /var/lib/dpkg/info/libxml2:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libxml2/copyright, /var/lib/dpkg/info/libxml2:arm64.md5sums"
+      ],
+      "reason": "Debian postpones this minor issue on Bookworm; the fix requires libxml2 2.11. Reviewed Sample source has no untrusted XML/entity-resolution parsing path; arbitrary workspace execution adds no authority.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6515851941",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-6653"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2025-7458"
+      ],
+      "purl": "pkg:deb/debian/sqlite3@3.40.1-2+deb12u2",
+      "distribution": "debian/12",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/sqlite3/copyright, /var/lib/dpkg/info/sqlite3.md5sums, /var/lib/dpkg/info/sqlite3.list"
+      ],
+      "reason": "Bookworm has no supported fix and classifies this minor/no-DSA. The upstream defect requires arbitrary SQL; reviewed application-controlled queries expose no arbitrary-SQL endpoint. Changed identity/source or a demonstrated SQL-injection path invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6515851941",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2025-7458",
+        "https://sqlite.org/cves.html#cve_2025_7458"
+      ]
+    },
+    {
+      "ids": [
+        "CVE-2023-6879"
+      ],
+      "purl": "pkg:deb/debian/libaom3@3.6.0-1+deb12u3",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libaom3/copyright, /var/lib/dpkg/info/libaom3:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libaom3/copyright, /var/lib/dpkg/info/libaom3:arm64.md5sums"
+      ],
+      "reason": "Debian marks this minor/no-DSA. The FFmpeg-linked encoder defect requires a resolution increase during multithreaded AV1 encoding in this developer-workspace image. Any customer-facing media path, changed role, or supported fix invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2023-6879"
+      ],
+      "distribution": "debian/12"
+    },
+    {
+      "ids": [
+        "CVE-2025-7458"
+      ],
+      "purl": "pkg:deb/debian/libsqlite3-0@3.40.1-2+deb12u2",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libsqlite3-0/copyright, /var/lib/dpkg/info/libsqlite3-0:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libsqlite3-0/copyright, /var/lib/dpkg/info/libsqlite3-0:arm64.md5sums"
+      ],
+      "reason": "The same exact sqlite3 source/version reviewed for the CLI requires arbitrary SQL; reviewed application-controlled queries expose no arbitrary-SQL endpoint. A demonstrated SQL-injection path invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2025-7458",
+        "https://sqlite.org/cves.html#cve_2025_7458"
+      ],
+      "distribution": "debian/12"
+    },
+    {
+      "ids": [
+        "CVE-2026-58016"
+      ],
+      "purl": "pkg:deb/debian/libglib2.0-0@2.74.6-2+deb12u9",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libglib2.0-0/copyright, /var/lib/dpkg/info/libglib2.0-0:amd64.md5sums",
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/libglib2.0-0/copyright, /var/lib/dpkg/info/libglib2.0-0:arm64.md5sums"
+      ],
+      "reason": "Debian marks this minor/postponed. Malformed D-Bus introspection XML can cause an OOB-read denial of service in g_dbus_node_info_new_for_xml; no reviewed repository path invokes that API. A demonstrated path invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-58016"
+      ],
+      "distribution": "debian/12"
+    },
+    {
+      "ids": [
+        "CVE-2026-60002"
+      ],
+      "purl": "pkg:deb/debian/openssh-client@1:9.2p1-2+deb12u10",
+      "sources": [
+        "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/openssh-client/copyright, /var/lib/dpkg/info/openssh-client.conffiles, /var/lib/dpkg/info/openssh-client.md5sums, /var/lib/dpkg/info/openssh-client.list, /var/lib/dpkg/info/openssh-client.postinst, /var/lib/dpkg/info/openssh-client.postrm, /var/lib/dpkg/info/openssh-client.preinst, /var/lib/dpkg/info/openssh-client.prerm"
+      ],
+      "reason": "Debian marks this minor/postponed. The installed developer-initiated client requires a malicious server to change host key during client rekey. A supported fix or broader upstream impact invalidates this disposition.",
+      "evidence": "https://github.com/durable-workflow/sample-app/issues/280#issuecomment-6516787539",
+      "vendor_evidence": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-60002",
+        "https://www.openssh.org/releasenotes.html#10.4p1"
+      ],
+      "distribution": "debian/12"
+    }
+  ]
+}

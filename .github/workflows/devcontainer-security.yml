@@ -1,0 +1,44 @@
+name: devcontainer published security
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/ci/verify-devcontainer-attestations.py
+      - scripts/ci/scan-devcontainer-image.py
+      - scripts/ci/devcontainer-security.json
+      - .github/workflows/devcontainer-security.yml
+  schedule:
+    - cron: '43 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcontainer-security-current-main
+  cancel-in-progress: true
+
+jobs:
+  rescan:
+    name: Rescan current public main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan current immutable index from both public registries
+        run: >-
+          python3 scripts/ci/scan-devcontainer-image.py
+          ghcr.io/durable-workflow/sample-app-devcontainer:main
+          durableworkflow/sample-app-devcontainer:main
+          --output "$RUNNER_TEMP/devcontainer-security"
+      - name: Retain exact scan receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: devcontainer-main-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/devcontainer-security/*.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -74,7 +74,7 @@ function verifyBrotliRuntime(): void
     $expected = trim((string) file_get_contents(__DIR__.'/version'));
     $actual = trim(brotliCommand(['dpkg-query', '-W', '-f=${Version}', 'libbrotli1']));
     if ($actual !== $expected) {
-        throw new BrotliRuntimeRefused('libbrotli1 is '.$actual.'; expected the reviewed backport '.$expected.'.');
+        throw new BrotliRuntimeRefused('libbrotli1 is '.$actual.'; expected the reviewed vendor package '.$expected.'.');
     }
     $owned = [];
     foreach (explode("\n", brotliCommand(['dpkg-query', '-L', 'libbrotli1'])) as $path) {

@@ -101,6 +101,17 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('docker/login-action', $workflow);
         $this->assertStringNotContainsString('secrets.', $workflow);
         $this->assertStringNotContainsString('packages: write', $workflow);
+
+        $jobs = Yaml::parse($workflow)['jobs'];
+        $matrix = $jobs['qualify']['strategy']['matrix']['include'];
+        $this->assertSame(['linux/amd64', 'linux/arm64'], array_column($matrix, 'platform'));
+        $this->assertSame(['ubuntu-24.04', 'ubuntu-24.04-arm'], array_column($matrix, 'runner'));
+        $this->assertFalse($jobs['qualify']['strategy']['fail-fast']);
+        $this->assertSame('always()', $jobs['validate']['if']);
+        $this->assertSame(['qualify'], $jobs['validate']['needs']);
+        $gate = $jobs['validate']['steps'][0];
+        $this->assertSame('${{ needs.qualify.result }}', $gate['env']['QUALIFICATION_RESULT']);
+        $this->assertSame('test "$QUALIFICATION_RESULT" = success', $gate['run']);
     }
 
     public function test_composer_jobs_check_trust_before_dependency_resolution(): void
@@ -140,8 +151,9 @@ final class DevcontainerImageContractTest extends TestCase
         $jobs = $workflow['jobs'];
 
         $this->assertSame(['build'], $jobs['assemble']['needs']);
-        $this->assertSame(['assemble'], $jobs['qualify']['needs']);
-        $this->assertSame(['assemble', 'qualify'], $jobs['promote']['needs']);
+        $this->assertSame(['assemble'], $jobs['scan']['needs']);
+        $this->assertSame(['assemble', 'scan'], $jobs['qualify']['needs']);
+        $this->assertSame(['assemble', 'scan', 'qualify'], $jobs['promote']['needs']);
 
         $matrix = $jobs['build']['strategy']['matrix']['include'];
         $this->assertSame(['linux/amd64', 'linux/arm64'], array_column($matrix, 'platform'));
@@ -151,10 +163,19 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringContainsString('ghcr.io/durable-workflow/sample-app-devcontainer', $source);
         $this->assertStringContainsString('durableworkflow/sample-app-devcontainer', $source);
         $this->assertStringContainsString('provenance: mode=max', $source);
-        $this->assertStringContainsString('sbom: true', $source);
+        $policy = json_decode(file_get_contents($this->path('scripts/ci/devcontainer-security.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString('generator='.$policy['sbom_generator_image'], $source);
+        $this->assertStringContainsString('SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger,+bitnami-cataloger,+conan-info-cataloger,+javascript-package-cataloger,+php-composer-installed-cataloger,+ruby-installed-gemspec-cataloger', $source);
         $this->assertStringContainsString('DEVCONTAINER_REQUIRE_ANONYMOUS_PULL', $source);
         $this->assertStringContainsString('Publish main channel', $source);
-        $this->assertStringNotContainsString('upload-artifact', $source);
+        $this->assertStringContainsString('scripts/ci/scan-devcontainer-image.py', $source);
+        $this->assertStringContainsString('needs.scan.outputs.index_digest', $source);
+        $this->assertStringContainsString('public main index differs from the scanned and qualified digest', $source);
+        $scan = $jobs['scan'];
+        $this->assertStringNotContainsString('secrets.', json_encode($scan, JSON_THROW_ON_ERROR));
+        $this->assertSame('always()', $scan['steps'][2]['if']);
+        $this->assertSame('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9', $scan['steps'][2]['uses']);
+        $this->assertSame('${{ runner.temp }}/devcontainer-security/*.json', $scan['steps'][2]['with']['path']);
         $this->assertStringNotContainsString('recover_revision_tag', $source);
     }
 

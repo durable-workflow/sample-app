@@ -8,12 +8,21 @@ node /usr/local/share/sample-app/verify-node-trust.mjs
 python -c 'import sys; assert sys.version_info >= (3, 10)'
 python /usr/local/share/sample-app/verify-python-trust.py
 python -c 'import durable_workflow'
-python -m venv --help >/dev/null
-[[ "$(rustc --version | awk '{print $2}')" == "1.86.0" ]]
-[[ "$(cargo --version | awk '{print $2}')" == "1.86.0" ]]
-[[ "$(docker --version | sed -E 's/^Docker version ([^,]+),.*/\1/')" == "27.5.1" ]]
+python_probe_dir="$(mktemp -d)"
+if ! python -m venv "$python_probe_dir" \
+    || ! "$python_probe_dir/bin/python" /usr/local/share/sample-app/verify-python-trust.py --pip-only; then
+    rm -rf "$python_probe_dir"
+    echo 'Fresh Python virtual environment failed qualification.' >&2
+    exit 1
+fi
+rm -rf "$python_probe_dir"
+[[ "$(rustc --version | awk '{print $2}')" == "1.99.1" ]]
+[[ "$(cargo --version | awk '{print $2}')" == "1.99.1" ]]
+[[ "$(docker --version | sed -E 's/^Docker version ([^,]+),.*/\1/')" == "29.9.2" ]]
 compose_version="$(docker compose version --short)"
-[[ "${compose_version#v}" == "2.33.0" ]]
+[[ "${compose_version#v}" == "5.6.1+sample.1" ]]
+[[ "$(npm --version)" == "12.2.1+sample.1" ]]
+[[ "$(gosu --version)" == '1.20 (go1.27.3 on linux/'* ]]
 cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"
 [[ -n "$cli_version" ]]
 [[ "$(dw --version | awk '$1 == "dw" { print $2 }')" == "$cli_version" ]]
@@ -39,6 +48,9 @@ test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/examples/clie
 test -s /opt/sample-app-playground/php/vendor/durable-workflow/sdk/docs/quickstart-contract.json
 test -d "${CARGO_HOME}/registry/cache"
 test -d "${CARGO_TARGET_DIR}/debug/deps"
+test -s /usr/local/share/sample-app/rust/Cargo.toml
+test -s /usr/local/share/sample-app/rust/Cargo.lock
+[[ -z "$(find "$CARGO_HOME/registry/src" -type f -name Cargo.lock -print -quit)" ]]
 
 verify-prepared-permissions \
     /home/laravel/.cargo \

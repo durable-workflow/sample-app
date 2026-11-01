@@ -84,7 +84,9 @@ jobs:
           pull: true
           push: true
           provenance: mode=max
-          sbom: true
+          # A custom selection resets the scanner to directory defaults. Restore
+          # all five image-only catalogers in pinned Syft alongside Cargo.
+          sbom: 'generator=docker/buildkit-syft-scanner@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315,"SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger,+bitnami-cataloger,+conan-info-cataloger,+javascript-package-cataloger,+php-composer-installed-cataloger,+ruby-installed-gemspec-cataloger"'
           tags: |
             ${{ env.GHCR_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
             ${{ env.DOCKERHUB_IMAGE }}:${{ env.REVISION_TAG }}-${{ matrix.suffix }}
@@ -130,10 +132,41 @@ jobs:
             "$DOCKERHUB_IMAGE:$REVISION_TAG-amd64" \
             "$DOCKERHUB_IMAGE:$REVISION_TAG-arm64"
 
+  scan:
+    name: Scan exact public platform SBOMs
+    if: github.ref == 'refs/heads/main'
+    needs: [assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      index_digest: ${{ steps.security.outputs.index_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify anonymous attestations and scan both platforms
+        id: security
+        env:
+          REVISION_TAG: ${{ needs.assemble.outputs.revision_tag }}
+        run: >-
+          python3 scripts/ci/scan-devcontainer-image.py
+          "$GHCR_IMAGE:$REVISION_TAG" "$DOCKERHUB_IMAGE:$REVISION_TAG"
+          --revision "$GITHUB_SHA"
+          --output "$RUNNER_TEMP/devcontainer-security"
+          --github-output "$GITHUB_OUTPUT"
+      - name: Retain exact scan receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: devcontainer-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/devcontainer-security/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
   qualify:
     name: Qualify ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main'
-    needs: [assemble]
+    needs: [assemble, scan]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -161,19 +194,22 @@ jobs:
           DEVCONTAINER_REQUIRE_PUBLISHED_ATTESTATIONS: '1'
         run: >-
           scripts/ci/qualify-devcontainer-image.sh
-          "$GHCR_IMAGE:${{ needs.assemble.outputs.revision_tag }}"
+          "$GHCR_IMAGE@${{ needs.scan.outputs.index_digest }}"
           "${{ matrix.platform }}"
 
   promote:
     name: Publish main channel
     if: github.ref == 'refs/heads/main'
-    needs: [assemble, qualify]
+    needs: [assemble, scan, qualify]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       packages: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Sign in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -188,20 +224,33 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Promote the qualified image
         env:
-          REVISION_TAG: ${{ needs.assemble.outputs.revision_tag }}
+          INDEX_DIGEST: ${{ needs.scan.outputs.index_digest }}
         run: |
-          docker buildx imagetools create -t "$GHCR_IMAGE:main" "$GHCR_IMAGE:$REVISION_TAG"
-          docker buildx imagetools create -t "$DOCKERHUB_IMAGE:main" "$DOCKERHUB_IMAGE:$REVISION_TAG"
+          docker buildx imagetools create -t "$GHCR_IMAGE:main" "$GHCR_IMAGE@$INDEX_DIGEST"
+          docker buildx imagetools create -t "$DOCKERHUB_IMAGE:main" "$DOCKERHUB_IMAGE@$INDEX_DIGEST"
       - name: Verify both public indexes
+        env:
+          INDEX_DIGEST: ${{ needs.scan.outputs.index_digest }}
         run: |
+          anonymous="$(mktemp)"
+          printf '%s\n' '{"auths":{}}' > "$anonymous"
+          oras_image="$(python3 -c 'import json; print(json.load(open("scripts/ci/devcontainer-security.json"))["oras_image"])')"
           for image in "$GHCR_IMAGE:main" "$DOCKERHUB_IMAGE:main"; do
             raw="$(mktemp)"
-            docker buildx imagetools inspect "$image" --raw > "$raw"
-            python3 - "$raw" <<'PY'
+            case "$image" in durableworkflow/*) image="docker.io/$image" ;; esac
+            docker run --rm --user "$(id -u):$(id -g)" \
+              --mount "type=bind,src=$anonymous,dst=/anonymous.json,readonly" \
+              --entrypoint oras "$oras_image" manifest fetch \
+              --registry-config /anonymous.json --output - "$image" > "$raw"
+            python3 - "$raw" "$INDEX_DIGEST" <<'PY'
+          import hashlib
           import json
           import sys
 
-          manifest = json.load(open(sys.argv[1], encoding='utf-8'))
+          raw = open(sys.argv[1], 'rb').read()
+          if 'sha256:' + hashlib.sha256(raw).hexdigest() != sys.argv[2]:
+              raise SystemExit('public main index differs from the scanned and qualified digest')
+          manifest = json.loads(raw)
           platforms = {
               (item.get('platform') or {}).get('architecture')
               for item in manifest.get('manifests', [])
@@ -212,3 +261,4 @@ jobs:
           PY
             rm -f "$raw"
           done
+          rm -f "$anonymous"

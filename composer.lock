@@ -929,21 +929,21 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.11.3",
+            "version": "2.15.8",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "71213ae1e0338cda5967e0840782a981530ed854"
+                "reference": "45cbdb408fd3bcd14e08fac5e8e1375870c20aa5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/71213ae1e0338cda5967e0840782a981530ed854",
-                "reference": "71213ae1e0338cda5967e0840782a981530ed854",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/45cbdb408fd3bcd14e08fac5e8e1375870c20aa5",
+                "reference": "45cbdb408fd3bcd14e08fac5e8e1375870c20aa5",
                 "shasum": ""
             },
             "require": {
                 "apache/avro": "^1.12",
-                "laravel/framework": "^9.52.17|^10.48.29|^11.44.1|^12.69.0|^13.30.0",
+                "laravel/framework": "^9.52.17|^10.50.4|^11.56.1|^12.69.0|^13.30.0",
                 "php": "^8.1",
                 "react/promise": "^2.9|^3.0",
                 "symfony/yaml": "^6.0|^7.0|^8.0"
@@ -979,7 +979,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.11.3",
+                    "product-train": "2.15.8",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -1006,9 +1006,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.11.3"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.15.8"
             },
-            "time": "2026-10-23T08:29:30+00:00"
+            "time": "2026-10-29T21:25:27+00:00"
         },
         {
             "name": "egulias/email-validator",
@@ -5136,16 +5136,16 @@
         },
         {
             "name": "symfony/mime",
-            "version": "v8.1.6",
+            "version": "v8.1.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/mime.git",
-                "reference": "1b36ccfd7ccb9ad1d6eafb9024b3dd3d9606b15f"
+                "reference": "8d1232052c9cdef170ed9608b3147bca4f61ff69"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/mime/zipball/1b36ccfd7ccb9ad1d6eafb9024b3dd3d9606b15f",
-                "reference": "1b36ccfd7ccb9ad1d6eafb9024b3dd3d9606b15f",
+                "url": "https://api.github.com/repos/symfony/mime/zipball/8d1232052c9cdef170ed9608b3147bca4f61ff69",
+                "reference": "8d1232052c9cdef170ed9608b3147bca4f61ff69",
                 "shasum": ""
             },
             "require": {
@@ -5198,7 +5198,7 @@
                 "mime-type"
             ],
             "support": {
-                "source": "https://github.com/symfony/mime/tree/v8.1.6"
+                "source": "https://github.com/symfony/mime/tree/v8.1.10"
             },
             "funding": [
                 {
@@ -5218,7 +5218,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-22T09:06:25+00:00"
+            "time": "2026-10-28T17:58:38+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",

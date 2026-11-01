@@ -78,7 +78,7 @@ services:
                   nocopy: true
         restart: 'no'
     mysql:
-        image: 'mariadb:11.4'
+        image: 'mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620'
         command:
             - '--innodb-flush-method=nosync'
             - '--innodb-flush-log-at-trx-commit=0'
@@ -118,7 +118,7 @@ services:
             start_period: 30s
             timeout: 5s
     redis:
-        image: 'redis:alpine'
+        image: 'redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537'
         ports:
             - '${FORWARD_REDIS_PORT:-16379}:6379'
         volumes:

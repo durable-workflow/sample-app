@@ -8,22 +8,45 @@ use PHPUnit\Framework\TestCase;
 
 final class BrotliImageContractTest extends TestCase
 {
-    public function test_backport_is_bound_to_the_reviewed_upstream_patch(): void
+    public function test_vendor_installer_binds_both_packages_to_the_reviewed_version(): void
     {
         $root = dirname(__DIR__, 2);
-        $this->assertSame(
-            '45a46c6b5df8f7b103f343d515c43e8856d9eb057f707e8667a559f1d1e04817',
-            hash_file('sha256', $root.'/docker/brotli/CVE-2026-111497.patch'),
-        );
-        $patch = file_get_contents($root.'/docker/brotli/CVE-2026-111497.patch');
-        preg_match_all('~^diff --git a/(\S+) b/(\S+)$~m', $patch, $files);
-        $this->assertSame(['c/dec/decode.c', 'c/include/brotli/decode.h'], $files[1]);
+        $directory = sys_get_temp_dir().'/sample-brotli-'.bin2hex(random_bytes(8));
+        mkdir($directory.'/bin', 0700, true);
+        $version = trim(file_get_contents($root.'/docker/brotli/version'));
+        file_put_contents($directory.'/version', $version);
+        file_put_contents($directory.'/bin/apt-get', "#!/bin/sh\nprintf '%s\\n' \"\$@\" >> \"\$BROTLI_TEST_ARGUMENTS\"\n");
+        chmod($directory.'/bin/apt-get', 0700);
+        try {
+            $environment = array_replace(getenv(), [
+                'PATH' => $directory.'/bin:'.getenv('PATH'),
+                'BROTLI_TEST_ARGUMENTS' => $directory.'/arguments',
+            ]);
+            $process = proc_open(['sh', $root.'/docker/brotli/install-vendor.sh', $directory, 'gcc', 'libc6-dev'],
+                [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $environment);
+            $this->assertIsResource($process);
+            $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $this->assertSame(0, proc_close($process), $output);
+            $this->assertSame(['update', 'install', '-y', '--no-install-recommends',
+                'libbrotli1='.$version, 'libbrotli-dev='.$version, 'gcc', 'libc6-dev'],
+                file($directory.'/arguments', FILE_IGNORE_NEW_LINES));
+        } finally {
+            foreach (['arguments', 'version', 'bin/apt-get'] as $path) {
+                if (is_file($directory.'/'.$path)) {
+                    unlink($directory.'/'.$path);
+                }
+            }
+            rmdir($directory.'/bin');
+            rmdir($directory);
+        }
     }
 
-    public function test_local_revision_yields_to_the_next_vendor_update(): void
+    public function test_vendor_revision_contains_the_bookworm_security_fix(): void
     {
         $version = trim(file_get_contents(dirname(__DIR__, 2).'/docker/brotli/version'));
-        foreach ([['gt', '1.0.9-2+b6'], ['lt', '1.0.9-2+b7'], ['lt', '1.0.9-2+deb12u1']] as [$comparison, $vendor]) {
+        foreach ([['gt', '1.0.9-2+b6'], ['ge', '1.0.9-2+deb12u1']] as [$comparison, $vendor]) {
             $process = proc_open(['dpkg', '--compare-versions', $version, $comparison, $vendor], [], $pipes);
             $this->assertIsResource($process);
             $this->assertSame(0, proc_close($process), $version.' '.$comparison.' '.$vendor);
@@ -40,7 +63,7 @@ final class BrotliImageContractTest extends TestCase
             $this->assertCount(2, $runtimes[1]);
             $this->assertSame($builder[1], $runtimes[1][1]);
             $runtime = substr($source, strrpos($source, "\nFROM php:"));
-            $install = strpos($runtime, 'RUN dpkg -i ');
+            $install = strpos($runtime, 'RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh ');
             $check = strpos($runtime, 'php /usr/local/share/sample-app/brotli/verify-runtime.php');
             $download = strpos($runtime, 'apt-get update');
             foreach ([$install, $check, $download] as $position) {

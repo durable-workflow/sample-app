@@ -29,10 +29,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Validate candidate image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  qualify:
+    name: Qualify candidate ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            timeout_minutes: 20
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            timeout_minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,7 +53,7 @@ jobs:
         with:
           context: .
           file: .devcontainer/docker/Dockerfile
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           load: true
           no-cache: true
           pull: true
@@ -58,4 +68,16 @@ jobs:
         run: >-
           scripts/ci/qualify-devcontainer-image.sh
           sample-app-devcontainer:candidate
-          linux/amd64
+          "${{ matrix.platform }}"
+
+  validate:
+    name: Validate candidate image
+    if: always()
+    needs: [qualify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require both native candidate qualifications
+        env:
+          QUALIFICATION_RESULT: ${{ needs.qualify.result }}
+        run: test "$QUALIFICATION_RESULT" = success

@@ -222,10 +222,23 @@ jobs:
           --target sample-app
           --workflow-directory .github/workflows
 
+  image-security-tests:
+    name: Image security behavior
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s tests/ci -p 'test_*.py'
+
   target-branch-qualification:
     name: Target branch qualification
     if: always()
-    needs: [test, microservice-test, action-policy]
+    needs: [test, microservice-test, action-policy, image-security-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -237,3 +250,7 @@ jobs:
         env:
           ACTION_POLICY_RESULT: ${{ needs.action-policy.result }}
         run: test "$ACTION_POLICY_RESULT" = success
+      - name: Require image security behavior
+        env:
+          IMAGE_SECURITY_RESULT: ${{ needs.image-security-tests.result }}
+        run: test "$IMAGE_SECURITY_RESULT" = success
