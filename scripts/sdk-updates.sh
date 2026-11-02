@@ -28,7 +28,8 @@ fi
 cleanup() {
   local code=$?
   if [[ "$code" != 0 ]]; then "${compose[@]}" logs --no-color --timestamps || true; fi
-  "${compose[@]}" down --volumes --remove-orphans || return 1
+  # Explicitly started services can belong to profiles that were never enabled.
+  "${compose[@]}" --profile '*' down --volumes --remove-orphans || return 1
   local suffix image
   for suffix in php-sdk-worker python-workflow-worker rust-workflow-worker smoke; do
     image="${COMPOSE_PROJECT_NAME}-${suffix}:latest"
