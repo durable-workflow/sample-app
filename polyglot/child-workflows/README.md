@@ -31,6 +31,12 @@ finish child and parent cleanup, and close both original runs as Cancelled
 before that deadline. The published CLI and Server API must explain the same
 complete cascade with its original lineage and completed cleanup.
 
+The verifier allows up to 30 seconds to observe each original parent and child
+pair, including its history requests. It may observe a pair after its cleanup
+deadline because inspecting earlier directions takes time. Both durable
+`WorkflowCancelled` timestamps and cleanup completion timestamps must still
+precede the original deadline. Missing or late completion fails the experiment.
+
 Original and duplicate requests from the published Python SDK pass through an
 isolated attribution gateway. It preserves the real token and protocol headers
 while injecting five forged identity body fields and eleven headers. Each

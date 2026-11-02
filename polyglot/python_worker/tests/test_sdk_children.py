@@ -1,10 +1,12 @@
 """Reject lost or replaced child relationships and contradictory outcomes."""
 
+import asyncio
 import copy
 import importlib.util
 import json
 import pathlib
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -65,6 +67,54 @@ class CancellationIdentityTest(unittest.TestCase):
                         [{**values[0], "role": "parent"}], [{**values[0], "runtime": "php"}]):
             with self.subTest(changed=changed), self.assertRaises(RuntimeError):
                 children.markers(history(changed), "child", "rust")
+
+    def cancelled_histories(self):
+        record = {**self.record, "parent": "python", "child": "rust", "child_type": "child",
+                  "workflow_link_id": "link", "child_call_id": "call", "wait_id": "wait", "wait_sequence": 1}
+        link = {key: record[key] for key in
+                ("child_workflow_instance_id", "child_workflow_run_id", "workflow_link_id", "child_call_id")}
+        histories = []
+        for role, runtime, context, delivered_at, finished_at in (
+                ("parent", "python", self.parent, "21", "22"), ("child", "rust", self.child, "02", "20")):
+            requested = event("CooperativeCancellationRequested", cancellation=context)
+            requested["principal"] = children.CANCELLATION_ACTOR if role == "parent" else None
+            delivery = {**event("CooperativeCancellationDelivered", cancellation=context, sequence=3),
+                        "timestamp": f"2026-10-08T01:00:{delivered_at}Z"}
+            values = [{"role": role, "runtime": runtime, "stage": stage, "context": context, "remaining": remaining}
+                      for stage, remaining in (("entry", 28), ("finished", 5))]
+            timer = event("TimerScheduled", timer_id="timer")
+            cleanup = {"outcome": "completed", "request_id": context["request_id"],
+                       "cleanup_deadline_at": context["cleanup_deadline_at"], "delivery_sequence": 3,
+                       "delivery_history_event_id": "delivery", "finished_at": f"2026-10-08T01:00:{finished_at}Z"}
+            terminal = {**event("WorkflowCancelled", cancellation_cleanup=cleanup),
+                        "timestamp": f"2026-10-08T01:00:{finished_at}Z"}
+            history = {"events": [requested, delivery, timer, event("TimerFired", timer_id="timer"),
+                *[event("SideEffectRecorded", result={"decoded": value}) for value in values], terminal]}
+            if role == "parent":
+                history["events"] += [event("ChildWorkflowScheduled", **link, child_workflow_type="child"),
+                    event("ChildRunStarted", **link, child_workflow_type="child"), event("ChildRunCancelled", **link)]
+            else:
+                history["events"].append(event("SignalWaitOpened", signal_wait_id="wait", sequence=1,
+                                               signal_name="child-finish"))
+                record.update(child_delivery=delivery, child_cleanup_entry=values[0], child_cleanup_timer=timer)
+            histories.append(history)
+        return *histories, record
+
+    def test_durable_timestamps_allow_late_observation_but_refuse_late_or_missing_completion(self):
+        parent, child, record = self.cancelled_histories()
+        children.verify_cancelled(parent, child, record)
+        for role in (0, 1):
+            for field in ("terminal", "cleanup", "missing"):
+                histories = copy.deepcopy([parent, child])
+                terminal = children.one(histories[role], "WorkflowCancelled")
+                if field == "missing":
+                    histories[role]["events"].remove(terminal)
+                elif field == "terminal":
+                    terminal["timestamp"] = record["root_request"]["cleanup_deadline_at"]
+                else:
+                    terminal["payload"]["cancellation_cleanup"]["finished_at"] = record["root_request"]["cleanup_deadline_at"]
+                with self.subTest(role=role, field=field), self.assertRaises(RuntimeError):
+                    children.verify_cancelled(*histories, record)
 
 
 class ChildRelationshipTest(unittest.TestCase):
@@ -225,6 +275,55 @@ class ChildObservationTest(unittest.IsolatedAsyncioTestCase):
         _, history = await children.observe(client, "workflow", "original")
         self.assertEqual([item["event_type"] for item in history["events"]], ["ChildRunStarted", "ChildRunCompleted"])
         self.assertEqual(client.get_history.await_args.kwargs["next_page_token"], "next")
+
+    async def test_cancellation_phase_observes_every_direction_after_its_original_deadline(self):
+        pending = [{"parent": parent, "child": child, "parent_workflow_id": f"parent-{index}",
+                    "parent_run_id": f"parent-run-{index}", "child_workflow_instance_id": f"child-{index}",
+                    "child_workflow_run_id": f"child-run-{index}", "root_request": {
+                        "requested_at": "2020-01-01T00:00:00Z", "cleanup_deadline_at": "2020-01-01T00:00:30Z"}}
+                   for index, (parent, child) in enumerate(children.RUST_DIRECTIONS)]
+        history = {"events": [{**event("WorkflowCancelled"), "timestamp": "2020-01-01T00:00:20Z"}]}
+        observed = AsyncMock(return_value=(types.SimpleNamespace(status="cancelled"), history))
+        with tempfile.TemporaryDirectory() as directory:
+            (pathlib.Path(directory) / "gateway.jsonl").write_text("")
+            with patch.object(children, "records", return_value=pending), \
+                    patch.object(children, "observe", observed), \
+                    patch.object(children, "verify_cancelled") as verified, \
+                    patch.object(children, "inspect_cascade", AsyncMock(return_value={})), \
+                    patch.object(children, "verify_cancellation_transport", return_value={}), \
+                    patch.object(children, "emit"), \
+                    patch.dict(children.os.environ, {"CHILD_PROOF_DIR": directory}):
+                await children.cancellation_verify(object())
+        self.assertEqual(observed.await_count, 10)
+        self.assertEqual(verified.call_count, 5)
+        self.assertEqual([call.args[1] for call in observed.await_args_list],
+                         [identity for row in pending for identity in (row["parent_workflow_id"], row["child_workflow_instance_id"])])
+
+    async def test_cancellation_observation_timeout_bounds_a_stalled_request(self):
+        async def stalled(*_):
+            await asyncio.Future()
+        record = {"parent_workflow_id": "parent", "parent_run_id": "run",
+                  "child_workflow_instance_id": "child", "child_workflow_run_id": "child-run"}
+        with patch.object(children, "CANCELLATION_OBSERVATION_SECONDS", .01), \
+                patch.object(children, "observe", stalled):
+            with self.assertRaisesRegex(RuntimeError, "observation budget"):
+                await children.observe_cancellation(object(), record)
+
+    async def test_cancellation_observation_polls_pending_and_refuses_wrong_terminal_outcomes(self):
+        record = {"parent_workflow_id": "parent", "parent_run_id": "run",
+                  "child_workflow_instance_id": "child", "child_workflow_run_id": "child-run"}
+        def result(status):
+            return types.SimpleNamespace(status=status), {"events": []}
+        observed = AsyncMock(side_effect=[result("running"), result("cancelled"),
+                                         result("cancelled"), result("cancelled")])
+        with patch.object(children, "observe", observed), patch.object(children.asyncio, "sleep", AsyncMock()):
+            await children.observe_cancellation(object(), record)
+        self.assertEqual(observed.await_count, 4)
+        for status in ("failed", "terminated", "completed"):
+            with self.subTest(status=status), patch.object(children, "emit"), \
+                    patch.object(children, "observe", AsyncMock(side_effect=[result(status), result("cancelled")])):
+                with self.assertRaisesRegex(RuntimeError, "unexpected terminal"):
+                    await children.observe_cancellation(object(), record)
 
 
 if __name__ == "__main__":
