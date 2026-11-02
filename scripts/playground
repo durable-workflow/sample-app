@@ -445,11 +445,11 @@ def public_waterline_base() -> str:
     return f"http://localhost:{port}/waterline"
 
 
-def managed_runtime_configuration(
+def managed_runtime_target(
     runtime_url: str | None,
     namespace: str | None,
     task_queue: str | None,
-) -> tuple[str, str, str, str, str]:
+) -> tuple[str, str, str]:
     values = {
         "--runtime-url": runtime_url,
         "--namespace": namespace,
@@ -470,20 +470,94 @@ def managed_runtime_configuration(
         )
     if any(character.isspace() for character in namespace + task_queue):
         raise PlaygroundError("--namespace and --task-queue cannot contain whitespace.")
+    return runtime_url.rstrip("/"), namespace, task_queue
 
+
+def managed_credentials() -> tuple[str, str]:
     worker_token = required_environment("DURABLE_WORKFLOW_WORKER_TOKEN")
     client_token = required_environment("DURABLE_WORKFLOW_CLIENT_TOKEN")
     if worker_token == client_token:
         raise PlaygroundError(
             "Managed runtime worker and client credentials must use separate role-scoped values."
         )
-    return (
-        runtime_url.rstrip("/"),
-        namespace,
-        task_queue,
-        worker_token,
-        client_token,
+    return worker_token, client_token
+
+
+def runtime_target(
+    runtime: str,
+    runtime_url: str | None,
+    namespace: str | None,
+    task_queue: str | None,
+) -> tuple[str, str, str]:
+    """Resolve the runtime URL, namespace, and task queue override without credentials."""
+    if runtime == "managed":
+        return managed_runtime_target(runtime_url, namespace, task_queue)
+    if runtime == "local":
+        if any(value is not None for value in (runtime_url, namespace, task_queue)):
+            raise PlaygroundError(
+                "--runtime-url, --namespace, and --task-queue are available only with --runtime managed."
+            )
+        return (
+            endpoint("PLAYGROUND_SERVER_URL", "PLAYGROUND_SERVER_PORT", "18082"),
+            NAMESPACE,
+            "",
+        )
+    raise PlaygroundError(f"Unsupported playground runtime: {runtime}")
+
+
+def runtime_scenario(
+    language: str, source_dir: Path, run_suffix: str, task_queue: str
+) -> dict[str, Any]:
+    scenario = effective_scenario(language, source_dir, run_suffix)
+    if task_queue:
+        scenario["task_queue"] = task_queue
+    return scenario
+
+
+def contract_summary(
+    language: str,
+    runtime: str,
+    runtime_url: str,
+    namespace: str,
+    scenario: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "language": language,
+        "runtime": runtime,
+        "runtime_url": runtime_url,
+        "namespace": namespace,
+        "workflow_type": scenario["workflow_type"],
+        "activity_type": scenario["activity_type"],
+        "task_queue": scenario["task_queue"],
+        "input": scenario["input"],
+        "worker_command": scenario["worker_command"],
+        "start_command": scenario["start_command"],
+        "expected_result": scenario["expected_result"],
+        "expected_result_shape": result_shape(scenario["expected_result"]),
+    }
+
+
+def print_contract(
+    language: str,
+    source_dir: Path,
+    *,
+    runtime: str = "local",
+    runtime_url: str | None = None,
+    namespace: str | None = None,
+    task_queue: str | None = None,
+) -> dict[str, Any]:
+    """Print the effective contract a journey would use, without probes or writes."""
+    effective_runtime_url, effective_namespace, effective_task_queue = runtime_target(
+        runtime, runtime_url, namespace, task_queue
     )
+    scenario = runtime_scenario(
+        language, source_dir, "{run_suffix}", effective_task_queue
+    )
+    summary = contract_summary(
+        language, runtime, effective_runtime_url, effective_namespace, scenario
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+    return summary
 
 
 def result_shape(value: Any) -> Any:
@@ -919,35 +993,19 @@ def journey(
     started_at = time.time()
     started_monotonic = time.monotonic()
     contract = load_contract()
+    effective_runtime_url, effective_namespace, effective_task_queue = runtime_target(
+        runtime, runtime_url, namespace, task_queue
+    )
     if runtime == "managed":
-        (
-            effective_runtime_url,
-            effective_namespace,
-            effective_task_queue,
-            worker_token,
-            client_token,
-        ) = managed_runtime_configuration(runtime_url, namespace, task_queue)
-    elif runtime == "local":
-        if any(value is not None for value in (runtime_url, namespace, task_queue)):
-            raise PlaygroundError(
-                "--runtime-url, --namespace, and --task-queue are available only with --runtime managed."
-            )
-        effective_runtime_url = endpoint(
-            "PLAYGROUND_SERVER_URL", "PLAYGROUND_SERVER_PORT", "18082"
-        )
-        effective_namespace = NAMESPACE
-        effective_task_queue = ""
+        worker_token, client_token = managed_credentials()
+    else:
         worker_token = AUTH_TOKEN
         client_token = AUTH_TOKEN
-    else:
-        raise PlaygroundError(f"Unsupported playground runtime: {runtime}")
 
     versions = doctor(require_docker=runtime == "local")
     artifacts = resolve_artifacts()
     suffix = secrets.token_hex(8)
-    scenario = effective_scenario(language, source_dir, suffix)
-    if effective_task_queue:
-        scenario["task_queue"] = effective_task_queue
+    scenario = runtime_scenario(language, source_dir, suffix, effective_task_queue)
     created = scaffold(language, source_dir, scenario=scenario)
     print(f"Editable {language} source: {source_dir}", flush=True)
     print(f"Generated run evidence: {evidence_path}", flush=True)
@@ -998,22 +1056,13 @@ def journey(
         print(
             "Effective playground contract:\n"
             + json.dumps(
-                {
-                    "language": language,
-                    "runtime": runtime,
-                    "runtime_url": effective_runtime_url,
-                    "namespace": effective_namespace,
-                    "workflow_type": scenario["workflow_type"],
-                    "activity_type": scenario["activity_type"],
-                    "task_queue": scenario["task_queue"],
-                    "input": scenario["input"],
-                    "worker_command": scenario["worker_command"],
-                    "start_command": scenario["start_command"],
-                    "expected_result": scenario["expected_result"],
-                    "expected_result_shape": result_shape(
-                        scenario["expected_result"]
-                    ),
-                },
+                contract_summary(
+                    language,
+                    runtime,
+                    effective_runtime_url,
+                    effective_namespace,
+                    scenario,
+                ),
                 indent=2,
                 sort_keys=True,
             ),
@@ -1325,6 +1374,14 @@ def parse_args() -> argparse.Namespace:
         journey_parser.add_argument(
             "--task-queue", help="Explicit task queue for managed mode"
         )
+        journey_parser.add_argument(
+            "--print-contract",
+            action="store_true",
+            help=(
+                "Print the effective contract as JSON and exit without probing "
+                "tools, reading credentials, starting services, or writing files"
+            ),
+        )
 
     scaffold_parser = subparsers.add_parser(
         "scaffold", help="Create source without starting services"
@@ -1381,6 +1438,20 @@ def main() -> int:
 
     language = args.command
     source_dir = (args.source or default_source_dir(language)).expanduser().resolve()
+    if args.print_contract:
+        if args.evidence is not None:
+            raise PlaygroundError(
+                "--evidence names a run report and cannot be combined with --print-contract."
+            )
+        print_contract(
+            language,
+            source_dir,
+            runtime=args.runtime,
+            runtime_url=args.runtime_url,
+            namespace=args.namespace,
+            task_queue=args.task_queue,
+        )
+        return 0
     evidence_path = (
         (
             args.evidence
