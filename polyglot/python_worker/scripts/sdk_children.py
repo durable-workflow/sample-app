@@ -21,6 +21,7 @@ PARENT_EVENTS = {"WorkflowStarted", "ChildWorkflowScheduled", "ChildRunStarted",
                  "WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated"}
 TERMINAL_EVENTS = {"WorkflowCompleted", "WorkflowFailed", "WorkflowCancelled", "WorkflowTerminated"}
 CANCELLATION_ACTOR = {"id": "legacy-token", "label": "Admin", "type": "auth:token"}
+CANCELLATION_OBSERVATION_SECONDS = 30
 
 
 def required(name):
@@ -560,19 +561,27 @@ def verify_cancellation_transport(pending, receipts):
             "authenticated_requester": pending[0].get("cancellation_actor", CANCELLATION_ACTOR)}
 
 
+async def observe_cancellation(client, record):
+    # Observation may begin after another direction's CLI inspection. Durable
+    # timestamps in verify_cancelled still enforce the original cleanup budget.
+    try:
+        async with asyncio.timeout(CANCELLATION_OBSERVATION_SECONDS):
+            while True:
+                parent_execution, parent = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
+                child_execution, child = await observe(client, record["child_workflow_instance_id"], record["child_workflow_run_id"])
+                if parent_execution.status == "cancelled" and child_execution.status == "cancelled":
+                    return parent, child
+                if parent_execution.status in ("failed", "terminated", "completed") or child_execution.status in ("failed", "terminated", "completed"):
+                    emit(scenario="child-cancellation-unexpected-outcome", **record, parent_events=parent["events"], child_events=child["events"])
+                    raise RuntimeError("Cancellation reached an unexpected terminal outcome.")
+                await asyncio.sleep(.1)
+    except TimeoutError as error:
+        raise RuntimeError("Cancellation observation budget expired before both original runs could be observed as Cancelled.") from error
+
+
 async def cancellation_verify(client):
     for record in records():
-        while datetime.now(timezone.utc) < instant(record["root_request"]["cleanup_deadline_at"]):
-            parent_execution, parent = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
-            child_execution, child = await observe(client, record["child_workflow_instance_id"], record["child_workflow_run_id"])
-            if parent_execution.status == "cancelled" and child_execution.status == "cancelled":
-                break
-            if parent_execution.status in ("failed", "terminated", "completed") or child_execution.status in ("failed", "terminated", "completed"):
-                emit(scenario="child-cancellation-unexpected-outcome", **record, parent_events=parent["events"], child_events=child["events"])
-                raise RuntimeError("Cancellation reached an unexpected terminal outcome.")
-            await asyncio.sleep(.1)
-        else:
-            raise RuntimeError("Original cancellation deadline expired before convergence.")
+        parent, child = await observe_cancellation(client, record)
         verify_cancelled(parent, child, record)
         view = await inspect_cascade(record, parent, child)
         emit(scenario="child-cancellation-worker-recovery", **record, parent_events=parent["events"], child_events=child["events"],
