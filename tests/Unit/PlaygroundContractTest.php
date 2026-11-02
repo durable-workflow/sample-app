@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -754,6 +755,151 @@ PYTHON;
         );
     }
 
+    #[DataProvider('languageProvider')]
+    public function test_print_contract_inspects_the_effective_scenario_without_side_effects(string $language): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-inspect-'.bin2hex(random_bytes(8));
+        $sourceRoot = $temporaryDirectory.'/source-root';
+        $evidencePath = $temporaryDirectory.'/evidence.json';
+        $probeLog = $temporaryDirectory.'/probes.log';
+        $filesystem->mkdir($temporaryDirectory);
+
+        try {
+            $path = $this->probeFailingPath($temporaryDirectory.'/bin', $probeLog);
+            $process = new Process(
+                [$this->path('scripts/playground'), $language, '--print-contract'],
+                env: [
+                    'PATH' => $path,
+                    'HOME' => $temporaryDirectory,
+                    'PLAYGROUND_SOURCE_ROOT' => $sourceRoot,
+                    'PLAYGROUND_EVIDENCE_PATH' => $evidencePath,
+                    'PLAYGROUND_CARGO_OFFLINE' => '0',
+                    'DURABLE_WORKFLOW_AUTH_TOKEN' => 'ambient-auth-secret',
+                    'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',
+                    'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-secret',
+                ],
+            );
+            $process->run();
+
+            $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+            $output = $process->getOutput();
+            $printed = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            $declared = $this->contract()['scenarios'][$language];
+            $source = $sourceRoot.'/'.$language;
+
+            $this->assertSame($language, $printed['language'] ?? null);
+            $this->assertSame('local', $printed['runtime'] ?? null);
+            $this->assertSame('http://127.0.0.1:18082', $printed['runtime_url'] ?? null);
+            $this->assertSame('default', $printed['namespace'] ?? null);
+            $this->assertSame($declared['workflow_type'], $printed['workflow_type'] ?? null);
+            $this->assertSame($declared['activity_type'], $printed['activity_type'] ?? null);
+            $this->assertSame($declared['task_queue'], $printed['task_queue'] ?? null);
+            $this->assertSame($declared['input'], $printed['input'] ?? null);
+            $this->assertEquals($declared['expected_result'], $printed['expected_result'] ?? null);
+            $expectedCommand = static fn (array $command): array => array_values(array_filter(
+                array_map(
+                    static fn (string $part): string => str_replace(['{source}', '{cargo_offline}'], [$source, ''], $part),
+                    $command,
+                ),
+                static fn (string $part): bool => $part !== '',
+            ));
+            $this->assertSame($expectedCommand($declared['worker_command']), $printed['worker_command'] ?? null);
+            $this->assertSame($expectedCommand($declared['start_command']), $printed['start_command'] ?? null);
+
+            foreach (['ambient-auth-secret', 'client-secret', 'worker-secret', 'playground-token'] as $credential) {
+                $this->assertStringNotContainsString($credential, $output.$process->getErrorOutput());
+            }
+            $this->assertFileDoesNotExist($probeLog, 'Contract inspection invoked a toolchain or Docker command.');
+            $this->assertFileDoesNotExist($sourceRoot);
+            $this->assertFileDoesNotExist($evidencePath);
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
+    public function test_print_contract_follows_explicit_source_and_managed_target_selection(): void
+    {
+        $filesystem = new Filesystem;
+        $temporaryDirectory = sys_get_temp_dir().'/sample-app-playground-inspect-managed-'.bin2hex(random_bytes(8));
+        $sourceDirectory = $temporaryDirectory.'/authored';
+        $probeLog = $temporaryDirectory.'/probes.log';
+        $filesystem->mkdir($sourceDirectory);
+        file_put_contents($sourceDirectory.'/client.php', "<?php\n// caller-owned client\n");
+        $before = $this->directorySnapshot($sourceDirectory);
+
+        try {
+            $path = $this->probeFailingPath($temporaryDirectory.'/bin', $probeLog);
+            $environment = [
+                'PATH' => $path,
+                'HOME' => $temporaryDirectory,
+                'DURABLE_WORKFLOW_CLIENT_TOKEN' => 'client-secret',
+                'DURABLE_WORKFLOW_WORKER_TOKEN' => 'worker-secret',
+            ];
+            $process = new Process(
+                [
+                    $this->path('scripts/playground'),
+                    'php',
+                    '--print-contract',
+                    '--source',
+                    $sourceDirectory,
+                    '--runtime',
+                    'managed',
+                    '--runtime-url',
+                    'https://runtime.example/namespaces/example/',
+                    '--namespace',
+                    'example',
+                    '--task-queue',
+                    'my-php-worker',
+                ],
+                env: $environment,
+            );
+            $process->run();
+
+            $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+            $printed = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame('managed', $printed['runtime'] ?? null);
+            $this->assertSame('https://runtime.example/namespaces/example', $printed['runtime_url'] ?? null);
+            $this->assertSame('example', $printed['namespace'] ?? null);
+            $this->assertSame('my-php-worker', $printed['task_queue'] ?? null);
+            $this->assertSame(['php', $sourceDirectory.'/worker.php'], $printed['worker_command'] ?? null);
+            $this->assertSame(['php', $sourceDirectory.'/client.php'], $printed['start_command'] ?? null);
+            $this->assertStringNotContainsString('client-secret', $process->getOutput());
+            $this->assertStringNotContainsString('worker-secret', $process->getOutput());
+            $this->assertSame($before, $this->directorySnapshot($sourceDirectory));
+            $this->assertFileDoesNotExist($probeLog, 'Contract inspection invoked a toolchain or Docker command.');
+
+            $incomplete = new Process(
+                [$this->path('scripts/playground'), 'rust', '--print-contract', '--runtime', 'managed'],
+                env: $environment,
+            );
+            $incomplete->run();
+            $this->assertSame(1, $incomplete->getExitCode());
+            $this->assertStringContainsString(
+                'Managed runtime mode requires explicit --runtime-url, --namespace, --task-queue.',
+                $incomplete->getErrorOutput(),
+            );
+
+            $withEvidence = new Process(
+                [
+                    $this->path('scripts/playground'),
+                    'python',
+                    '--print-contract',
+                    '--evidence',
+                    $temporaryDirectory.'/evidence.json',
+                ],
+                env: $environment,
+            );
+            $withEvidence->run();
+            $this->assertSame(1, $withEvidence->getExitCode());
+            $this->assertStringContainsString('cannot be combined with --print-contract', $withEvidence->getErrorOutput());
+            $this->assertFileDoesNotExist($temporaryDirectory.'/evidence.json');
+            $this->assertFileDoesNotExist($probeLog, 'Contract inspection invoked a toolchain or Docker command.');
+        } finally {
+            $filesystem->remove($temporaryDirectory);
+        }
+    }
+
     public function test_retired_top_level_scaffold_and_entry_point_cannot_return(): void
     {
         $retiredName = 'rust'.'-cloud';
@@ -1015,6 +1161,53 @@ PYTHON;
             true,
             flags: JSON_THROW_ON_ERROR,
         );
+    }
+
+    /**
+     * Build a PATH whose only real interpreter is Python. Every toolchain or
+     * Docker command records its invocation and fails.
+     */
+    private function probeFailingPath(string $directory, string $probeLog): string
+    {
+        $python = (new ExecutableFinder)->find('python3');
+        $this->assertNotNull($python, 'python3 is required to run scripts/playground.');
+        (new Filesystem)->mkdir($directory);
+        symlink($python, $directory.'/python3');
+        $probe = "#!/bin/sh\necho \"\$0 \$*\" >> ".escapeshellarg($probeLog)."\nexit 97\n";
+        foreach ([
+            'cargo',
+            'composer',
+            'docker',
+            'dw',
+            'php',
+            'pip',
+            'python',
+            'rustc',
+            'with-disposable-composer-state',
+            'with-group-shared-umask',
+        ] as $tool) {
+            file_put_contents($directory.'/'.$tool, $probe);
+            chmod($directory.'/'.$tool, 0755);
+        }
+
+        return $directory;
+    }
+
+    /** @return array<string, string> */
+    private function directorySnapshot(string $directory): array
+    {
+        $snapshot = [];
+        $entries = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST,
+        );
+        foreach ($entries as $entry) {
+            $relative = substr($entry->getPathname(), strlen($directory) + 1);
+            $snapshot[$relative] = $entry->isDir() ? 'directory' : hash_file('sha256', $entry->getPathname());
+        }
+        ksort($snapshot);
+
+        return $snapshot;
     }
 
     private function path(string $path): string

@@ -115,6 +115,15 @@ scripts/playground doctor
 scripts/playground rust --print-contract
 ```
 
+`doctor` checks the toolchains and Docker access. `--print-contract` prints
+the JSON contract that the same journey would use and exits. It shows the
+workflow type, activity type, task queue, input, expected result, worker
+command, and start command. It probes no tools, reads no credentials, starts
+no services, and writes no files. It accepts the same `--source`, `--runtime`,
+`--runtime-url`, `--namespace`, and `--task-queue` selections as a run, and it
+rejects `--evidence` because inspection writes no run report. A local run
+replaces `{run_suffix}` in the printed task queue with a fresh value.
+
 Remove one playground's containers and state with:
 
 ```bash
