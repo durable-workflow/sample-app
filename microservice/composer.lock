@@ -714,16 +714,16 @@
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.15.8",
+            "version": "2.15.13",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "45cbdb408fd3bcd14e08fac5e8e1375870c20aa5"
+                "reference": "42be75605a6e4c35e0e2bade52086a62756c3e30"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/45cbdb408fd3bcd14e08fac5e8e1375870c20aa5",
-                "reference": "45cbdb408fd3bcd14e08fac5e8e1375870c20aa5",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/42be75605a6e4c35e0e2bade52086a62756c3e30",
+                "reference": "42be75605a6e4c35e0e2bade52086a62756c3e30",
                 "shasum": ""
             },
             "require": {
@@ -764,7 +764,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.15.8",
+                    "product-train": "2.15.13",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -791,9 +791,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.15.8"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.15.13"
             },
-            "time": "2026-10-29T21:25:27+00:00"
+            "time": "2026-11-02T09:14:30+00:00"
         },
         {
             "name": "egulias/email-validator",
