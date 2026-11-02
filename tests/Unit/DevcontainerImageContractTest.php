@@ -166,6 +166,16 @@ final class DevcontainerImageContractTest extends TestCase
         $policy = json_decode(file_get_contents($this->path('scripts/ci/devcontainer-security.json')), true, flags: JSON_THROW_ON_ERROR);
         $this->assertStringContainsString('generator='.$policy['sbom_generator_image'], $source);
         $this->assertStringContainsString('SELECT_CATALOGERS=image,file,+sbom-cataloger,+rust-cargo-lock-cataloger,+bitnami-cataloger,+conan-info-cataloger,+javascript-package-cataloger,+php-composer-installed-cataloger,+ruby-installed-gemspec-cataloger', $source);
+        // docker/build-push-action re-parses the sbom input as CSV and rejoins the
+        // fields with bare commas before buildx parses it again. The catalog
+        // selection must survive both passes as a single field.
+        $buildStep = array_values(array_filter($jobs['build']['steps'], fn (array $step): bool => ($step['name'] ?? null) === 'Build and publish immutable architecture image'))[0];
+        $rejoined = implode(',', array_map('trim', str_getcsv('type=sbom,'.$buildStep['with']['sbom'], ',', '"', '')));
+        $buildxFields = str_getcsv($rejoined, ',', '"', '');
+        $selection = array_values(array_filter($buildxFields, fn (string $field): bool => str_starts_with($field, 'SELECT_CATALOGERS=')));
+        $this->assertCount(1, $selection);
+        $this->assertStringContainsString(',file,+sbom-cataloger,+rust-cargo-lock-cataloger,', $selection[0]);
+        $this->assertNotContains('file', $buildxFields);
         $this->assertStringContainsString('DEVCONTAINER_REQUIRE_ANONYMOUS_PULL', $source);
         $this->assertStringContainsString('Publish main channel', $source);
         $this->assertStringContainsString('scripts/ci/scan-devcontainer-image.py', $source);
