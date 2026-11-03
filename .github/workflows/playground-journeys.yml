@@ -59,6 +59,8 @@ jobs:
           python -m pip install "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
           curl -fsSL https://durable-workflow.com/install.sh -o "$RUNNER_TEMP/dw-install.sh"
           mkdir -p "$RUNNER_TEMP/bin"
+          # The installer refuses to finish unless its directory is already on PATH.
+          export PATH="$RUNNER_TEMP/bin:$PATH"
           VERSION="$DURABLE_WORKFLOW_CLI_VERSION" DURABLE_WORKFLOW_INSTALL_DIR="$RUNNER_TEMP/bin" \
             sh "$RUNNER_TEMP/dw-install.sh"
           # The development image provides these two wrappers on PATH.
