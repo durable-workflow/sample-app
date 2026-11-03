@@ -720,16 +720,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.1.0",
+            "version": "3.8.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "222e27eddc0915957ad513dcc3b2b2418f5eb959"
+                "reference": "14340ad7bd5f2d652b646fde7a6db96194569053"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/222e27eddc0915957ad513dcc3b2b2418f5eb959",
-                "reference": "222e27eddc0915957ad513dcc3b2b2418f5eb959",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/14340ad7bd5f2d652b646fde7a6db96194569053",
+                "reference": "14340ad7bd5f2d652b646fde7a6db96194569053",
                 "shasum": ""
             },
             "require": {
@@ -737,6 +737,7 @@
                 "composer-runtime-api": "^2.0",
                 "ext-json": "*",
                 "guzzlehttp/guzzle": "^7.8|^8.0",
+                "pear/http_request2": "^2.8",
                 "php": "^8.1",
                 "psr/container": "^1.1|^2.0",
                 "psr/http-client": "^1.0",
@@ -745,7 +746,9 @@
                 "psr/log": "^1.1|^2.0|^3.0"
             },
             "conflict": {
-                "open-telemetry/api": "<1.10.1 || >=2.0"
+                "open-telemetry/api": "<1.10.1 || >=2.0",
+                "pear/net_url2": "<2.2.3",
+                "pear/pear_exception": "<1.0.2"
             },
             "require-dev": {
                 "monolog/monolog": "^2.9|^3.0",
@@ -777,7 +780,7 @@
                         "laravel": "^9.0|^10.0|^11.0|^12.0|^13.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.1.0",
+                    "product-train": "3.8.0",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -807,6 +810,10 @@
                     "worker-protocol-version": "1.20",
                     "supported-server-versions": "2.5.0",
                     "version-marker-history-event": "VersionMarkerRecorded",
+                    "supported-server-release-baselines": {
+                        "2": "2.5.0",
+                        "3": "3.0.0"
+                    },
                     "message-streams-minimum-worker-protocol-version": "1.15",
                     "durable-selection-minimum-worker-protocol-version": "1.19"
                 }
@@ -843,20 +850,21 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-10-21T02:14:15+00:00"
+            "time": "2026-11-02T23:49:05+00:00",
+            "published-time": "2026-11-02T23:53:24+00:00"
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.12.1",
+            "version": "2.13.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "4d750dcd63aa062977fb895c8ac317bdac9c18d8"
+                "reference": "c76271ea8932641e21acb0efc5eab59dc8cd86f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/4d750dcd63aa062977fb895c8ac317bdac9c18d8",
-                "reference": "4d750dcd63aa062977fb895c8ac317bdac9c18d8",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/c76271ea8932641e21acb0efc5eab59dc8cd86f1",
+                "reference": "c76271ea8932641e21acb0efc5eab59dc8cd86f1",
                 "shasum": ""
             },
             "require": {
@@ -867,7 +875,7 @@
                 "laravel-workflow/waterline": "self.version"
             },
             "require-dev": {
-                "durable-workflow/sdk": "2.4.0",
+                "durable-workflow/sdk": "3.4.1",
                 "durable-workflow/workflow": "2.5.12",
                 "fakerphp/faker": "^1.9.1",
                 "mockery/mockery": "^1.4.4",
@@ -890,10 +898,10 @@
                     ]
                 },
                 "branch-alias": {
-                    "dev-main": "2.12.x-dev"
+                    "dev-main": "2.13.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.12.1",
+                    "product-train": "2.13.2",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -917,33 +925,34 @@
             "authors": [
                 {
                     "name": "Richard McDaniel",
-                    "email": "richard.lee.mcdaniel@gmail.com"
+                    "email": "support@durable-workflow.com"
                 }
             ],
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.12.1"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.13.2"
             },
-            "time": "2026-10-21T08:25:05+00:00"
+            "time": "2026-11-02T23:25:52+00:00",
+            "published-time": "2026-11-02T23:54:37+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.15.15",
+            "version": "2.17.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "a8a552b569f7a21fead0d8a2e9abe26fa7b37b15"
+                "reference": "5998e6ae61acb0092f4bb18248cb60f23378cb26"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/a8a552b569f7a21fead0d8a2e9abe26fa7b37b15",
-                "reference": "a8a552b569f7a21fead0d8a2e9abe26fa7b37b15",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/5998e6ae61acb0092f4bb18248cb60f23378cb26",
+                "reference": "5998e6ae61acb0092f4bb18248cb60f23378cb26",
                 "shasum": ""
             },
             "require": {
                 "apache/avro": "^1.12",
-                "laravel/framework": "^9.52.17|^10.50.4|^11.56.1|^12.69.0|^13.30.0",
+                "laravel/framework": "^10.50.4|^11.56.1|^12.69.0|^13.30.0",
                 "php": "^8.1",
                 "react/promise": "^2.9|^3.0",
                 "symfony/yaml": "^6.0|^7.0|^8.0"
@@ -979,7 +988,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.15.15",
+                    "product-train": "2.17.1",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -1006,9 +1015,10 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.15.15"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.17.1"
             },
-            "time": "2026-11-02T16:11:32+00:00"
+            "time": "2026-11-03T00:24:56+00:00",
+            "published-time": "2026-11-03T00:51:33+00:00"
         },
         {
             "name": "egulias/email-validator",
@@ -3322,6 +3332,196 @@
                 }
             ],
             "time": "2026-02-16T23:10:27+00:00"
+        },
+        {
+            "name": "pear/http_request2",
+            "version": "v2.8.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/pear/HTTP_Request2.git",
+                "reference": "ccb06dd1e71aceb96f7cde7994976e02a46c7d5f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/pear/HTTP_Request2/zipball/ccb06dd1e71aceb96f7cde7994976e02a46c7d5f",
+                "reference": "ccb06dd1e71aceb96f7cde7994976e02a46c7d5f",
+                "shasum": ""
+            },
+            "require": {
+                "pear/net_url2": "^2.2.0",
+                "pear/pear_exception": "^1.0.0",
+                "php": ">=7.1"
+            },
+            "require-dev": {
+                "pear/log": "^1",
+                "yoast/phpunit-polyfills": "^4.0"
+            },
+            "suggest": {
+                "ext-curl": "Allows using cURL as a request backend.",
+                "ext-fileinfo": "Adds support for looking up mime-types using finfo.",
+                "ext-openssl": "Allows handling SSL requests when not using cURL.",
+                "ext-zlib": "Allows handling gzip compressed responses."
+            },
+            "type": "library",
+            "autoload": {
+                "psr-0": {
+                    "HTTP_Request2": ""
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "BSD-3-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "Alexey Borzov",
+                    "email": "avb@php.net"
+                }
+            ],
+            "description": "Provides an easy way to perform HTTP requests.",
+            "homepage": "https://pear.php.net/package/HTTP_Request2",
+            "keywords": [
+                "PEAR",
+                "curl",
+                "http",
+                "request"
+            ],
+            "support": {
+                "docs": "https://pear.php.net/manual/en/package.http.http-request2.php",
+                "issues": "https://github.com/pear/HTTP_Request2/issues",
+                "source": "https://github.com/pear/HTTP_Request2"
+            },
+            "time": "2026-09-04T10:44:42+00:00",
+            "published-time": "2026-09-04T10:45:33+00:00"
+        },
+        {
+            "name": "pear/net_url2",
+            "version": "v2.2.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/pear/Net_URL2.git",
+                "reference": "c1f2b316ed9b05e881cdb494f7550ddf817c76c8"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/pear/Net_URL2/zipball/c1f2b316ed9b05e881cdb494f7550ddf817c76c8",
+                "reference": "c1f2b316ed9b05e881cdb494f7550ddf817c76c8",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.1.4"
+            },
+            "require-dev": {
+                "phpunit/phpunit": ">=3.3.0"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "2.2.x-dev"
+                }
+            },
+            "autoload": {
+                "classmap": [
+                    "Net/URL2.php"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "include-path": [
+                "./"
+            ],
+            "license": [
+                "BSD-3-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "Tom Klingenberg",
+                    "email": "tkli@php.net"
+                },
+                {
+                    "name": "David Coallier",
+                    "email": "davidc@php.net"
+                },
+                {
+                    "name": "Christian Schmidt",
+                    "email": "chmidt@php.net"
+                }
+            ],
+            "description": "Class for parsing and handling URL. Provides parsing of URLs into their constituent parts (scheme, host, path etc.), URL generation, and resolving of relative URLs.",
+            "homepage": "https://github.com/pear/Net_URL2",
+            "keywords": [
+                "PEAR",
+                "net",
+                "networking",
+                "rfc3986",
+                "uri",
+                "url"
+            ],
+            "support": {
+                "issues": "https://pear.php.net/bugs/search.php?cmd=display&package_name[]=Net_URL2",
+                "source": "https://github.com/pear/Net_URL2"
+            },
+            "time": "2025-03-24T08:03:00+00:00",
+            "published-time": "2025-03-26T10:43:16+00:00"
+        },
+        {
+            "name": "pear/pear_exception",
+            "version": "v1.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/pear/PEAR_Exception.git",
+                "reference": "b14fbe2ddb0b9f94f5b24cf08783d599f776fff0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/pear/PEAR_Exception/zipball/b14fbe2ddb0b9f94f5b24cf08783d599f776fff0",
+                "reference": "b14fbe2ddb0b9f94f5b24cf08783d599f776fff0",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.2.0"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "<9"
+            },
+            "type": "class",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "1.0.x-dev"
+                }
+            },
+            "autoload": {
+                "classmap": [
+                    "PEAR/"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "include-path": [
+                "."
+            ],
+            "license": [
+                "BSD-2-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "Helgi Thormar",
+                    "email": "dufuz@php.net"
+                },
+                {
+                    "name": "Greg Beaver",
+                    "email": "cellog@php.net"
+                }
+            ],
+            "description": "The PEAR Exception base class.",
+            "homepage": "https://github.com/pear/PEAR_Exception",
+            "keywords": [
+                "exception"
+            ],
+            "support": {
+                "issues": "http://pear.php.net/bugs/search.php?cmd=display&package_name[]=PEAR_Exception",
+                "source": "https://github.com/pear/PEAR_Exception"
+            },
+            "time": "2021-03-21T15:43:46+00:00",
+            "published-time": "2021-03-21T15:44:58+00:00"
         },
         {
             "name": "phpoption/phpoption",
@@ -9403,5 +9603,5 @@
         "php": "^8.4"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.9.0"
+    "plugin-api-version": "2.11.0"
 }

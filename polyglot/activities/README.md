@@ -82,8 +82,8 @@ and injects an ordinary callback failure. Worker loss kills the actual activity
 container with SIGKILL and starts a fresh container with a distinct worker
 registration identity. This exercises recovery after the original attempt
 deadline, rather than the immediate lease release provided when a worker
-reregisters with its previous identity. The ordinary published
-`activity:timeout-enforce` command scans real deadlines every second. No clock
+reregisters with its previous identity. Native Server enforces the real
+activity deadlines in its own maintenance loop. No clock
 or database record is edited.
 
 The second callback waits while the original claim is submitted through the

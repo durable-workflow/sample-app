@@ -49,7 +49,7 @@ done
 "${compose[@]}" build smoke php-workflow-worker rust-workflow-worker
 "${compose[@]}" run --rm --no-deps --user "$SEARCH_ATTRIBUTES_UID:$SEARCH_ATTRIBUTES_GID" \
   smoke python -m unittest discover -s /app/scripts -p test_rust_search_attributes.py
-"${compose[@]}" pull --policy always bootstrap server
+"${compose[@]}" pull --policy always server
 "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 python_observer() {

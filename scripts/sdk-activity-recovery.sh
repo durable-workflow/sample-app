@@ -39,7 +39,7 @@ if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PR
 fi
 cleanup() {
   local code=$? service image
-  for service in server recovery-timeouts "${workers[@]}"; do
+  for service in server "${workers[@]}"; do
     "${compose[@]}" logs --no-color --timestamps "$service" > "$result_dir/logs/$service.log" 2>&1 || true
   done
   if $external_effects; then "${compose[@]}" logs --no-color --timestamps recovery-effects > "$result_dir/logs/recovery-effects.log" 2>&1 || true; fi
@@ -58,18 +58,17 @@ for name in DURABLE_SERVER_IMAGE DURABLE_SERVER_VERSION DURABLE_WORKFLOW_PHP_SDK
   DURABLE_WORKFLOW_RUST_SDK_VERSION DURABLE_WORKFLOW_CLI_VERSION DURABLE_WORKFLOW_WORKFLOW_VERSION DURABLE_WORKFLOW_WATERLINE_VERSION; do
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
-printf 'DURABLE_SERVER_WORKFLOW_VERSION=%s\n' "${DURABLE_SERVER_WORKFLOW_VERSION:-$DURABLE_WORKFLOW_WORKFLOW_VERSION}"
 "${compose[@]}" build smoke php-same-workflow-worker rust-workflow-worker
 "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T smoke \
   python -m unittest discover -s /app/scripts -p test_sdk_activity_recovery.py
-"${compose[@]}" pull --policy always bootstrap server recovery-timeouts
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server recovery-timeouts "${workers[@]}"
+"${compose[@]}" pull --policy always server
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
 if $external_effects; then "${compose[@]}" up -d --wait --no-build recovery-effects; fi
 docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
 docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
   "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"
-[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" == "$DURABLE_SERVER_VERSION" ]]
-[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.workflow.version"}}')" == "${DURABLE_SERVER_WORKFLOW_VERSION:-$DURABLE_WORKFLOW_WORKFLOW_VERSION}" ]]
+# Native images carry their release tag; they embed no Workflow package.
+[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.release.tag"}}')" == "native-$DURABLE_SERVER_VERSION" ]]
 
 observer() {
   "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \

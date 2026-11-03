@@ -77,6 +77,15 @@ final class PlaygroundContractTest extends TestCase
         $this->assertArrayNotHasKey('build', $services['server'] ?? []);
         $this->assertArrayNotHasKey('build', $services['waterline'] ?? []);
 
+        // Native Server 3.x creates its schema and default namespace itself and
+        // runs timers in-process: no bootstrap job, queue worker or Redis.
+        $this->assertSame(['mysql', 'server', 'waterline'], array_keys($services));
+        $this->assertArrayNotHasKey('command', $services['server'] ?? []);
+        $this->assertSame('token', $services['server']['environment']['DW_AUTH_DRIVER'] ?? null);
+        $this->assertSame('playground-token', $services['server']['environment']['DW_AUTH_TOKEN'] ?? null);
+        $this->assertSame('bash', $services['server']['healthcheck']['test'][1] ?? null);
+        $this->assertStringContainsString('/api/ready', $services['server']['healthcheck']['test'][3] ?? '');
+
         $this->assertSame('mariadb:11.4', $services['mysql']['image'] ?? null);
         $this->assertSame(
             [
@@ -1082,7 +1091,7 @@ case " $* " in
         exit 1
         ;;
     *" ps --all --format json "*)
-        printf '%s\n' '[{"Service":"mysql","State":"running","Health":"starting","Status":"Up 1 second (health: starting)"},{"Service":"redis","State":"running","Health":"healthy","Status":"Up 1 second (healthy)"}]'
+        printf '%s\n' '[{"Service":"mysql","State":"running","Health":"starting","Status":"Up 1 second (health: starting)"}]'
         ;;
     *" logs --no-color --tail=100 "*)
         printf 'mysql | initializing database files\n'
@@ -1139,7 +1148,7 @@ PYTHON;
                 $output,
             );
             $this->assertStringContainsString('up --detach --no-build --wait --wait-timeout 1', $commands);
-            $this->assertStringContainsString('logs --no-color --tail=100 mysql bootstrap server waterline', $commands);
+            $this->assertStringContainsString('logs --no-color --tail=100 mysql server waterline', $commands);
         } finally {
             $filesystem->remove($temporaryDirectory);
         }

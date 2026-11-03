@@ -29,19 +29,29 @@ final class PolyglotComposeContractTest extends TestCase
             $pattern = match ($artifact) {
                 'sdk-rust' => '/^[234]\.\d+\.\d+$/',
                 'sdk-php' => '/^[23]\.\d+\.\d+$/',
+                'server' => '/^3\.\d+\.\d+$/',
                 default => '/^2\.\d+\.\d+$/',
             };
             $this->assertMatchesRegularExpression($pattern, $version);
         }
 
+        // Native Server 3.x embeds no Workflow package; the tuple pins its
+        // multi-architecture image index by digest instead.
+        $this->assertArrayNotHasKey('serverComponents', $tuple);
+        $this->assertMatchesRegularExpression(
+            '/^durableworkflow\/server:'.preg_quote($tuple['artifacts']['server'], '/').'@sha256:[0-9a-f]{64}$/',
+            $tuple['serverImage'],
+        );
+
         $assignments = $this->resolveArtifacts();
-        $this->assertSame('durableworkflow/server:'.$tuple['artifacts']['server'], $assignments['DURABLE_SERVER_IMAGE']);
+        $this->assertSame($tuple['serverImage'], $assignments['DURABLE_SERVER_IMAGE']);
+        $this->assertSame($tuple['artifacts']['server'], $assignments['DURABLE_SERVER_VERSION']);
+        $this->assertArrayNotHasKey('DURABLE_SERVER_WORKFLOW_VERSION', $assignments);
         $this->assertSame($tuple['artifacts']['cli'], $assignments['DURABLE_WORKFLOW_CLI_VERSION']);
         $this->assertSame($tuple['artifacts']['sdk-php'], $assignments['DURABLE_WORKFLOW_PHP_SDK_VERSION']);
         $this->assertSame($tuple['artifacts']['sdk-python'], $assignments['DURABLE_WORKFLOW_PYTHON_SDK_VERSION']);
         $this->assertSame($tuple['artifacts']['sdk-rust'], $assignments['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
         $this->assertSame($tuple['artifacts']['workflow'], $assignments['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
-        $this->assertSame($tuple['serverComponents']['workflow'], $assignments['DURABLE_SERVER_WORKFLOW_VERSION']);
         $this->assertSame($tuple['artifacts']['waterline'], $assignments['DURABLE_WORKFLOW_WATERLINE_VERSION']);
         $this->assertSame(
             'durable-workflow/sdk:'.$tuple['artifacts']['sdk-php'],
@@ -90,7 +100,6 @@ final class PolyglotComposeContractTest extends TestCase
             $resolved = $this->resolveArtifacts(['DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $tuplePath]);
             $this->assertSame('3.0.0', $resolved['DURABLE_WORKFLOW_PHP_SDK_VERSION']);
             $this->assertSame('4.0.0', $resolved['DURABLE_WORKFLOW_RUST_SDK_VERSION']);
-            $this->assertSame($tuple['serverComponents']['workflow'], $resolved['DURABLE_SERVER_WORKFLOW_VERSION']);
         } finally {
             unlink($tuplePath);
         }
@@ -106,29 +115,44 @@ final class PolyglotComposeContractTest extends TestCase
         }
     }
 
-    public function test_server_component_selection_preserves_frozen_workflow_overrides(): void
+    public function test_server_selection_requires_the_native_server(): void
     {
-        $frozen = $this->resolveArtifacts(['SAMPLE_APP_WORKFLOW_VERSION' => '2.5.5']);
-        $this->assertSame('2.5.5', $frozen['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
-        $this->assertSame('2.5.5', $frozen['DURABLE_SERVER_WORKFLOW_VERSION']);
+        $tag = $this->resolveArtifacts(['SAMPLE_APP_SERVER_VERSION' => '3.0.9']);
+        $this->assertSame('durableworkflow/server:3.0.9', $tag['DURABLE_SERVER_IMAGE']);
+        $this->assertSame('3.0.9', $tag['DURABLE_SERVER_VERSION']);
 
-        $separate = $this->resolveArtifacts([
-            'SAMPLE_APP_WORKFLOW_VERSION' => '2.5.7',
-            'SAMPLE_APP_SERVER_WORKFLOW_VERSION' => '2.5.6',
-        ]);
-        $this->assertSame('2.5.7', $separate['DURABLE_WORKFLOW_WORKFLOW_VERSION']);
-        $this->assertSame('2.5.6', $separate['DURABLE_SERVER_WORKFLOW_VERSION']);
+        $image = $this->resolveArtifacts(['SAMPLE_APP_SERVER_IMAGE' => 'ghcr.io/durable-workflow/server:3.1.0']);
+        $this->assertSame('ghcr.io/durable-workflow/server:3.1.0', $image['DURABLE_SERVER_IMAGE']);
+        $this->assertSame('3.1.0', $image['DURABLE_SERVER_VERSION']);
+
+        foreach ([
+            ['SAMPLE_APP_SERVER_VERSION' => '2.11.8'],
+            ['SAMPLE_APP_SERVER_IMAGE' => 'durableworkflow/server:2.11.8'],
+        ] as $environment) {
+            $process = new Process([$this->path('scripts/resolve-current-artifacts.sh')], env: $environment);
+            $process->run();
+            $this->assertFalse($process->isSuccessful());
+            $this->assertStringContainsString('must be a stable native 3.x version', $process->getErrorOutput());
+        }
 
         $tuple = json_decode((string) file_get_contents($this->path('polyglot/qualified-artifact-tuple.json')), true, flags: JSON_THROW_ON_ERROR);
-        unset($tuple['serverComponents']);
-        $tuple['artifacts']['workflow'] = '2.5.6';
-        $legacyPath = tempnam(sys_get_temp_dir(), 'dw-legacy-tuple-');
-        try {
-            file_put_contents($legacyPath, json_encode($tuple, JSON_THROW_ON_ERROR));
-            $legacy = $this->resolveArtifacts(['DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $legacyPath]);
-            $this->assertSame('2.5.6', $legacy['DURABLE_SERVER_WORKFLOW_VERSION']);
-        } finally {
-            unlink($legacyPath);
+        foreach ([
+            fn (array $tuple): array => [...$tuple, 'serverComponents' => ['workflow' => '2.17.1']],
+            fn (array $tuple): array => [...$tuple, 'serverImage' => 'durableworkflow/server:3.0.2'],
+            fn (array $tuple): array => [...$tuple, 'serverImage' => 'durableworkflow/server:3.0.1@sha256:'.str_repeat('a', 64)],
+        ] as $mutate) {
+            $path = tempnam(sys_get_temp_dir(), 'dw-native-tuple-');
+            try {
+                file_put_contents($path, json_encode($mutate($tuple), JSON_THROW_ON_ERROR));
+                $process = new Process(
+                    [$this->path('scripts/resolve-current-artifacts.sh')],
+                    env: ['DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE' => $path],
+                );
+                $process->run();
+                $this->assertFalse($process->isSuccessful());
+            } finally {
+                unlink($path);
+            }
         }
     }
 
@@ -141,9 +165,21 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertArrayNotHasKey('ports', $services['server']);
         $this->assertSame(['8080'], $services['server']['expose']);
 
-        foreach (['mysql', 'redis', 'bootstrap', 'server', 'polyglot-workflow-worker', 'python-activity-worker', 'rust-activity-worker', 'demo'] as $service) {
+        foreach (['mysql', 'server', 'polyglot-workflow-worker', 'python-activity-worker', 'rust-activity-worker', 'demo'] as $service) {
             $this->assertArrayHasKey($service, $services);
         }
+
+        // Native Server 3.x is one process with in-process maintenance.
+        foreach (['bootstrap', 'scheduler', 'timer-queue'] as $service) {
+            $this->assertArrayNotHasKey($service, $services);
+        }
+        $this->assertArrayNotHasKey('command', $services['server']);
+        $this->assertSame(['mysql'], array_keys($services['server']['depends_on']));
+        $this->assertSame('token', $services['server']['environment']['DW_AUTH_DRIVER']);
+        $this->assertSame('test-token', $services['server']['environment']['DW_AUTH_TOKEN']);
+        $this->assertSame('bash', $services['server']['healthcheck']['test'][1]);
+        $this->assertStringContainsString('/api/ready', $services['server']['healthcheck']['test'][3]);
+        $this->assertSame('service', $services['waterline']['environment']['WATERLINE_BACKEND']);
 
         $this->assertSame(
             '${DURABLE_SERVER_IMAGE:?run ../scripts/resolve-current-artifacts.sh before starting polyglot compose}',
@@ -187,7 +223,8 @@ final class PolyglotComposeContractTest extends TestCase
         $this->assertStringContainsString('polyglot-workflow-worker', $script);
         $this->assertStringContainsString('python-activity-worker', $script);
         $this->assertStringContainsString('rust-activity-worker', $script);
-        $this->assertStringContainsString('pull --policy always bootstrap server', $script);
+        $this->assertStringContainsString('pull --policy always server', $script);
+        $this->assertStringNotContainsString('bootstrap', $script);
         $this->assertStringContainsString('down --volumes --remove-orphans', $script);
         $this->assertStringContainsString('run --rm --no-deps demo', $script);
         $this->assertStringNotContainsString('docs-page-release-audit', $script);

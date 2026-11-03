@@ -43,7 +43,7 @@ CREDENTIAL_VARIABLES = (
 DEFAULT_SERVICE_WAIT_SECONDS = 180
 MAX_SERVICE_WAIT_SECONDS = 600
 SERVICE_PROCESS_GUARD_SECONDS = 15
-EXPECTED_SERVICES = ("mysql", "redis", "bootstrap", "server", "waterline")
+EXPECTED_SERVICES = ("mysql", "server", "waterline")
 PRIMARY_DIAGNOSTIC_SERVICES = ("mysql", "server", "waterline")
 
 
@@ -629,12 +629,6 @@ def service_is_ready(service: str, entry: dict[str, Any]) -> bool:
         health_match = re.search(r"\(health:\s*([^)]+)\)", status, re.IGNORECASE)
         if health_match:
             health = health_match.group(1).strip().lower()
-    if service == "bootstrap":
-        try:
-            exit_code = int(entry.get("ExitCode", -1))
-        except (TypeError, ValueError):
-            exit_code = -1
-        return state == "exited" and exit_code == 0
     if health:
         return state == "running" and health == "healthy"
     return state == "running"

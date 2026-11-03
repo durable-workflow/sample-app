@@ -1,0 +1,96 @@
+name: playground journeys
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playground-journeys-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  journeys:
+    name: Playground journeys (PHP/Python/Rust) on the published tuple
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAYGROUND_COMPOSE_PROJECT: sample-app-playground-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Select authenticated dependency trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@76f333804e68725059039fd54df241d40d855cd3 # clean-trust
+        with:
+          clients: pip,python,composer,curl,git
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_mysql, redis, bcmath, gd, zip, curl, pcntl
+          coverage: none
+          tools: composer:2.10.3
+
+      - name: Verify actual Composer trust before dependency requests
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@76f333804e68725059039fd54df241d40d855cd3 # clean-trust
+
+      - name: Verify the playground Composer configuration
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@76f333804e68725059039fd54df241d40d855cd3 # clean-trust
+        with:
+          working-directory: playground/php-runtime
+
+      - name: Install the exact published tuple
+        run: |
+          while IFS= read -r assignment; do export "$assignment"; done \
+            < <(scripts/resolve-current-artifacts.sh)
+          composer install --prefer-dist --no-progress --no-interaction
+          composer install --working-dir=playground/php-runtime --prefer-dist --no-dev --no-progress --no-interaction
+          python -m pip install "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
+          curl -fsSL https://durable-workflow.com/install.sh -o "$RUNNER_TEMP/dw-install.sh"
+          mkdir -p "$RUNNER_TEMP/bin"
+          VERSION="$DURABLE_WORKFLOW_CLI_VERSION" DURABLE_WORKFLOW_INSTALL_DIR="$RUNNER_TEMP/bin" \
+            sh "$RUNNER_TEMP/dw-install.sh"
+          # The development image provides these two wrappers on PATH.
+          install -m 0755 .devcontainer/docker/with-disposable-composer-state \
+            .devcontainer/docker/with-group-shared-umask "$RUNNER_TEMP/bin/"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Check the playground toolchain
+        run: scripts/playground doctor
+
+      - name: Run each SDK journey against the published native Server
+        env:
+          PLAYGROUND_SOURCE_ROOT: ${{ runner.temp }}/playground-source
+        run: |
+          mkdir -p "$RUNNER_TEMP/playground-evidence"
+          for language in php python rust; do
+            scripts/playground "$language" \
+              --evidence "$RUNNER_TEMP/playground-evidence/$language.json"
+            scripts/playground down "$language"
+          done
+          python scripts/ci/validate-playground-evidence.py "$RUNNER_TEMP"/playground-evidence/*.json
+
+      - name: Remove playground services
+        if: always()
+        run: |
+          for language in php python rust; do scripts/playground down "$language" || true; done
+
+      - name: Retain journey evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playground-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/playground-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -12,7 +12,7 @@ SDK_UPDATES_COMPOSE_PROJECT_NAME=sample-app-sdk-updates scripts/sdk-updates.sh
 
 The checked-in tuple pins published Server, PHP/Python SDK packages and Rust
 crate versions. The command builds the existing workers, starts an isolated
-MySQL/Redis stack, and exercises each of the three client languages against
+MySQL and native Server stack, and exercises each of the three client languages against
 each of the three handler languages. These are client-to-handler directions.
 The Server's existing update experiment separately covers its embedded probe,
 PHP process boundary, Python SDK surface fixtures, validators and diagnostics.
@@ -40,12 +40,9 @@ A result error prints the current run, complete history, API diagnostics and reg
 before cleanup. These bounded observations retain the original error and help
 distinguish an undelivered task from failed replay or an absent worker.
 
-This recipe also enables Apache poll metadata in its isolated Server container.
-Failure logs include the request start, client address, method, fixed poll path,
-HTTP status, response body size, duration and connection state. The added poll
-records exclude bodies, headers and query strings. Correlate completed server
-responses with the Rust replay and callback records to establish worker progress.
-The regular Server image and other recipes keep their normal logging settings.
+The PHP 2.x recipe also enabled Apache poll metadata in its Server container.
+Native Server 3.x has no Apache front end, so failure logs contain only the
+native Server's own output alongside the Rust replay and callback records.
 
 The Python client must raise `UpdateFailed` with the handler's message and
 matching workflow, run, update and failure IDs. Repeating that failed request

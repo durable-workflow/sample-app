@@ -80,28 +80,6 @@ services:
       <<: *recovery-env
       ACTIVITY_RECOVERY_MODE: activity
 
-  recovery-timeouts:
-    init: true
-    image: "${DURABLE_SERVER_IMAGE:?resolve the published Server}"
-    command: ["sh", "-c", "while true; do php artisan activity:timeout-enforce --limit=100 || exit; sleep 1; done"]
-    environment:
-      APP_NAME: Durable Workflow Server
-      APP_ENV: testing
-      APP_KEY: "base64:dGVzdGluZy1rZXktMTIzNDU2Nzg5MDEyMzQ1Njc4OTA="
-      APP_DEBUG: "false"
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_DATABASE: durable_workflow
-      DB_USERNAME: workflow
-      DB_PASSWORD: workflow
-      REDIS_HOST: redis
-      QUEUE_CONNECTION: redis
-      CACHE_STORE: redis
-      DW_SERVER_PROCESS_CLASS: scheduler_node
-    depends_on:
-      server:
-        condition: service_healthy
-
   smoke:
     volumes:
       - "${ACTIVITY_RECOVERY_PROOF_DIR}:/proof"

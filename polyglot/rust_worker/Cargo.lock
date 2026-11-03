@@ -244,9 +244,9 @@ dependencies = [
 
 [[package]]
 name = "durable-workflow"
-version = "4.1.0"
+version = "4.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38c680c5e668ed29434f01a0edebabf17f288f9dffee29d673ad34b509a5a149"
+checksum = "cabe18df18b8c87aae089e22355c9ebfce5508de04016c91b4fad80332e26167"
 dependencies = [
  "apache-avro",
  "base64",
@@ -259,6 +259,7 @@ dependencies = [
  "icu_properties",
  "icu_provider",
  "reqwest",
+ "rustls-webpki",
  "serde",
  "serde-value",
  "serde_json",
@@ -266,6 +267,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "webpki-roots",
  "yoke-derive",
 ]
 

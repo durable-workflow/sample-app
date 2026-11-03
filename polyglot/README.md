@@ -15,7 +15,8 @@ scripts/polyglot.sh
 The command:
 
 1. reads the stable artifact versions in `qualified-artifact-tuple.json`;
-2. starts MySQL, Redis, and the published Durable Workflow Server image;
+2. starts MySQL and the published native Durable Workflow Server 3.x image,
+   which creates its schema and `default` namespace itself;
 3. builds one worker image for each first-party SDK;
 4. waits for the required workflow and activity registrations;
 5. starts `polyglot.PolyglotWorkflow`; and
@@ -57,7 +58,7 @@ different isolated project name.
 | [`namespaces/`](namespaces/README.md) | Published Rust namespace-bound clients/workers, role credentials, denied cross-namespace operations and cold recovery |
 | [`activities/`](activities/README.md) | All nine PHP/Python/Rust SDK directions with retry, activity worker SIGKILL, original deadlines, application progress heartbeats, stale claim refusal and downstream idempotency |
 | `python_workflow/` | Python-authored workflow examples |
-| `laravel/` | Waterline image used to inspect standalone runs |
+| `laravel/` | Waterline host that inspects standalone runs through the Server API |
 | `docker-compose.yml` | Complete service-mode topology |
 | `qualified-artifact-tuple.json` | Stable package and image versions used by the examples |
 
@@ -98,6 +99,11 @@ DURABLE_WORKFLOW_ARTIFACT_TUPLE_FILE=/path/to/tuple.json \
   scripts/polyglot.sh
 ```
 
-Set `SAMPLE_APP_RUST_SDK_VERSION` to override the Rust crate. Overrides must
-be stable 2.x versions. The resolver prints every effective artifact before
-Compose starts.
+Set `SAMPLE_APP_RUST_SDK_VERSION` to override the Rust crate (stable 2.x, 3.x
+or 4.x). Set `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE` to select
+another Server image; only native 3.x images are accepted, because the Compose
+topology has no PHP bootstrap job, queue worker or scheduler. The resolver
+prints every effective artifact before Compose starts.
+
+To move the Rust SDK pin, run `scripts/pin-rust-sdk.sh <version>`. It updates
+the tuple, both Cargo manifests and lock files, and the README together.

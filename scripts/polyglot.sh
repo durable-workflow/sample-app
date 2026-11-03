@@ -57,7 +57,7 @@ printf '==> PolyglotWorkflow: starting Durable Workflow Server %s and three runt
   "$DURABLE_SERVER_IMAGE"
 # Refresh the product image so the declared artifact tuple cannot resolve to a
 # stale local cache entry.
-"${compose[@]}" pull --policy always bootstrap server
+"${compose[@]}" pull --policy always server
 "${compose[@]}" pull --policy missing mysql redis
 "${compose[@]}" up \
   --detach \
