@@ -68,7 +68,14 @@ docker image inspect "$DURABLE_SERVER_IMAGE" > "$result_dir/server-image.json"
 docker image inspect "${COMPOSE_PROJECT_NAME}-php-sdk-worker:latest" "${COMPOSE_PROJECT_NAME}-rust-workflow-worker:latest" \
   "${COMPOSE_PROJECT_NAME}-smoke:latest" > "$result_dir/consumer-images.json"
 # Native images carry their release tag; they embed no Workflow package.
-[[ "$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.release.tag"}}')" == "native-$DURABLE_SERVER_VERSION" ]]
+# Releases through 3.0.2 were tagged native-X.Y.Z; later ones use plain X.Y.Z
+# (durable-workflow/server#972).
+server_release_tag="$(docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{index .Config.Labels "dev.durable-workflow.release.tag"}}')"
+if [[ "$server_release_tag" != "$DURABLE_SERVER_VERSION" && "$server_release_tag" != "native-$DURABLE_SERVER_VERSION" ]]; then
+  printf 'Server image release tag %s does not match the qualified Server %s.\n' \
+    "${server_release_tag:-<missing>}" "$DURABLE_SERVER_VERSION" >&2
+  exit 1
+fi
 
 observer() {
   "${compose[@]}" run --rm --no-deps --user "$ACTIVITY_RECOVERY_UID:$ACTIVITY_RECOVERY_GID" -T \
