@@ -57,7 +57,7 @@ jobs:
           composer install --prefer-dist --no-progress --no-interaction
           composer install --working-dir=playground/php-runtime --prefer-dist --no-dev --no-progress --no-interaction
           python -m pip install "durable-workflow==${DURABLE_WORKFLOW_PYTHON_SDK_VERSION}"
-          curl -fsSL https://durable-workflow.com/install.sh -o "$RUNNER_TEMP/dw-install.sh"
+          curl --proto "=https" --tlsv1.2 -fsSL https://durable-workflow.com/install.sh -o "$RUNNER_TEMP/dw-install.sh"
           mkdir -p "$RUNNER_TEMP/bin"
           # The installer refuses to finish unless its directory is already on PATH.
           export PATH="$RUNNER_TEMP/bin:$PATH"
