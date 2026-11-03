@@ -11,7 +11,7 @@ SDK_NAMESPACES_COMPOSE_PROJECT_NAME=sample-app-sdk-namespaces scripts/sdk-namesp
 
 Requires Docker Compose, jq and Node.js for the artifact resolver. The resolver freezes published packages and the
 published Server digest. The command builds the existing Rust and observation
-images, starts an isolated MySQL/Redis/Server stack, and removes project
+images, starts an isolated MySQL/native Server stack, and removes project
 containers, networks, volumes and fixture images on exit. Use a fresh project
 name for concurrent runs. No product source overlay or customer runtime is used.
 
@@ -91,25 +91,12 @@ are separate cases in the child-workflow and timer examples.
 
 ## Anonymous actors
 
-The final phase first requires a real Rust request without credentials to receive
-HTTP 401 from the token-authenticated Server. After all named-credential checks
-finish, it stops those workers and recreates only the disposable Server frontend
-with `DW_AUTH_DRIVER=none`. An additional Rust worker and all Rust callers send
-no authentication credentials. The same isolated backend preserves earlier
-histories, and the whole project is removed on exit.
+The final check requires a real Rust request without credentials to receive
+HTTP 401 from the token-authenticated Server.
 
-An anonymous Rust workflow executes a remote activity, reaches its declared
-signal wait, receives a signal and completes its original run once. Its query
-leaves history unchanged. Additional workflows fail deliberately or receive
-terminal cancellation after a declared wait. All caller-controlled history
-events and query audit metadata must record `{"type":"server","id":"anonymous"}`.
-The published response also labels the auth-disabled role `Admin`.
-The forged application query value remains ordinary data. Every successful
-operation still carries the forged body/header matrix, and the gateway observes
-that its actual Authorization header is absent without recording credential
-values. Null, named and forged actors cannot stand in for anonymous attribution.
-This phase checks auth-disabled self-hosting, not anonymous access to Cloud or
-namespace isolation without authentication.
+The PHP 2.x Server could also be recreated with `DW_AUTH_DRIVER=none` for an
+auth-disabled anonymous phase. Native Server 3.x refuses that driver in its
+release images, so this example no longer runs the anonymous-driver phase.
 
 ## Actor identity and forged metadata
 
@@ -141,7 +128,7 @@ Server's preserved events, with each actor displayed on the correct table row.
 
 An isolated Laravel host installs the frozen published Waterline and PHP SDK
 packages. Waterline uses its read-only remote backend with the namespace's
-rotated operator credential, then no credential in the anonymous phase.
+rotated operator credential.
 Its selected-run API must preserve the original instance, run, namespace,
 terminal status, complete timeline and command actors. The host cannot reach
 Server's database. An installed-artifact probe records the actual package

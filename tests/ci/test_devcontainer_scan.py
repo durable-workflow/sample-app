@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 DIRECTORY = pathlib.Path(__file__).resolve().parents[2] / "scripts/ci"
+RUST_SDK = "pkg:cargo/durable-workflow@" + json.loads(
+    (DIRECTORY.parents[1] / "polyglot/qualified-artifact-tuple.json").read_text())["artifacts"]["sdk-rust"]
 SPEC = importlib.util.spec_from_file_location("devcontainer_scan", DIRECTORY / "scan-devcontainer-image.py")
 SCAN = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SCAN)
@@ -147,7 +149,7 @@ class ScanPolicyTests(unittest.TestCase):
 class CargoInventoryTests(unittest.TestCase):
     def setUp(self):
         self.policy = json.loads((DIRECTORY / "devcontainer-security.json").read_text())
-        self.expected = {"pkg:cargo/durable-workflow@4.1.0", "pkg:cargo/rustls@0.23.45"}
+        self.expected = {RUST_SDK, "pkg:cargo/rustls@0.23.45"}
         self.digest = "a" * 64
         self.spdx = {"creationInfo": {"creators": [self.policy["sbom_creator"]]}, "packages": [
             {"name": key.split("/")[-1].split("@")[0], "versionInfo": key.rsplit("@", 1)[-1],
@@ -209,7 +211,7 @@ class CargoInventoryTests(unittest.TestCase):
 
     def test_source_lock_includes_the_published_sdk_and_declared_direct_dependencies(self):
         expected, digest = SCAN.expected_cargo_inventory()
-        self.assertIn("pkg:cargo/durable-workflow@4.1.0", expected)
+        self.assertIn(RUST_SDK, expected)
         self.assertIn("pkg:cargo/serde_json@1.0.150", expected)
         self.assertIn("pkg:cargo/tokio@1.47.1", expected)
         self.assertNotIn("pkg:cargo/durable-workflow-sample-playground@0.1.0", expected)

@@ -39,20 +39,26 @@ PHP workflow sends an order calculation to a Python activity, then sends that
 result to a Rust activity that produces a receipt. The final result identifies
 all three runtimes and the artifact versions used for the run.
 
-The qualified tuple records independently released packages and the Server's
-bundled components separately. `artifacts.workflow` selects the embedded
-application's Composer package. `serverComponents.workflow` identifies the
-package inside the selected Server image. Use `SAMPLE_APP_SERVER_WORKFLOW_VERSION`
-when overriding that component separately from `SAMPLE_APP_WORKFLOW_VERSION`.
-Existing explicit Workflow overrides continue selecting both unless the Server
-component override is supplied.
+The qualified tuple in
+[`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
+pins every published artifact the journeys use: native Durable Workflow Server
+3.0.2 (by image digest), Workflow 2.17.1, Waterline 2.13.2, PHP SDK 3.8.1,
+Python SDK 2.13.0, Rust SDK 4.10.3 and CLI 2.3.3. `artifacts.workflow` selects
+the embedded application's Composer package; the Composer lock must match it.
+Native Server is one process that creates its schema and `default` namespace
+and runs timers, schedules and activity timeouts itself, so the stacks start no
+bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
+`SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
+are accepted.
 
 ### Published child cancellation experiment
 
 The full child experiment runs PHP, Python and Rust workers and cancellation
 clients against the published tuple. It covers nine child completion directions,
 five directions involving Rust for failure and recovery, and cooperative
-cancellation through legacy, operator and anonymous access. Waterline connects
+cancellation through legacy and operator access. (Native Server 3.x refuses the
+auth-disabled driver in release images, so the PHP-era anonymous batch is not
+run.) Waterline connects
 to that real Server and renders each original parent/child cancellation cascade.
 Browser checks compare the actual API response with the recorded identities,
 requester, deadline, delivery and cleanup outcomes on desktop and mobile.

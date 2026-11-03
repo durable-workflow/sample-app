@@ -14,7 +14,7 @@ SDK_SEARCH_ATTRIBUTES_COMPOSE_PROJECT_NAME=sample-app-search-attributes \
 
 Requires Docker Compose and jq. The resolver selects the seven published
 artifacts. The command builds registry-only SDK consumers, starts an isolated
-MySQL/Redis/Server stack, and removes project containers, volumes, networks and
+MySQL/native Server stack, and removes project containers, volumes, networks and
 fixture images on exit. Use a unique project name for concurrent runs.
 `SDK_SEARCH_ATTRIBUTES_RESULT_DIR` optionally retains raw observations. These
 include exact attribute values and types, visibility queries, histories and

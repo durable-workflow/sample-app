@@ -7,7 +7,7 @@ if [[ "${1:-}" == --help ]]; then
     'Checks role credentials, denied reads/mutations/polls and original-run recovery after SIGKILL.' \
     'Requires authenticated history principals despite forged identity fields on real SDK requests.' \
     'Rotates operator/worker credentials during process absence and rejects the old credentials through Rust SDK calls.' \
-    'A final isolated auth-disabled phase requires anonymous Rust actors and actual credential-free requests.' \
+    'Native Server 3.x refuses the auth-disabled driver, so the PHP-era anonymous phase is not run.' \
     'Checks actual original histories through native CLI JSON/tables and the published Waterline remote API.' \
     'Requires Docker Compose and exact assignments from scripts/resolve-current-artifacts.sh.' \
     'SDK_NAMESPACES_COMPOSE_PROJECT_NAME selects an isolated project. Project resources are removed on exit.' \
@@ -61,8 +61,8 @@ done
   python -m unittest discover -s /app/scripts -p test_principal_gateway.py
 "${compose[@]}" run --rm --no-deps smoke \
   python -m unittest discover -s /app/scripts -p test_principal_operators.py
-"${compose[@]}" pull --policy always bootstrap server timer-queue
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
+"${compose[@]}" pull --policy always server
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 observer() {
   "${compose[@]}" run --rm --no-deps -e DURABLE_WORKFLOW_NAMESPACE_RUNS \
@@ -203,22 +203,6 @@ for namespace in rust-namespace-a rust-namespace-b; do operator_views "$namespac
 # Finish every authenticated assertion before reconfiguring this disposable Server.
 caller default default anonymous revoked-describe namespace-run-rust-namespace-a \
   | tee "$NAMESPACE_PROOF_DIR/anonymous-token-driver-refusal.json"
-"${compose[@]}" stop "${workers[@]}"
-export NAMESPACE_AUTH_DRIVER=none
-"${compose[@]}" up -d --wait --no-build --force-recreate server
-"${compose[@]}" up -d --wait --no-build rust-anonymous
-caller default default anonymous start namespace-run-default
-observer anonymous-park
-caller default default anonymous release namespace-run-default
-caller default default anonymous verify namespace-run-default
-observer anonymous-verify
-caller default default anonymous query namespace-run-default | tee "$NAMESPACE_PROOF_DIR/default-query.json"
-caller default default anonymous start-failure principal-failure-default | tee "$NAMESPACE_PROOF_DIR/start-principal-failure-default.json"
-caller default default anonymous start-cancel principal-cancel-default | tee "$NAMESPACE_PROOF_DIR/start-principal-cancel-default.json"
-observer anonymous-operations-park
-caller default default anonymous cancel principal-cancel-default | tee "$NAMESPACE_PROOF_DIR/default-cancel.json"
-caller default default anonymous verify-failed principal-failure-default
-caller default default anonymous verify-cancelled principal-cancel-default
-observer anonymous-operations-verify
-operator_views default
+# Native Server 3.x refuses DW_AUTH_DRIVER=none in release images, so the
+# PHP-era anonymous-driver phase cannot run against the published native Server.
 printf 'SDK namespaces pass: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

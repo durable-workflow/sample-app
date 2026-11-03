@@ -12,7 +12,7 @@ SDK_CHILDREN_COMPOSE_PROJECT_NAME=sample-app-sdk-children scripts/sdk-children.s
 ```
 
 It builds the existing PHP, Python and Rust workers from the frozen published
-tuple, starts an isolated Server/MySQL/Redis stack with its queue consumer and runs all nine successful
+tuple, starts an isolated native Server/MySQL stack and runs all nine successful
 parent/child directions. For the five directions involving Rust, it also
 requires a typed child failure matched to durable history and a cold recovery.
 The child waits for a declared signal. All three workers are SIGKILLed, then the
@@ -49,12 +49,13 @@ principals. They preserve the requester in the context. Worker inspection proves
 SIGKILL exit 137 without OOM and distinct replacement containers.
 
 The command repeats the five cancellation directions with a named runtime-token
-operator and in explicitly configured anonymous mode. All three published SDKs
+operator. (The PHP 2.x Server also ran an auth-disabled anonymous batch; native
+Server 3.x refuses `DW_AUTH_DRIVER=none` in release images, so that batch is no
+longer run.) All three published SDKs
 make original requests, selected by the parent language. Duplicate requests use
 the child language. In token mode the duplicate uses the legacy administrator,
 so it must preserve the original operator requester despite that change of
-caller. Anonymous requests carry no Authorization header and must retain the
-documented `server` / `anonymous` requester. Each batch repeats the physical
+caller. Each batch repeats the physical
 worker loss, cold cleanup replay and CLI/API cascade checks.
 
 Before the operator requests, all three SDKs must reject a worker credential
@@ -66,7 +67,7 @@ are required for both refusals.
 The same command inspects the published Waterline image through a connected
 Chromium browser after each cancellation batch has converged. Each of the five
 directions has a parent desktop, parent mobile and child desktop view in all
-three access modes, for 45 views. Actual selected-run HTTP responses and rendered
+two access modes, for 30 views. Actual selected-run HTTP responses and rendered
 pages must agree with the original Server/SDK evidence on the root request,
 requester, deadline, delivery, recovery and completed cleanup. Both original
 runs must show Cancelled under the original root budget. The browser checks

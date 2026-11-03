@@ -195,9 +195,9 @@ if (( sdk_packages_only )); then
 else
   "${compose[@]}" build smoke "${workers[@]}"
 fi
-"${compose[@]}" pull --policy always bootstrap server timer-queue
+"${compose[@]}" pull --policy always server
 if (( sdk_activity_upgrade )); then export POLYGLOT_TIMER_APPLICATION=v1; fi
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
 client() {
@@ -238,11 +238,11 @@ worker_restart() {
 server_restart() {
   local scenario="$1" downtime="$2"
   start "$scenario"
-  "${compose[@]}" stop --timeout 2 timer-queue server
+  "${compose[@]}" stop --timeout 2 server
   export DURABLE_WORKFLOW_SERVER_STOPPED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
   sleep "$downtime"
   export DURABLE_WORKFLOW_SERVER_RESTART_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-  "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue
+  "${compose[@]}" up -d --wait --wait-timeout 180 --no-build server
   client diagnose "$scenario"
   client verify "$scenario"
 }

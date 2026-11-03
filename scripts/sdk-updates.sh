@@ -18,7 +18,7 @@ export COMPOSE_PROJECT_NAME="${SDK_UPDATES_COMPOSE_PROJECT_NAME:-sample-app-sdk-
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export DURABLE_WORKFLOW_UPDATE_ID="$COMPOSE_PROJECT_NAME"
 compose=(docker compose --project-directory "$repo_root/polyglot" \
-  -f "$repo_root/polyglot/docker-compose.yml" -f "$repo_root/polyglot/docker-compose.updates.yml")
+  -f "$repo_root/polyglot/docker-compose.yml")
 workers=(php-same-workflow-worker python-workflow-worker rust-workflow-worker)
 if [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")" ]]; then
   printf 'Choose a new isolated project. %s already has containers.\n' "$COMPOSE_PROJECT_NAME" >&2
@@ -45,8 +45,8 @@ for name in DURABLE_SERVER_IMAGE DURABLE_WORKFLOW_PHP_SDK_VERSION DURABLE_WORKFL
   printf '%s=%s\n' "$name" "${!name:?resolve exact published artifacts first}"
 done
 "${compose[@]}" build smoke "${workers[@]}"
-"${compose[@]}" pull --policy always bootstrap server timer-queue
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
+"${compose[@]}" pull --policy always server
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
 observer() {

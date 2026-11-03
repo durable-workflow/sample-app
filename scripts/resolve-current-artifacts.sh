@@ -26,6 +26,7 @@ const path = process.argv[2];
 const expectedSchema = 'durable-workflow.sample-app.polyglot-qualified-artifact-tuple';
 const keys = ['server', 'cli', 'sdk-php', 'sdk-python', 'sdk-rust', 'workflow', 'waterline'];
 const stableV2 = /^2\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
+const stableServer = /^3\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
 const stablePhp = /^[23]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
 const stableRust = /^[234]\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -52,23 +53,30 @@ if (unknown.length > 0) {
 
 for (const key of keys) {
   const version = artifacts[key];
-  const supported = key === 'sdk-rust' ? stableRust : key === 'sdk-php' ? stablePhp : stableV2;
+  const supported = key === 'sdk-rust' ? stableRust : key === 'sdk-php' ? stablePhp
+    : key === 'server' ? stableServer : stableV2;
   if (typeof version !== 'string' || !supported.test(version)) {
-    const majors = key === 'sdk-rust' ? '2.x, 3.x or 4.x' : key === 'sdk-php' ? '2.x or 3.x' : '2.x';
+    const majors = key === 'sdk-rust' ? '2.x, 3.x or 4.x' : key === 'sdk-php' ? '2.x or 3.x'
+      : key === 'server' ? 'native 3.x' : '2.x';
     throw new Error(`${path} artifact ${key} must be a stable ${majors} version`);
   }
   process.stdout.write(`${key}=${version}\n`);
 }
 
-const components = tuple.serverComponents;
-if (components !== undefined && (
-  !components || typeof components !== 'object' || Array.isArray(components)
-  || Object.keys(components).some(key => key !== 'workflow')
-  || typeof components.workflow !== 'string' || !stableV2.test(components.workflow)
-)) {
-  throw new Error(`${path} serverComponents must declare a stable workflow version`);
+// Native Server 3.x is one Rust process with no embedded Workflow package, so
+// the PHP-era serverComponents declaration no longer describes the image.
+if (tuple.serverComponents !== undefined) {
+  throw new Error(`${path} serverComponents describes the PHP Server image; native 3.x has none`);
 }
-process.stdout.write(`server-workflow=${components?.workflow ?? artifacts.workflow}\n`);
+const image = tuple.serverImage;
+if (image !== undefined) {
+  const escaped = artifacts.server.replace(/[.+]/g, '\\$&');
+  const pinned = new RegExp(`^[a-z0-9][a-z0-9./-]*/server:${escaped}@sha256:[0-9a-f]{64}$`);
+  if (typeof image !== 'string' || !pinned.test(image)) {
+    throw new Error(`${path} serverImage must pin the ${artifacts.server} Server tag by digest`);
+  }
+}
+process.stdout.write(`server-image=${image ?? `durableworkflow/server:${artifacts.server}`}\n`);
 NODE
 }
 
@@ -82,7 +90,10 @@ stable_version() {
   local value="$2"
   local supported_major=2
   local supported_label=2.x
-  if [[ "$name" == SAMPLE_APP_RUST_SDK_VERSION ]]; then
+  if [[ "$name" == DURABLE_SERVER_VERSION ]]; then
+    supported_major=3
+    supported_label='native 3.x'
+  elif [[ "$name" == SAMPLE_APP_RUST_SDK_VERSION ]]; then
     supported_major='[234]'
     supported_label='2.x, 3.x or 4.x'
   elif [[ "$name" == DURABLE_WORKFLOW_PHP_SDK_VERSION ]]; then
@@ -119,7 +130,13 @@ emit() {
 }
 
 server_version="${SAMPLE_APP_SERVER_VERSION:-${tuple[server]}}"
-server_image="${SAMPLE_APP_SERVER_IMAGE:-durableworkflow/server:${server_version}}"
+if [[ -n "${SAMPLE_APP_SERVER_VERSION:-}" ]]; then
+  default_server_image="durableworkflow/server:${server_version}"
+else
+  # The tuple pins the qualified multi-architecture image index by digest.
+  default_server_image="${tuple[server-image]}"
+fi
+server_image="${SAMPLE_APP_SERVER_IMAGE:-$default_server_image}"
 if [[ -z "${SAMPLE_APP_SERVER_VERSION:-}" ]]; then
   detected_server_version="$(version_from_pin "$server_image")"
   server_version="${detected_server_version:-$server_version}"
@@ -156,15 +173,6 @@ workflow_version="$(stable_version DURABLE_WORKFLOW_WORKFLOW_VERSION \
   "${workflow_version:-${tuple[workflow]}}")"
 workflow_pin="${workflow_pin:-durable-workflow/workflow:${workflow_version}}"
 
-# Existing explicit Workflow overrides historically select the Server component
-# too. Preserve frozen cohorts unless a separate Server component is supplied.
-server_workflow_version="${tuple[server-workflow]}"
-if [[ -n "${SAMPLE_APP_WORKFLOW_PIN:-}${SAMPLE_APP_WORKFLOW_VERSION:-}" ]]; then
-  server_workflow_version="$workflow_version"
-fi
-server_workflow_version="$(stable_version SAMPLE_APP_SERVER_WORKFLOW_VERSION \
-  "${SAMPLE_APP_SERVER_WORKFLOW_VERSION:-$server_workflow_version}")"
-
 waterline_pin="${SAMPLE_APP_WATERLINE_PIN:-}"
 waterline_version="${SAMPLE_APP_WATERLINE_VERSION:-}"
 if [[ -z "$waterline_version" && -n "$waterline_pin" ]]; then
@@ -183,7 +191,6 @@ emit DURABLE_WORKFLOW_PHP_SDK_PIN "$php_pin"
 emit DURABLE_WORKFLOW_PYTHON_SDK_VERSION "$python_version"
 emit DURABLE_WORKFLOW_RUST_SDK_VERSION "$rust_version"
 emit DURABLE_WORKFLOW_WORKFLOW_VERSION "$workflow_version"
-emit DURABLE_SERVER_WORKFLOW_VERSION "$server_workflow_version"
 emit DURABLE_WORKFLOW_WORKFLOW_PIN "$workflow_pin"
 emit DURABLE_WORKFLOW_WATERLINE_VERSION "$waterline_version"
 emit DURABLE_WORKFLOW_WATERLINE_PIN "$waterline_pin"

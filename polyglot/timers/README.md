@@ -11,7 +11,7 @@ SDK_TIMERS_COMPOSE_PROJECT_NAME=sample-app-sdk-timers scripts/sdk-timers.sh
 
 Use the prepared Sample App development container with Docker Compose. The
 checked-in artifact tuple selects exact published packages and images. The
-experiment builds workers from those packages, starts a disposable MySQL/Redis
+experiment builds workers from those packages, starts a disposable MySQL and native
 Server stack, and checks forty originals: twelve each for PHP/Rust and sixteen
 for Python. The shared cases cover:
 
@@ -28,7 +28,7 @@ for Python. The shared cases cover:
   concurrent group. Every original timer must fire while all SDK workers are
   absent, then cold replay in replacement processes must complete once without
   rescheduling or changing any member or barrier metadata.
-- Server and timer-queue restart across the deadline for both single timers and
+- Native Server restart (timers fire in-process) across the deadline for both single timers and
   the concurrent group. The group case keeps them stopped for 62 seconds,
   crossing all three original deadlines. Every fire must follow restart and
   preserve the original timer and run identities before one completion.
@@ -249,12 +249,11 @@ scripts/playground doctor
 while IFS= read -r assignment; do export "$assignment"; done \
   < <(scripts/resolve-current-artifacts.sh)
 export COMPOSE_FILE=polyglot/docker-compose.yml
-export COMPOSE_PROFILES=timer-rust
 export COMPOSE_PROJECT_NAME=sample-app-rust-timer
 export DURABLE_WORKFLOW_TIMER_ID="rust-timer-$(date -u +%Y%m%d%H%M%S)"
 
 docker compose build smoke rust-workflow-worker
-docker compose up -d --wait mysql redis bootstrap server timer-queue rust-workflow-worker
+docker compose up -d --wait mysql server rust-workflow-worker
 docker compose run --rm --no-deps \
   -e DURABLE_WORKFLOW_RUNTIME_URL=http://server:8080 \
   -e DURABLE_WORKFLOW_CLIENT_TOKEN=test-token \
@@ -276,8 +275,8 @@ docker compose run --rm --no-deps \
   smoke python /app/scripts/rust_timer_restart.py verify
 ```
 
-The `timer-rust` profile starts the Server's queue worker only for this
-experiment. Record the exact Server digest, SDK versions, Sample App commit,
+Native Server fires timers in its own process; no queue worker is needed.
+Record the exact Server digest, SDK versions, Sample App commit,
 UTC start/finish, stopped/restart timestamps, result and history on the owning
 GitHub issue. Stop and remove the disposable stack after the run, including
 on failure:

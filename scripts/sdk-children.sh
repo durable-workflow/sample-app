@@ -5,7 +5,7 @@ if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-children.sh' \
     'Runs nine PHP/Python/Rust child directions and five Rust-involving typed failure, recovery and cancellation directions.' \
     'Requires original cooperative requester attribution despite forged metadata, duplicates and cold cleanup recovery.' \
-    'Also executes all three cancellation clients with operator credentials and anonymous mode, rejecting worker and missing credentials.' \
+    'Also executes all three cancellation clients with operator credentials, rejecting worker and missing credentials.' \
     'Checks actual published Waterline browser cascades for every cancellation direction and access mode.' \
     'Requires Docker Compose, Node 24, npm ci, npx playwright install --with-deps chromium,' \
     'and exact assignments from scripts/resolve-current-artifacts.sh.' \
@@ -63,8 +63,8 @@ done
   python -m unittest discover -s /app/scripts -p test_principal_gateway.py
 "${compose[@]}" run --rm --no-deps --user "$CHILD_UID:$CHILD_GID" smoke \
   python -m unittest discover -s /app/scripts -p test_cancellation_client.py
-"${compose[@]}" pull --policy always bootstrap server timer-queue cancellation-waterline
-"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server timer-queue "${workers[@]}"
+"${compose[@]}" pull --policy always server cancellation-waterline
+"${compose[@]}" up -d --wait --wait-timeout 180 --no-build server "${workers[@]}"
 "${compose[@]}" up -d --wait --no-build principal-gateway
 docker image inspect "$DURABLE_SERVER_IMAGE" --format '{{json .RepoDigests}}'
 
@@ -169,7 +169,9 @@ recover_cancellation() {
 recover_cancellation
 
 observer cancellation_credentials
-for CHILD_BATCH_MODE in runtime anonymous; do
+# Native Server 3.x refuses DW_AUTH_DRIVER=none in release images, so the
+# PHP-era anonymous batch cannot run against the published native Server.
+for CHILD_BATCH_MODE in runtime; do
   export CHILD_BATCH_MODE
   mkdir "$CHILD_PROOF_DIR/$CHILD_BATCH_MODE"
   export DURABLE_WORKFLOW_CHILD_ID="$COMPOSE_PROJECT_NAME-$CHILD_BATCH_MODE"
