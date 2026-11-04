@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "fe9d015d59f4818c403a8a7fbef371e2",
+    "content-hash": "07ed67d4f4862791d500cc1d476b32ef",
     "packages": [
         {
             "name": "apache/avro",
@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.8.1",
+            "version": "3.9.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "9350814bc2d447dc90af5504454067d2ec6843f0"
+                "reference": "22a5568dfe18340ef26177f73a973d971357c054"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/9350814bc2d447dc90af5504454067d2ec6843f0",
-                "reference": "9350814bc2d447dc90af5504454067d2ec6843f0",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/22a5568dfe18340ef26177f73a973d971357c054",
+                "reference": "22a5568dfe18340ef26177f73a973d971357c054",
                 "shasum": ""
             },
             "require": {
@@ -522,6 +522,7 @@
                 "composer-runtime-api": "^2.0",
                 "ext-json": "*",
                 "guzzlehttp/guzzle": "^7.8|^8.0",
+                "nesbot/carbon": "^2.72.6|^3.8.4",
                 "pear/http_request2": "^2.8",
                 "php": "^8.1",
                 "psr/container": "^1.1|^2.0",
@@ -545,7 +546,7 @@
             },
             "suggest": {
                 "ext-pcntl": "Required by framework console workers for graceful SIGINT and SIGTERM handling.",
-                "laravel/framework": "Enables the auto-discovered Laravel 10 through 13 service-mode bridge.",
+                "laravel/framework": "Enables the auto-discovered service-mode bridge on Laravel 10.50.4, 11.56.1, 12.69.0 or 13.30.0 and later releases of each major (the patched minimums for GHSA-f9x3-7vq9-cph6).",
                 "open-telemetry/api": "Optional worker tracing with the application's provider; supports API 1.10.1 and later in the 1.x line.",
                 "symfony/console": "Required with symfony/framework-bundle to run the Symfony 6.4, 7, and 8 worker command.",
                 "symfony/framework-bundle": "Enables the Symfony 6.4, 7, and 8 service-mode bundle."
@@ -562,10 +563,10 @@
                 },
                 "durable-workflow": {
                     "frameworks": {
-                        "laravel": "^10.0|^11.0|^12.0|^13.0",
+                        "laravel": "^10.50.4|^11.56.1|^12.69.0|^13.30.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.8.1",
+                    "product-train": "3.9.0",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -635,8 +636,8 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-03T05:58:05+00:00",
-            "published-time": "2026-11-03T05:58:52+00:00"
+            "time": "2026-11-04T01:57:38+00:00",
+            "published-time": "2026-11-04T01:57:55+00:00"
         },
         {
             "name": "durable-workflow/waterline",
