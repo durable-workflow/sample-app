@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Ai\Agents\TravelAgent;
 use App\Console\Commands\Ai;
 use App\Models\AiWorkflowMessage;
 use App\Workflows\Ai\AiWorkflow;
@@ -289,6 +290,56 @@ class AiWorkflowMessageStreamTest extends TestCase
 
             $this->assertNotNull($cancelActivity);
             $this->assertSame(ActivityStatus::Completed, $cancelActivity->status);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_multi_turn_conversation_publishes_and_receives_each_reply_once(): void
+    {
+        Queue::fake();
+        config()->set('workflows.v2.task_dispatch_mode', 'poll');
+        Carbon::setTestNow(Carbon::parse('2026-05-25 12:00:00'));
+        TravelAgent::fake(['First reply.', 'Second reply.', 'Third reply.']);
+
+        try {
+            $workflowId = 'ai-multi-turn';
+            $workflow = WorkflowStub::make(AiWorkflow::class, $workflowId);
+            $workflow->start();
+            $this->drainReadyWorkflowTasks();
+
+            // Like `app:ai`, receive each reply before sending the next
+            // message. Every later workflow task and update replays the
+            // earlier turns, including their outbox sends and receives.
+            // Receiving several turns at once can miss older replies while
+            // workflow#1011 (one cursor shared by signals and streams) is open.
+            $received = [];
+            foreach (['Plan a trip.', 'Make it Lisbon.', 'Thanks.'] as $message) {
+                $workflow->signal('send', $message);
+                $this->drainReadyWorkflowTasks();
+                $received[] = $workflow->attemptUpdate('receive')->result();
+                $this->drainReadyWorkflowTasks();
+            }
+
+            $this->assertSame(['First reply.', 'Second reply.', 'Third reply.'], $received);
+            $this->assertNull($workflow->attemptUpdate('receive')->result());
+            $this->assertTrue($workflow->refresh()->running());
+            $this->assertSame(
+                ["ai:{$workflowId}:1", "ai:{$workflowId}:2", "ai:{$workflowId}:3"],
+                WorkflowMessage::query()
+                    ->where('workflow_run_id', $workflow->runId())
+                    ->where('direction', MessageDirection::Outbound)
+                    ->where('stream_key', 'ai.assistant')
+                    ->orderBy('id')
+                    ->pluck('payload_reference')
+                    ->all(),
+            );
+            $this->assertSame(0, WorkflowMessage::query()
+                ->where('workflow_run_id', $workflow->runId())
+                ->where('direction', MessageDirection::Inbound)
+                ->where('stream_key', 'ai.assistant')
+                ->where('consume_state', '!=', MessageConsumeState::Consumed)
+                ->count());
         } finally {
             Carbon::setTestNow();
         }
