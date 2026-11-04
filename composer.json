@@ -11,7 +11,7 @@
     "require": {
         "php": "^8.4",
         "durable-workflow/ai": "dev-main",
-        "durable-workflow/sdk": "^3.9.1",
+        "durable-workflow/sdk": "^3.9.2",
         "durable-workflow/waterline": "^2.0",
         "durable-workflow/workflow": "^2.20.1",
         "laravel/ai": "^0.6.0",
