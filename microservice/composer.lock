@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e8f09bfe6ba2d5b90cfbdcebbe644d23",
+    "content-hash": "640a15ace917897880755cb8e0293ba2",
     "packages": [
         {
             "name": "apache/avro",
@@ -505,16 +505,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.9.1",
+            "version": "3.9.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "e4d77aade4ddc02eb0ba40f827709b8b4817725e"
+                "reference": "11085f0c624674a4b70d3a6fb3e83eaff3869fcb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/e4d77aade4ddc02eb0ba40f827709b8b4817725e",
-                "reference": "e4d77aade4ddc02eb0ba40f827709b8b4817725e",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/11085f0c624674a4b70d3a6fb3e83eaff3869fcb",
+                "reference": "11085f0c624674a4b70d3a6fb3e83eaff3869fcb",
                 "shasum": ""
             },
             "require": {
@@ -566,7 +566,7 @@
                         "laravel": "^10.50.4|^11.56.1|^12.69.0|^13.30.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.9.1",
+                    "product-train": "3.9.4",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -636,8 +636,8 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-04T02:37:04+00:00",
-            "published-time": "2026-11-04T02:37:27+00:00"
+            "time": "2026-11-04T05:28:03+00:00",
+            "published-time": "2026-11-04T05:28:17+00:00"
         },
         {
             "name": "durable-workflow/waterline",
