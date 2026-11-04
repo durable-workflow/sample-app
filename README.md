@@ -208,6 +208,7 @@ tests under [tests/Feature/Workflows](tests/Feature/Workflows).
 | `SubscriptionWorkflow` | Long-running lifecycle and cancellation |
 | `SandboxAgentWorkflow` | Durable sandbox provisioning, snapshots, recovery, and cleanup |
 | `PolyglotWorkflow` | PHP workflow with Python and Rust activities |
+| `ConversationWorkflow` (`php artisan app:conversation`) | Long-lived conversation: ordered signal input, fake model activity, human approval, status query, continue-as-new, and recovery after a lost worker |
 
 ## Repository map
 
