@@ -120,6 +120,46 @@ class ConversationWorkflowTest extends TestCase
         $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
     }
 
+    public function test_undecided_proposal_expires_after_five_minutes(): void
+    {
+        $workflow = $this->startConversation('conversation-approval-timeout', turnsPerRun: 10);
+
+        $workflow->signal('message', 'Refund it please');
+        $this->drain();
+        $this->assertSame('awaiting_approval', $workflow->query('status')['phase']);
+
+        Carbon::setTestNow(now()->addMinutes(4)->addSeconds(59));
+        $this->drain();
+        $this->assertSame('awaiting_approval', $workflow->query('status')['phase']);
+
+        Carbon::setTestNow(now()->addSecond());
+        $this->drain();
+
+        $status = $workflow->query('status');
+        $this->assertSame('waiting_for_input', $status['phase']);
+        $this->assertNull($status['pending_proposal']);
+        $this->assertSame(
+            ['Turn 1: I can refund the most recent order once a reviewer approves. No decision arrived in time, so nothing was changed.'],
+            $this->replies('conversation-approval-timeout'),
+        );
+        $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
+    }
+
+    public function test_conversation_ends_after_an_hour_without_input(): void
+    {
+        $workflow = $this->startConversation('conversation-idle', turnsPerRun: 10);
+
+        Carbon::setTestNow(now()->addMinutes(59)->addSeconds(59));
+        $this->drain();
+        $this->assertSame('waiting_for_input', $workflow->query('status')['phase']);
+
+        Carbon::setTestNow(now()->addSecond());
+        $this->drain();
+
+        $this->assertTrue($workflow->refresh()->completed());
+        $this->assertSame('idle_timeout', $workflow->output()['outcome']);
+    }
+
     public function test_decision_sent_with_no_pending_proposal_is_ignored(): void
     {
         $workflow = $this->startConversation('conversation-stale-decision', turnsPerRun: 10);
@@ -349,7 +389,7 @@ class ConversationWorkflowTest extends TestCase
     private function startConversation(string $id, int $turnsPerRun): WorkflowStub
     {
         $workflow = WorkflowStub::make(ConversationWorkflow::class, $id);
-        $workflow->start([], $turnsPerRun, 3600);
+        $workflow->start([], $turnsPerRun);
         $this->drain();
 
         return $workflow;

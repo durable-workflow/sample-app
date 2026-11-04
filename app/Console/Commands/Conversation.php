@@ -24,7 +24,7 @@ class Conversation extends Command
     {
         $turnsPerRun = max(1, (int) $this->option('turns-per-run'));
         $workflow = WorkflowStub::make(ConversationWorkflow::class);
-        $workflow->start([], $turnsPerRun, 3600);
+        $workflow->start([], $turnsPerRun);
 
         $this->info(sprintf('Conversation %s started. Run a queue worker to process it.', $workflow->id()));
 
