@@ -43,7 +43,7 @@ The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
 3.0.5 (by image digest), Workflow 2.20.1, Waterline 2.13.2, PHP SDK 3.9.1,
-Python SDK 2.13.0, Rust SDK 4.10.3 and CLI 2.3.3. `artifacts.workflow` selects
+Python SDK 2.13.2, Rust SDK 4.10.3 and CLI 2.3.3. `artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
 and runs timers, schedules and activity timeouts itself, so the stacks start no

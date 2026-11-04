@@ -6,7 +6,7 @@
   "artifacts": {
     "cli": "2.3.3",
     "sdk-php": "3.9.1",
-    "sdk-python": "2.13.0",
+    "sdk-python": "2.13.2",
     "sdk-rust": "4.10.3",
     "server": "3.0.5",
     "waterline": "2.13.2",
