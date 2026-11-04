@@ -43,7 +43,7 @@ The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
 3.0.5 (by image digest), Workflow 2.20.1, Waterline 2.13.2, PHP SDK 3.9.4,
-Python SDK 2.14.0, Rust SDK 4.11.2 and CLI 2.3.3. `artifacts.workflow` selects
+Python SDK 2.14.1, Rust SDK 4.11.2 and CLI 2.3.3. `artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
 and runs timers, schedules and activity timeouts itself, so the stacks start no
@@ -51,10 +51,15 @@ bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
 `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
 are accepted.
 
+Upgrade Python workers sharing a task queue together. Once v2 condition waits
+are recorded, keep every worker on SDK 2.14.1 or newer. Older versions cannot
+replay those waits. See the [Python SDK compatibility notes](https://github.com/durable-workflow/sdk-python/blob/2.14.1/CHANGELOG.md)
+for the remaining limits on legacy histories and predicate identity.
+
 Rust SDK 4.11.2 preserves the original deadline of standalone condition waits
-after signals that leave the predicate false. Once a history records a reopened wait with a shorter
-timeout, keep that run on fixed workers. SDK 4.11.1 and earlier refuse that
-history. See the [Rust SDK compatibility notes](https://github.com/durable-workflow/sdk-rust/blob/4.11.2/CHANGELOG.md).
+after signals that leave the predicate false. Once a history records a reopened
+wait with a shorter timeout, keep that run on fixed workers. SDK 4.11.1 and
+earlier refuse that history. See the [Rust SDK compatibility notes](https://github.com/durable-workflow/sdk-rust/blob/4.11.2/CHANGELOG.md).
 
 ### Conversation on a PHP service-mode worker
 
