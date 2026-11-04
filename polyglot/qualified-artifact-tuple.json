@@ -5,7 +5,7 @@
   "serverImage": "durableworkflow/server:3.0.4@sha256:013010476b78f37038ac09d9498a95cdbf5ae7896111c321b2d4a2aac2f81f6b",
   "artifacts": {
     "cli": "2.3.3",
-    "sdk-php": "3.9.0",
+    "sdk-php": "3.9.1",
     "sdk-python": "2.13.0",
     "sdk-rust": "4.10.3",
     "server": "3.0.4",
