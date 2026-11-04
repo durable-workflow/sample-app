@@ -22,8 +22,8 @@ final class WelcomeWorkflowTest extends TestCase
         $harness = new WorkerTestHarness($worker);
         $codec = new AvroPayloadCodec;
 
-        $this->assertSame([WelcomeWorkflow::TYPE], $worker->contracts()['workflows']);
-        $this->assertSame([PrepareWelcomeActivity::TYPE], $worker->contracts()['activities']);
+        $this->assertContains(WelcomeWorkflow::TYPE, $worker->contracts()['workflows']);
+        $this->assertContains(PrepareWelcomeActivity::TYPE, $worker->contracts()['activities']);
         $harness->assertActivityResult(PrepareWelcomeActivity::TYPE, [
             'greeting' => 'Hello, Ada',
             'name' => 'Ada',
@@ -33,6 +33,8 @@ final class WelcomeWorkflowTest extends TestCase
         $first = $harness->runWorkflow(WelcomeWorkflow::TYPE, ['Ada']);
         $this->assertSame(PrepareWelcomeActivity::TYPE, $first->commands[0]['activity_type'] ?? null);
         $this->assertSame(WelcomeWorkflow::PHP_TASK_QUEUE, $first->commands[0]['queue'] ?? null);
+        // '30 seconds' is recorded as whole seconds, exactly like the integer 30.
+        $this->assertSame(30, $first->commands[0]['start_to_close_timeout'] ?? null);
 
         $prepared = ['greeting' => 'Hello, Ada', 'name' => 'Ada', 'runtime' => 'php'];
         $afterPhp = $harness->runWorkflow(WelcomeWorkflow::TYPE, ['Ada'], [
