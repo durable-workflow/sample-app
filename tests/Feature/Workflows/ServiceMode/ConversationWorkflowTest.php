@@ -9,6 +9,7 @@ use App\Workflows\Conversation\ConversationWorkflow as EmbeddedConversationWorkf
 use App\Workflows\ServiceMode\Conversation\ConversationActivities;
 use App\Workflows\ServiceMode\Conversation\ConversationWorkflow;
 use App\Workflows\ServiceMode\WelcomeWorkflow;
+use DateTimeImmutable;
 use DurableWorkflow\Bridge\Laravel\WorkerFactory;
 use DurableWorkflow\Client;
 use DurableWorkflow\Codec\AvroPayloadCodec;
@@ -49,6 +50,8 @@ final class ConversationWorkflowTest extends TestCase
     private array $input = [];
 
     private int $nextSequence = 1;
+
+    private DateTimeImmutable $clock;
 
     /** @var array{type: string, value: mixed}|null */
     private ?array $closed = null;
@@ -163,6 +166,71 @@ final class ConversationWorkflowTest extends TestCase
         $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
     }
 
+    public function test_a_wrong_decision_keeps_the_five_minute_approval_deadline(): void
+    {
+        $this->start([]);
+        $this->signal('message', 'Please refund my order');
+        $this->assertSame(300, $this->lastEvent('ConditionWaitOpened')['timeout_seconds']);
+
+        // Any signal wakes the open wait. The predicate is still false, so the
+        // worker reopens the wait with the time left, not another five minutes.
+        $this->advance(120);
+        $this->signal('decision', 'not-this-proposal', true, 'Stale');
+        $reopened = $this->lastEvent('ConditionWaitOpened');
+        $this->assertSame('decision-1', $reopened['condition_key']);
+        $this->assertSame(180, $reopened['timeout_seconds']);
+
+        $this->advance(150);
+        $this->signal('decision', 'still-not-this-proposal', true, 'Stale');
+        $this->assertSame(30, $this->lastEvent('ConditionWaitOpened')['timeout_seconds']);
+
+        $this->advance(30);
+        $this->timeOutOpenWait();
+
+        $this->assertSame(
+            ['Turn 1: I can refund the most recent order once a reviewer approves. No decision arrived in time, so nothing was changed.'],
+            $this->replies(),
+        );
+    }
+
+    public function test_an_orphaned_duplicate_wait_timing_out_does_not_break_replay(): void
+    {
+        $this->start([]);
+        $this->signal('message', 'Please refund my order');
+        $orphan = $this->lastEvent('ConditionWaitOpened');
+
+        // A second queued workflow task replays to the open wait and sends it
+        // again. Native Server 3.0.x opens another wait and leaves the first
+        // one, with its timer, unresolved (sdk-php#283).
+        $this->duplicateOpen();
+        $this->assertNotSame($orphan['sequence'], $this->lastEvent('ConditionWaitOpened')['sequence']);
+
+        $this->advance(120);
+        $this->signal('decision', 'not-this-proposal', true, 'Stale');
+        $this->assertSame(180, $this->lastEvent('ConditionWaitOpened')['timeout_seconds']);
+
+        // The orphan's timer fires at its own five minutes. Replay must keep
+        // treating it as the same logical wait instead of failing.
+        $this->advance(180);
+        $this->record('TimerFired', [
+            'sequence' => $orphan['sequence'],
+            'timer_kind' => 'condition_timeout',
+            'condition_key' => $orphan['condition_key'],
+            'condition_wait_id' => $orphan['condition_wait_id'],
+            'condition_definition_fingerprint' => $orphan['condition_definition_fingerprint'],
+            'delay_seconds' => 300,
+        ]);
+        $this->process();
+        $this->assertNull($this->closed);
+
+        $this->timeOutOpenWait();
+
+        $this->assertSame(
+            ['Turn 1: I can refund the most recent order once a reviewer approves. No decision arrived in time, so nothing was changed.'],
+            $this->replies(),
+        );
+    }
+
     public function test_conversation_ends_after_the_inactivity_timeout(): void
     {
         $this->start([]);
@@ -227,6 +295,7 @@ final class ConversationWorkflowTest extends TestCase
     {
         $this->history = [];
         $this->nextSequence = 1;
+        $this->clock = new DateTimeImmutable('2026-11-04T02:36:05.295+00:00');
         $this->closed = null;
         $this->input = $input;
         $this->process();
@@ -235,7 +304,29 @@ final class ConversationWorkflowTest extends TestCase
     private function signal(string $name, mixed ...$arguments): void
     {
         $this->record('SignalReceived', ['signal_name' => $name, 'value' => $this->codec->envelope($arguments)]);
-        $this->process();
+        $this->process(woken: true);
+    }
+
+    /**
+     * Replays the history again with nothing new, as a second queued task
+     * would, and records the wait it sends as a new open.
+     */
+    private function duplicateOpen(): void
+    {
+        $commands = $this->harness->runWorkflow(
+            ConversationWorkflow::TYPE,
+            $this->input,
+            $this->history,
+            ['workflow_id' => self::WORKFLOW_ID, 'run_id' => self::RUN_ID],
+        )->commands;
+
+        $this->assertSame('open_condition_wait', $commands[0]['type'] ?? null);
+        $this->apply($commands[0]);
+    }
+
+    private function advance(int $seconds): void
+    {
+        $this->clock = $this->clock->modify("+{$seconds} seconds");
     }
 
     private function timeOutOpenWait(): void
@@ -248,8 +339,12 @@ final class ConversationWorkflowTest extends TestCase
 
     /**
      * Runs workflow tasks until the workflow waits or closes.
+     *
+     * After a signal, a worker whose predicate is still false sends the open
+     * wait again. Native Server then records the old wait satisfied and opens
+     * a new one with the timeout the worker sent.
      */
-    private function process(): void
+    private function process(bool $woken = false): void
     {
         for ($task = 0; $task < 50 && $this->closed === null; $task++) {
             $commands = $this->harness->runWorkflow(
@@ -266,6 +361,11 @@ final class ConversationWorkflowTest extends TestCase
                     && $commands[0]['condition_key'] === $wait['condition_key'];
 
                 if ($stillWaiting) {
+                    if ($woken) {
+                        $this->record('ConditionWaitSatisfied', ['sequence' => $wait['sequence'], 'condition_wait_id' => $wait['condition_wait_id']]);
+                        $this->apply($commands[0]);
+                    }
+
                     return;
                 }
 
@@ -333,7 +433,11 @@ final class ConversationWorkflowTest extends TestCase
      */
     private function record(string $type, array $payload): void
     {
-        $this->history[] = ['event_type' => $type, 'payload' => $payload];
+        $this->history[] = [
+            'event_type' => $type,
+            'timestamp' => $this->clock->format('Y-m-d\\TH:i:s.uP'),
+            'payload' => $payload,
+        ];
     }
 
     /**
