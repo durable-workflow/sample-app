@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Workflows\ServiceMode\Conversation\ConversationActivities;
+use App\Workflows\ServiceMode\Conversation\ConversationWorkflow;
 use App\Workflows\ServiceMode\PrepareWelcomeActivity;
 use App\Workflows\ServiceMode\WelcomeWorkflow;
 
@@ -14,6 +16,8 @@ return [
     'handlers' => [
         WelcomeWorkflow::class,
         PrepareWelcomeActivity::class,
+        ConversationWorkflow::class,
+        ConversationActivities::class,
     ],
 
     'poll_timeout_seconds' => 5,
