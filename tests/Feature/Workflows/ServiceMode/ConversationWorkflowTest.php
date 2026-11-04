@@ -193,6 +193,44 @@ final class ConversationWorkflowTest extends TestCase
         );
     }
 
+    public function test_an_orphaned_duplicate_wait_timing_out_does_not_break_replay(): void
+    {
+        $this->start([]);
+        $this->signal('message', 'Please refund my order');
+        $orphan = $this->lastEvent('ConditionWaitOpened');
+
+        // A second queued workflow task replays to the open wait and sends it
+        // again. Native Server 3.0.x opens another wait and leaves the first
+        // one, with its timer, unresolved (sdk-php#283).
+        $this->duplicateOpen();
+        $this->assertNotSame($orphan['sequence'], $this->lastEvent('ConditionWaitOpened')['sequence']);
+
+        $this->advance(120);
+        $this->signal('decision', 'not-this-proposal', true, 'Stale');
+        $this->assertSame(180, $this->lastEvent('ConditionWaitOpened')['timeout_seconds']);
+
+        // The orphan's timer fires at its own five minutes. Replay must keep
+        // treating it as the same logical wait instead of failing.
+        $this->advance(180);
+        $this->record('TimerFired', [
+            'sequence' => $orphan['sequence'],
+            'timer_kind' => 'condition_timeout',
+            'condition_key' => $orphan['condition_key'],
+            'condition_wait_id' => $orphan['condition_wait_id'],
+            'condition_definition_fingerprint' => $orphan['condition_definition_fingerprint'],
+            'delay_seconds' => 300,
+        ]);
+        $this->process();
+        $this->assertNull($this->closed);
+
+        $this->timeOutOpenWait();
+
+        $this->assertSame(
+            ['Turn 1: I can refund the most recent order once a reviewer approves. No decision arrived in time, so nothing was changed.'],
+            $this->replies(),
+        );
+    }
+
     public function test_conversation_ends_after_the_inactivity_timeout(): void
     {
         $this->start([]);
@@ -267,6 +305,23 @@ final class ConversationWorkflowTest extends TestCase
     {
         $this->record('SignalReceived', ['signal_name' => $name, 'value' => $this->codec->envelope($arguments)]);
         $this->process(woken: true);
+    }
+
+    /**
+     * Replays the history again with nothing new, as a second queued task
+     * would, and records the wait it sends as a new open.
+     */
+    private function duplicateOpen(): void
+    {
+        $commands = $this->harness->runWorkflow(
+            ConversationWorkflow::TYPE,
+            $this->input,
+            $this->history,
+            ['workflow_id' => self::WORKFLOW_ID, 'run_id' => self::RUN_ID],
+        )->commands;
+
+        $this->assertSame('open_condition_wait', $commands[0]['type'] ?? null);
+        $this->apply($commands[0]);
     }
 
     private function advance(int $seconds): void
