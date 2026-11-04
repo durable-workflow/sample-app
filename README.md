@@ -42,7 +42,7 @@ all three runtimes and the artifact versions used for the run.
 The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
-3.0.5 (by image digest), Workflow 2.20.2, Waterline 2.13.2, PHP SDK 3.9.4,
+3.0.5 (by image digest), Workflow 2.20.3, Waterline 2.13.2, PHP SDK 3.9.4,
 Python SDK 2.14.1, Rust SDK 4.11.2 and CLI 2.3.3. `artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
@@ -60,6 +60,12 @@ Rust SDK 4.11.2 preserves the original deadline of standalone condition waits
 after signals that leave the predicate false. Once a history records a reopened
 wait with a shorter timeout, keep that run on fixed workers. SDK 4.11.1 and
 earlier refuse that history. See the [Rust SDK compatibility notes](https://github.com/durable-workflow/sdk-rust/blob/4.11.2/CHANGELOG.md).
+
+Workflow 2.20.3 can expose older pending stream messages that earlier workers
+left hidden. Receives on a stream kept in a workflow property now record at the
+current step. Earlier versions can replay these new histories differently after
+a rollback. See the [Workflow compatibility notes](https://github.com/durable-workflow/workflow/blob/2.20.3/CHANGELOG.md),
+including the remaining query-handler limitation [#1024](https://github.com/durable-workflow/workflow/issues/1024).
 
 ### Conversation on a PHP service-mode worker
 
