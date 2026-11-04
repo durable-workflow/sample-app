@@ -85,7 +85,7 @@ class Conversation extends Command
                 : $this->confirm(sprintf('Approve "%s"?', $proposal['description']));
 
             $this->line(sprintf('<comment>Reviewer:</comment> %s', $approved ? 'approve' : 'decline'));
-            $workflow->signal('decision', $approved, 'artisan');
+            $workflow->signal('decision', $proposal['id'], $approved, 'artisan');
 
             $this->waitUntil(fn (): bool => $this->status($workflow)['phase'] !== 'awaiting_approval');
         }

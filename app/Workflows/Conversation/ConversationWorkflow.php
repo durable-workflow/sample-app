@@ -11,6 +11,8 @@ use Workflow\V2\Workflow;
 use function Workflow\V2\activity;
 use function Workflow\V2\await;
 use function Workflow\V2\continueAsNew;
+use function Workflow\V2\now;
+use function Workflow\V2\uuid4;
 
 /**
  * A long-lived conversation that survives worker replacement and bounds its
@@ -20,8 +22,9 @@ use function Workflow\V2\continueAsNew;
  *   in the order the signals were accepted.
  * - Model work runs in an activity, so a replay reuses the recorded result
  *   instead of calling the model again.
- * - A proposed side effect waits for a human `decision` signal before an
- *   activity performs it.
+ * - A proposed side effect waits for a human `decision` signal that names the
+ *   proposal's ID before an activity performs it. Decisions for any other
+ *   proposal, including stale, early, duplicate or retried ones, are ignored.
  * - Each reply is written to external storage by an activity. History keeps
  *   only the returned payload reference, and the `status` query exposes the
  *   latest one.
@@ -33,6 +36,7 @@ use function Workflow\V2\continueAsNew;
     ['name' => 'text', 'type' => 'string'],
 ])]
 #[Signal('decision', [
+    ['name' => 'proposalId', 'type' => 'string'],
     ['name' => 'approved', 'type' => 'bool'],
     ['name' => 'reviewer', 'type' => 'string'],
 ])]
@@ -49,7 +53,7 @@ class ConversationWorkflow extends Workflow
      *     turns: int,
      *     summary: string,
      *     last_reply_reference: string|null,
-     *     pending_proposal: array{action: string, description: string, turn: int}|null,
+     *     pending_proposal: array{id: string, action: string, description: string, turn: int}|null,
      *     outcome: string|null
      * }
      */
@@ -65,6 +69,8 @@ class ConversationWorkflow extends Workflow
     private string $phase = 'starting';
 
     private int $turnsThisRun = 0;
+
+    private int $ignoredDecisions = 0;
 
     public static function replyReference(string $workflowId, int $turn): string
     {
@@ -91,6 +97,7 @@ class ConversationWorkflow extends Workflow
             'turns_this_run' => $this->turnsThisRun,
             'summary' => $this->state['summary'],
             'pending_proposal' => $this->state['pending_proposal'],
+            'ignored_decisions' => $this->ignoredDecisions,
             'last_reply_reference' => $this->state['last_reply_reference'],
             'outcome' => $this->state['outcome'],
         ];
@@ -152,21 +159,43 @@ class ConversationWorkflow extends Workflow
     }
 
     /**
+     * Waits for a decision on this proposal only.
+     *
+     * Signals are buffered by name, so a `decision` sent before this proposal
+     * existed, sent twice, or retried after an uncertain response would
+     * otherwise answer whichever proposal waits next. The proposal ID is
+     * recorded in history and reported by the `status` query; a decision must
+     * repeat it to count.
+     *
      * @param  array{action: string, description: string, turn: int}  $proposal
      */
     private function awaitApproval(array $proposal, int $inactivitySeconds): string
     {
+        $proposal = ['id' => (string) uuid4()] + $proposal;
         $this->state['pending_proposal'] = $proposal;
         $this->phase = 'awaiting_approval';
+        $deadline = now()->getTimestamp() + $inactivitySeconds;
 
-        $decision = await('decision', $inactivitySeconds);
-        $this->state['pending_proposal'] = null;
+        while (true) {
+            $remaining = $deadline - now()->getTimestamp();
+            $decision = $remaining > 0 ? await('decision', $remaining) : null;
 
-        if ($decision === null) {
-            return 'No decision arrived in time, so nothing was changed.';
+            if ($decision === null) {
+                $this->state['pending_proposal'] = null;
+
+                return 'No decision arrived in time, so nothing was changed.';
+            }
+
+            [$proposalId, $approved, $reviewer] = array_values((array) $decision);
+
+            if ($proposalId === $proposal['id']) {
+                break;
+            }
+
+            $this->ignoredDecisions++;
         }
 
-        [$approved, $reviewer] = array_values((array) $decision);
+        $this->state['pending_proposal'] = null;
 
         if (! $approved) {
             return sprintf('%s declined it, so nothing was changed.', $reviewer);

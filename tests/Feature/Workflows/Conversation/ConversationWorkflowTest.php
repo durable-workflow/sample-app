@@ -67,10 +67,15 @@ class ConversationWorkflowTest extends TestCase
         $status = $workflow->query('status');
         $this->assertSame('awaiting_approval', $status['phase']);
         $this->assertSame(1, $status['turns']);
-        $this->assertSame(['action' => 'refund', 'description' => 'Refund the most recent order', 'turn' => 2], $status['pending_proposal']);
+        $proposalId = $status['pending_proposal']['id'];
+        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', $proposalId);
+        $this->assertSame(
+            ['id' => $proposalId, 'action' => 'refund', 'description' => 'Refund the most recent order', 'turn' => 2],
+            $status['pending_proposal'],
+        );
         $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
 
-        $workflow->signal('decision', true, 'Taylor');
+        $workflow->signal('decision', $proposalId, true, 'Taylor');
         $this->drain();
 
         $status = $workflow->query('status');
@@ -105,7 +110,7 @@ class ConversationWorkflowTest extends TestCase
 
         $workflow->signal('message', 'Refund it please');
         $this->drain();
-        $workflow->signal('decision', false, 'Morgan');
+        $workflow->signal('decision', $this->pendingProposalId($workflow), false, 'Morgan');
         $this->drain();
 
         $this->assertSame(
@@ -113,6 +118,55 @@ class ConversationWorkflowTest extends TestCase
             $this->replies('conversation-declined'),
         );
         $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
+    }
+
+    public function test_decision_sent_with_no_pending_proposal_is_ignored(): void
+    {
+        $workflow = $this->startConversation('conversation-stale-decision', turnsPerRun: 10);
+
+        // An approval arrives while nothing is proposed, e.g. a late retry of
+        // an earlier decision. It must not approve the next proposal.
+        $workflow->signal('decision', 'not-a-pending-proposal', true, 'Stale');
+        $workflow->signal('message', 'Please refund my order');
+        $this->drain();
+
+        $status = $workflow->query('status');
+        $this->assertSame('awaiting_approval', $status['phase']);
+        $this->assertSame(1, $status['ignored_decisions']);
+        $this->assertSame(0, ConversationRecord::query()->where('kind', 'action')->count());
+
+        $workflow->signal('decision', $status['pending_proposal']['id'], true, 'Taylor');
+        $this->drain();
+
+        $this->assertSame(
+            ['Turn 1: I can refund the most recent order once a reviewer approves. Taylor approved it. Receipt: conversation:conversation-stale-decision:1:action.'],
+            $this->replies('conversation-stale-decision'),
+        );
+        $this->assertStringContainsString('"approved_by":"Taylor"', ConversationRecord::query()->where('kind', 'action')->sole()->content);
+    }
+
+    public function test_duplicate_decision_does_not_approve_the_next_proposal(): void
+    {
+        $workflow = $this->startConversation('conversation-duplicate-decision', turnsPerRun: 10);
+
+        $workflow->signal('message', 'Refund the first order');
+        $this->drain();
+        $firstProposalId = $this->pendingProposalId($workflow);
+
+        // The reviewer's approval is sent twice, e.g. retried after a lost response.
+        $workflow->signal('decision', $firstProposalId, true, 'Taylor');
+        $workflow->signal('decision', $firstProposalId, true, 'Taylor');
+        $this->drain();
+
+        $workflow->signal('message', 'Refund the second order too');
+        $this->drain();
+
+        $status = $workflow->query('status');
+        $this->assertSame('awaiting_approval', $status['phase']);
+        $this->assertSame(2, $status['pending_proposal']['turn']);
+        $this->assertNotSame($firstProposalId, $status['pending_proposal']['id']);
+        $this->assertSame(1, $status['ignored_decisions']);
+        $this->assertSame(1, ConversationRecord::query()->where('kind', 'action')->count());
     }
 
     public function test_continue_as_new_carries_explicit_state_and_unapplied_input(): void
@@ -254,6 +308,14 @@ class ConversationWorkflowTest extends TestCase
         // The retry ran the activity again; the reference keeps one reply.
         $this->assertSame(['Turn 1: you said "Hello".'], $this->replies('conversation-lost-reply'));
         $this->assertSame(1, $workflow->query('status')['turns']);
+    }
+
+    private function pendingProposalId(WorkflowStub $workflow): string
+    {
+        $proposal = $workflow->query('status')['pending_proposal'];
+        $this->assertIsArray($proposal);
+
+        return $proposal['id'];
     }
 
     private function startConversation(string $id, int $turnsPerRun): WorkflowStub

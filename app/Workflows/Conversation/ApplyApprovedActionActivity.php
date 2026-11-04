@@ -20,7 +20,7 @@ class ApplyApprovedActionActivity extends Activity
     public int $tries = 3;
 
     /**
-     * @param  array{action: string, description: string, turn: int}  $proposal
+     * @param  array{id: string, action: string, description: string, turn: int}  $proposal
      */
     public function handle(array $proposal, string $reviewer): string
     {
