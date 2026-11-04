@@ -19,7 +19,7 @@ final class PlaygroundWorkflow
         $activity = $context->activity(
             Scenario::ACTIVITY_TYPE,
             [$input],
-            ['start_to_close_timeout' => 30],
+            ['start_to_close_timeout' => '30 seconds'],
         );
 
         return [

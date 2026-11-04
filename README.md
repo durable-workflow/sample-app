@@ -42,7 +42,7 @@ all three runtimes and the artifact versions used for the run.
 The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
-3.0.4 (by image digest), Workflow 2.20.1, Waterline 2.13.2, PHP SDK 3.8.1,
+3.0.4 (by image digest), Workflow 2.20.1, Waterline 2.13.2, PHP SDK 3.9.1,
 Python SDK 2.13.0, Rust SDK 4.10.3 and CLI 2.3.3. `artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
@@ -50,6 +50,35 @@ and runs timers, schedules and activity timeouts itself, so the stacks start no
 bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
 `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
 are accepted.
+
+### Conversation on a PHP service-mode worker
+
+`App\Workflows\ServiceMode\Conversation\ConversationWorkflow` is the
+[embedded conversation](#example-index) written for the PHP SDK's Laravel
+bridge. It has the same turns, approval rule and continue-as-new, and the same
+durations, written as strings:
+
+- the conversation ends after `'1 hour'` without a message;
+- a proposal nobody decides within `'5 minutes'` changes nothing;
+- each activity has a `'30 seconds'` start-to-close timeout.
+
+The SDK records each string as whole seconds, so `'5 minutes'` and `300`
+produce the same history. Point the application at a Server, then run a worker
+and the scripted conversation in two terminals:
+
+```bash
+export DURABLE_WORKFLOW_RUNTIME_URL=http://localhost:8080
+
+DURABLE_WORKFLOW_PROCESS_ROLE=worker DURABLE_WORKFLOW_PROCESS_TOKEN='<worker credential>' \
+  php artisan durable-workflow:worker
+
+DURABLE_WORKFLOW_PROCESS_ROLE=client DURABLE_WORKFLOW_PROCESS_TOKEN='<client credential>' \
+  php artisan app:service-mode-conversation --turns-per-run=2 \
+    --message='Hello there' --message='Please refund my order' --message='Thanks'
+```
+
+Both processes use the application database for reply records, so run
+`php artisan migrate` first. Without `--message` the command is interactive.
 
 ### Published child cancellation experiment
 
@@ -209,6 +238,7 @@ tests under [tests/Feature/Workflows](tests/Feature/Workflows).
 | `SandboxAgentWorkflow` | Durable sandbox provisioning, snapshots, recovery, and cleanup |
 | `PolyglotWorkflow` | PHP workflow with Python and Rust activities |
 | `ConversationWorkflow` (`php artisan app:conversation`) | Long-lived conversation: ordered signal input, fake model activity, human approval, status query, continue-as-new, and recovery after a lost worker |
+| Service-mode `ConversationWorkflow` (`php artisan app:service-mode-conversation`) | The same conversation on a PHP SDK worker, with `'1 hour'` and `'5 minutes'` written as friendly durations |
 
 ## Repository map
 

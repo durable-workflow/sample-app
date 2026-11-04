@@ -21,7 +21,7 @@ final class WelcomeWorkflow
         $prepared = $context->activity(
             PrepareWelcomeActivity::TYPE,
             [$name],
-            ['start_to_close_timeout' => 30],
+            ['start_to_close_timeout' => '30 seconds'],
         );
 
         $decorated = $context->activity(
@@ -29,7 +29,7 @@ final class WelcomeWorkflow
             [$prepared],
             [
                 'queue' => self::PYTHON_TASK_QUEUE,
-                'start_to_close_timeout' => 30,
+                'start_to_close_timeout' => '30 seconds',
             ],
         );
 

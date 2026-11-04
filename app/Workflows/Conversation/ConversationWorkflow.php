@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Workflows\Conversation;
 
+use Carbon\CarbonInterval;
 use Workflow\QueryMethod;
 use Workflow\V2\Attributes\Signal;
 use Workflow\V2\Workflow;
@@ -25,6 +26,11 @@ use function Workflow\V2\uuid4;
  * - A proposed side effect waits for a human `decision` signal that names the
  *   proposal's ID before an activity performs it. Decisions for any other
  *   proposal, including stale, early, duplicate or retried ones, are ignored.
+ * - The conversation ends after `$inactivityTimeout` ('1 hour') without a
+ *   message. A proposal nobody decides within `$approvalTimeout`
+ *   ('5 minutes') changes nothing. The service-mode
+ *   `App\Workflows\ServiceMode\Conversation\ConversationWorkflow` uses the
+ *   same durations.
  * - Each reply is written to external storage by an activity. History keeps
  *   only the returned payload reference, and the `status` query exposes the
  *   latest one.
@@ -74,12 +80,12 @@ class ConversationWorkflow extends Workflow
 
     public static function replyReference(string $workflowId, int $turn): string
     {
-        return sprintf('conversation:%s:%d:reply', $workflowId, $turn);
+        return ConversationStore::replyReference($workflowId, $turn);
     }
 
     public static function actionReference(string $workflowId, int $turn): string
     {
-        return sprintf('conversation:%s:%d:action', $workflowId, $turn);
+        return ConversationStore::actionReference($workflowId, $turn);
     }
 
     /**
@@ -107,8 +113,12 @@ class ConversationWorkflow extends Workflow
      * @param  array<string, mixed>  $state  state handed over by continue-as-new
      * @return array{outcome: string|null, generation: int, turns: int, last_reply_reference: string|null}
      */
-    public function handle(array $state = [], int $turnsPerRun = 3, int $inactivitySeconds = 3600): array
-    {
+    public function handle(
+        array $state = [],
+        int $turnsPerRun = 3,
+        string $inactivityTimeout = '1 hour',
+        string $approvalTimeout = '5 minutes',
+    ): array {
         $this->state = array_replace($this->state, $state);
 
         while (true) {
@@ -118,12 +128,13 @@ class ConversationWorkflow extends Workflow
                 return continueAsNew(
                     array_replace($this->state, ['generation' => $this->state['generation'] + 1]),
                     $turnsPerRun,
-                    $inactivitySeconds,
+                    $inactivityTimeout,
+                    $approvalTimeout,
                 );
             }
 
             $this->phase = 'waiting_for_input';
-            $text = await('message', $inactivitySeconds);
+            $text = await('message', $inactivityTimeout);
 
             if ($text === null) {
                 return $this->finish('idle_timeout');
@@ -133,11 +144,11 @@ class ConversationWorkflow extends Workflow
                 return $this->finish('ended_by_user');
             }
 
-            $this->takeTurn((string) $text, $inactivitySeconds);
+            $this->takeTurn((string) $text, $approvalTimeout);
         }
     }
 
-    private function takeTurn(string $text, int $inactivitySeconds): void
+    private function takeTurn(string $text, string $approvalTimeout): void
     {
         $turn = $this->state['turns'] + 1;
 
@@ -146,7 +157,7 @@ class ConversationWorkflow extends Workflow
         $reply = $model['reply'];
 
         if ($model['proposal'] !== null) {
-            $reply .= ' '.$this->awaitApproval($model['proposal'] + ['turn' => $turn], $inactivitySeconds);
+            $reply .= ' '.$this->awaitApproval($model['proposal'] + ['turn' => $turn], $approvalTimeout);
         }
 
         $this->phase = 'recording_reply';
@@ -165,16 +176,16 @@ class ConversationWorkflow extends Workflow
      * existed, sent twice, or retried after an uncertain response would
      * otherwise answer whichever proposal waits next. The proposal ID is
      * recorded in history and reported by the `status` query; a decision must
-     * repeat it to count.
+     * repeat it to count. Ignored decisions do not extend the deadline.
      *
      * @param  array{action: string, description: string, turn: int}  $proposal
      */
-    private function awaitApproval(array $proposal, int $inactivitySeconds): string
+    private function awaitApproval(array $proposal, string $approvalTimeout): string
     {
         $proposal = ['id' => (string) uuid4()] + $proposal;
         $this->state['pending_proposal'] = $proposal;
         $this->phase = 'awaiting_approval';
-        $deadline = now()->getTimestamp() + $inactivitySeconds;
+        $deadline = now()->getTimestamp() + (int) ceil(CarbonInterval::fromString($approvalTimeout)->totalSeconds);
 
         while (true) {
             $remaining = $deadline - now()->getTimestamp();
