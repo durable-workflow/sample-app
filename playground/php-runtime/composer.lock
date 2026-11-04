@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "84a88bb4d3d4741b4b2ab0aca1555b86",
+    "content-hash": "53d58b4b6598a1f6311305b40312b9d9",
     "packages": [
         {
             "name": "apache/avro",
@@ -140,21 +140,20 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-06T14:11:38+00:00",
-            "published-time": "2026-09-06T14:15:00+00:00"
+            "time": "2026-09-06T14:11:38+00:00"
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.9.2",
+            "version": "3.9.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "e5d6f840a1f5f20ba9e90867b021bae29119268f"
+                "reference": "11085f0c624674a4b70d3a6fb3e83eaff3869fcb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/e5d6f840a1f5f20ba9e90867b021bae29119268f",
-                "reference": "e5d6f840a1f5f20ba9e90867b021bae29119268f",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/11085f0c624674a4b70d3a6fb3e83eaff3869fcb",
+                "reference": "11085f0c624674a4b70d3a6fb3e83eaff3869fcb",
                 "shasum": ""
             },
             "require": {
@@ -206,7 +205,7 @@
                         "laravel": "^10.50.4|^11.56.1|^12.69.0|^13.30.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.9.2",
+                    "product-train": "3.9.4",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -276,8 +275,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-04T04:02:05+00:00",
-            "published-time": "2026-11-04T04:02:22+00:00"
+            "time": "2026-11-04T05:28:03+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
@@ -711,8 +709,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-25T14:32:48+00:00",
-            "published-time": "2026-10-25T14:41:05+00:00"
+            "time": "2026-10-25T14:32:48+00:00"
         },
         {
             "name": "pear/http_request2",
@@ -772,8 +769,7 @@
                 "issues": "https://github.com/pear/HTTP_Request2/issues",
                 "source": "https://github.com/pear/HTTP_Request2"
             },
-            "time": "2026-09-04T10:44:42+00:00",
-            "published-time": "2026-09-04T10:45:33+00:00"
+            "time": "2026-09-04T10:44:42+00:00"
         },
         {
             "name": "pear/net_url2",
@@ -841,8 +837,7 @@
                 "issues": "https://pear.php.net/bugs/search.php?cmd=display&package_name[]=Net_URL2",
                 "source": "https://github.com/pear/Net_URL2"
             },
-            "time": "2025-03-24T08:03:00+00:00",
-            "published-time": "2025-03-26T10:43:16+00:00"
+            "time": "2025-03-24T08:03:00+00:00"
         },
         {
             "name": "pear/pear_exception",
@@ -901,8 +896,7 @@
                 "issues": "http://pear.php.net/bugs/search.php?cmd=display&package_name[]=PEAR_Exception",
                 "source": "https://github.com/pear/PEAR_Exception"
             },
-            "time": "2021-03-21T15:43:46+00:00",
-            "published-time": "2021-03-21T15:44:58+00:00"
+            "time": "2021-03-21T15:43:46+00:00"
         },
         {
             "name": "psr/clock",
@@ -950,8 +944,7 @@
                 "issues": "https://github.com/php-fig/clock/issues",
                 "source": "https://github.com/php-fig/clock/tree/1.0.0"
             },
-            "time": "2022-11-25T14:36:26+00:00",
-            "published-time": "2022-11-25T14:59:22+00:00"
+            "time": "2022-11-25T14:36:26+00:00"
         },
         {
             "name": "psr/container",
@@ -1291,8 +1284,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-12T14:32:04+00:00",
-            "published-time": "2026-10-14T06:48:32+00:00"
+            "time": "2026-10-12T14:32:04+00:00"
         },
         {
             "name": "symfony/polyfill-mbstring",
@@ -1377,8 +1369,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-28T09:35:49+00:00",
-            "published-time": "2026-10-28T10:07:45+00:00"
+            "time": "2026-10-28T09:35:49+00:00"
         },
         {
             "name": "symfony/polyfill-php80",
@@ -1625,8 +1616,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-07T13:08:13+00:00",
-            "published-time": "2026-08-24T11:45:15+00:00"
+            "time": "2026-08-07T13:08:13+00:00"
         },
         {
             "name": "symfony/translation",
@@ -1719,8 +1709,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-25T14:40:25+00:00",
-            "published-time": "2026-10-28T18:24:27+00:00"
+            "time": "2026-10-25T14:40:25+00:00"
         },
         {
             "name": "symfony/translation-contracts",
@@ -1802,8 +1791,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-06-05T06:23:12+00:00",
-            "published-time": "2026-06-27T21:46:40+00:00"
+            "time": "2026-06-05T06:23:12+00:00"
         }
     ],
     "packages-dev": [],
@@ -1816,5 +1804,5 @@
         "php": "^8.4"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.11.0"
+    "plugin-api-version": "2.9.0"
 }
