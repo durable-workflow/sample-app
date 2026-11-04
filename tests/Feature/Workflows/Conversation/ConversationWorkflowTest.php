@@ -169,6 +169,34 @@ class ConversationWorkflowTest extends TestCase
         $this->assertSame(1, ConversationRecord::query()->where('kind', 'action')->count());
     }
 
+    public function test_proposal_id_is_stable_across_replay(): void
+    {
+        $workflow = $this->startConversation('conversation-replayed-proposal', turnsPerRun: 10);
+
+        $workflow->signal('message', 'Please refund my order');
+        $this->drain();
+
+        // Each query replays the workflow code from history.
+        $proposalId = $this->pendingProposalId($workflow);
+        $this->assertSame($proposalId, $this->pendingProposalId($workflow));
+
+        // A non-matching decision makes a worker run another workflow task,
+        // which replays the turn that created the proposal.
+        $workflow->signal('decision', 'some-other-proposal', true, 'Stale');
+        $this->drain();
+
+        $this->assertSame($proposalId, $this->pendingProposalId($workflow));
+        $this->assertSame(1, $workflow->query('status')['ignored_decisions']);
+        // The ID was generated once and recorded in history.
+        $this->assertSame(1, $this->historyCount($workflow->runId(), HistoryEventType::SideEffectRecorded));
+
+        $workflow->signal('decision', $proposalId, true, 'Taylor');
+        $this->drain();
+
+        $this->assertSame(1, ConversationRecord::query()->where('kind', 'action')->count());
+        $this->assertSame(1, $workflow->query('status')['turns']);
+    }
+
     public function test_continue_as_new_carries_explicit_state_and_unapplied_input(): void
     {
         $workflow = $this->startConversation('conversation-handoff', turnsPerRun: 2);
