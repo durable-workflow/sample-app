@@ -147,6 +147,11 @@ isolated local Server and Waterline, waits for the worker registration, starts
 the workflow, verifies its result and history, and prints the matching
 Waterline run URL. Existing authored files are preserved.
 
+The Rust command first builds your worker and client with the committed lock
+and at most two Cargo jobs. Preparation has a five-minute limit and reports
+build errors separately; the worker then has its own 60-second registration
+window. This also applies when you use a managed runtime.
+
 The generated workflow and activity are yours to edit. `.playground/` and the
 default evidence files are ignored by Git; the evidence is a run report, not
 application source. To keep authored code in your project, choose a directory
