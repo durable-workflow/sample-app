@@ -1,6 +1,7 @@
 node_modules
 vendor
 .git
+.central-apt-source/.git
 storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*

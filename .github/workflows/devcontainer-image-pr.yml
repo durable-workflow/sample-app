@@ -47,6 +47,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out the accepted central APT preflight
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: durable-workflow/.github
+          ref: 18783be6bef737cc778e4c7282a8797e39daa61a
+          path: .central-apt-source
+          persist-credentials: false
+      - name: Verify the central APT source identity
+        run: |
+          test "$(git -C .central-apt-source rev-parse HEAD)" = 18783be6bef737cc778e4c7282a8797e39daa61a
+          echo '2a36a2417e8947357ea6f6cbc2f6c53a834f3c069f8013a34d6d861b7123d576  .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh' | sha256sum --check --strict
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Build untrusted candidate without a shared cache
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7

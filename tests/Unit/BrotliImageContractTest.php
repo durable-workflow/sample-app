@@ -63,7 +63,7 @@ final class BrotliImageContractTest extends TestCase
             $this->assertCount(2, $runtimes[1]);
             $this->assertSame($builder[1], $runtimes[1][1]);
             $runtime = substr($source, strrpos($source, "\nFROM php:"));
-            $install = strpos($runtime, 'RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh ');
+            $install = strpos($runtime, 'sh /usr/local/share/sample-app/brotli/install-vendor.sh ');
             $check = strpos($runtime, 'php /usr/local/share/sample-app/brotli/verify-runtime.php');
             $download = strpos($runtime, 'apt-get update');
             foreach ([$install, $check, $download] as $position) {
