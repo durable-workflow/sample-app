@@ -150,6 +150,11 @@ final class DevcontainerImageContractTest extends TestCase
         $workflow = Yaml::parseFile($this->path('.github/workflows/devcontainer-image.yml'));
         $jobs = $workflow['jobs'];
 
+        $this->assertSame(['workflow_dispatch'], array_keys($workflow['on']));
+        foreach ($jobs as $job) {
+            $this->assertSame("github.ref == 'refs/heads/main'", $job['if']);
+        }
+
         $this->assertSame(['build'], $jobs['assemble']['needs']);
         $this->assertSame(['assemble'], $jobs['scan']['needs']);
         $this->assertSame(['assemble', 'scan'], $jobs['qualify']['needs']);
