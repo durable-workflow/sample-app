@@ -20,6 +20,7 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main'
+    environment: devcontainer-publication
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
@@ -90,6 +91,7 @@ jobs:
   assemble:
     name: Assemble multi-platform image
     if: github.ref == 'refs/heads/main'
+    environment: devcontainer-publication
     needs: [build]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -195,6 +197,7 @@ jobs:
   promote:
     name: Publish main channel
     if: github.ref == 'refs/heads/main'
+    environment: devcontainer-publication
     needs: [assemble, scan, qualify]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
