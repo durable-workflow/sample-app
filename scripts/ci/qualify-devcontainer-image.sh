@@ -122,6 +122,7 @@ run_in_ready_devcontainer laravel .devcontainer/post-create.sh
 "${compose[@]}" up --detach --no-build --wait
 
 # The complete image inventory includes root-owned build sources and tools.
+"${compose[@]}" exec -T --user root laravel /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 "${compose[@]}" exec -T --user root laravel php /usr/local/share/sample-app/brotli/verify-runtime.php
 
 run_in_ready_devcontainer laravel bash -euc '

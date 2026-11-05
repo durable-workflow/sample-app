@@ -90,6 +90,12 @@ class BookwormConsumerTests(unittest.TestCase):
         self.assertIn(".central-apt-source/.git", patterns)
         self.assertIn("/.central-apt-source/", (ROOT / ".gitignore").read_text().splitlines())
 
+    def test_completed_image_qualification_rechecks_the_installed_pair(self):
+        qualification = (ROOT / "scripts/ci/qualify-devcontainer-image.sh").read_text()
+        invocation = '"${compose[@]}" exec -T --user root laravel ' + GUARD
+        self.assertIn(invocation, qualification)
+        self.assertGreater(qualification.index(invocation), qualification.index("run_in_ready_devcontainer laravel .devcontainer/post-create.sh"))
+
 
 if __name__ == "__main__":
     unittest.main()

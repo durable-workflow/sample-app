@@ -19,6 +19,8 @@ The preflight runs before each stage's first RUN reaches the Brotli APT helper,
 then again before the final stage's direct APT block and Playwright dependency
 installation. It uses stock shell/dpkg and needs no Python or package acquisition
 to establish the installed native APT/libapt pair.
+The shared startup qualification invokes it again inside the completed image
+after application preparation, retaining an explicit final installed-pair result.
 
 The PR workflow builds untrusted native candidates with publication disabled.
 The seven-job publisher remains a separate explicit main-only dispatch, including
