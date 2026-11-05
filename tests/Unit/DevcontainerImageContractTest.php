@@ -219,6 +219,17 @@ final class DevcontainerImageContractTest extends TestCase
         $this->assertStringNotContainsString('recover_revision_tag', $source);
     }
 
+    public function test_registry_writes_require_the_main_publication_environment(): void
+    {
+        $jobs = Yaml::parseFile($this->path('.github/workflows/devcontainer-image.yml'))['jobs'];
+        $writers = array_filter($jobs, static fn (array $job): bool => ($job['permissions']['packages'] ?? null) === 'write');
+        $this->assertSame(['build', 'assemble', 'promote'], array_keys($writers));
+        foreach ($writers as $job) {
+            $this->assertSame('devcontainer-publication', $job['environment'] ?? null);
+            $this->assertSame("github.ref == 'refs/heads/main'", $job['if']);
+        }
+    }
+
     private function path(string $path): string
     {
         return dirname(__DIR__, 2).'/'.$path;
