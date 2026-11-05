@@ -45,6 +45,7 @@ MAX_SERVICE_WAIT_SECONDS = 600
 SERVICE_PROCESS_GUARD_SECONDS = 15
 EXPECTED_SERVICES = ("mysql", "server", "waterline")
 PRIMARY_DIAGNOSTIC_SERVICES = ("mysql", "server", "waterline")
+SOURCE_PREPARATION_TIMEOUT_SECONDS = 300
 
 
 class PlaygroundError(RuntimeError):
@@ -530,6 +531,7 @@ def contract_summary(
         "activity_type": scenario["activity_type"],
         "task_queue": scenario["task_queue"],
         "input": scenario["input"],
+        **({"prepare_command": scenario["prepare_command"]} if "prepare_command" in scenario else {}),
         "worker_command": scenario["worker_command"],
         "start_command": scenario["start_command"],
         "expected_result": scenario["expected_result"],
@@ -974,6 +976,36 @@ def terminate_worker(worker: subprocess.Popen[str]) -> None:
         worker.wait(timeout=5)
 
 
+def prepare_source(scenario: dict[str, Any], source_dir: Path) -> None:
+    if "prepare_command" not in scenario:
+        return
+    command = scenario_command(scenario, "prepare_command")
+    started = time.monotonic()
+    print(
+        f"Preparing caller-owned source ({SOURCE_PREPARATION_TIMEOUT_SECONDS}s limit): "
+        + shlex.join(command),
+        flush=True,
+    )
+    process = subprocess.Popen(
+        command,
+        cwd=source_dir,
+        env=clean_environment(),
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        status = process.wait(timeout=SOURCE_PREPARATION_TIMEOUT_SECONDS)
+        if status != 0:
+            raise PlaygroundError(f"Source preparation failed with exit status {status}.")
+    except subprocess.TimeoutExpired as error:
+        raise PlaygroundError(
+            f"Source preparation exceeded {SOURCE_PREPARATION_TIMEOUT_SECONDS} seconds."
+        ) from error
+    finally:
+        terminate_worker(process)
+    print(f"Source prepared in {time.monotonic() - started:.2f}s; starting the runtime journey.", flush=True)
+
+
 def journey(
     language: str,
     source_dir: Path,
@@ -1062,6 +1094,7 @@ def journey(
             ),
             flush=True,
         )
+        prepare_source(scenario, source_dir)
         if runtime == "local":
             start_services(
                 compose,

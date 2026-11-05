@@ -640,6 +640,14 @@ globals["fetch_json"] = lambda *args, **kwargs: (_ for _ in ()).throw(
 )
 globals["run"] = fake_run
 globals["json_command"] = fake_json_command
+clock = iter(range(1000))
+globals["time"] = SimpleNamespace(time=lambda: 1234, monotonic=lambda: next(clock) / 1000)
+def fake_prepare(scenario, source):
+    if "prepare_command" in scenario:
+        assert source.joinpath("authored-source").read_text() == "rust"
+        events.append({"role": "preparation", "env": globals["clean_environment"]()})
+
+globals["prepare_source"] = fake_prepare
 globals["terminate_worker"] = lambda worker: None
 globals["subprocess"].Popen = fake_popen
 
@@ -648,6 +656,7 @@ summaries = []
 evidence_paths = []
 for language in ("php", "python", "rust"):
     active.clear()
+    first_event = len(events)
     source = root / language
     source.mkdir()
     evidence_path = root / f"{language}.json"
@@ -667,6 +676,9 @@ for language in ("php", "python", "rust"):
         "status": "omitted",
         "reason": "managed-waterline-not-validated-by-sdk-playground",
     }
+    if language == "rust":
+        assert events[first_event]["role"] == "preparation"
+        assert events[first_event + 1]["role"] == "worker"
     summaries.append(payload["language"])
     evidence_paths.append(evidence_path)
 
@@ -697,7 +709,9 @@ for event in events:
         "DURABLE_WORKFLOW_PROCESS_TOKEN",
     ):
         assert bridge_variable not in environment
-    if event["role"] in {"worker", "worker-test"}:
+    if event["role"] == "preparation":
+        assert not any(name in environment for name in playground["CREDENTIAL_VARIABLES"])
+    elif event["role"] in {"worker", "worker-test"}:
         assert environment["DURABLE_WORKFLOW_WORKER_TOKEN"] == "worker-secret"
         assert "DURABLE_WORKFLOW_CLIENT_TOKEN" not in environment
         assert "DURABLE_WORKFLOW_CONTROL_TOKEN" not in environment

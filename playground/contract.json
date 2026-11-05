@@ -108,6 +108,10 @@
       "input": {
         "name": "Durable Workflow"
       },
+      "prepare_command": [
+        "cargo", "build", "--locked", "{cargo_offline}", "--jobs", "2",
+        "--manifest-path", "{source}/Cargo.toml", "--bins"
+      ],
       "worker_command": [
         "cargo", "run", "--quiet", "--locked", "{cargo_offline}",
         "--manifest-path", "{source}/Cargo.toml", "--bin", "worker"
