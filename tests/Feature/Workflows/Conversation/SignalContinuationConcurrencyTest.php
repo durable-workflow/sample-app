@@ -128,12 +128,13 @@ final class SignalContinuationConcurrencyTest extends TestCase
             });
             pcntl_alarm(30);
             $parent = $this->configureSession();
-            DB::listen(function (QueryExecuted $query) use (&$armed, $runId, $sockets): void {
+            DB::listen(function (QueryExecuted $query) use (&$armed, &$parent, $runId, $sockets): void {
                 if (! $armed || ! str_starts_with($query->sql, 'update `workflow_runs` set `status`')
                     || ! in_array('continued', $query->bindings, true)
                     || ! in_array($runId, $query->bindings, true)) {
                     return;
                 }
+                $parent['barrier'] = $this->barrierFacts($query);
                 $armed = false;
                 fwrite($sockets[0], "continue-ready\n");
                 $this->assertSame("history-locked\n", fgets($sockets[0]));
@@ -182,9 +183,10 @@ final class SignalContinuationConcurrencyTest extends TestCase
         try {
             $session = $this->configureSession();
             $this->assertSame("continue-ready\n", fgets($socket));
-            DB::listen(function (QueryExecuted $query) use ($socket, $stub, &$attempts): void {
+            DB::listen(function (QueryExecuted $query) use ($socket, $stub, &$attempts, &$session): void {
                 if (str_contains($query->sql, 'from `workflow_history_events`')
                     && str_contains($query->sql, 'for update') && in_array($stub->runId(), $query->bindings, true)) {
+                    $session['barrier'] = $this->barrierFacts($query);
                     $attempts++;
                     fwrite($socket, "history-locked\n");
                     $this->assertSame("proceed\n", fgets($socket));
@@ -204,6 +206,21 @@ final class SignalContinuationConcurrencyTest extends TestCase
         DB::disconnect('shared');
         fclose($socket);
         exit(0);
+    }
+
+    /** @return array<string, int|string|bool> */
+    private function barrierFacts(QueryExecuted $query): array
+    {
+        $this->assertSame($this->storage(), $query->connection);
+        $this->assertSame('shared', $query->connection->getName());
+        $this->assertGreaterThan(0, $query->connection->transactionLevel());
+        $this->assertTrue($query->connection->getPdo()->inTransaction());
+
+        return [
+            'connection' => $query->connection->getName(),
+            'transaction_level' => $query->connection->transactionLevel(),
+            'pdo_in_transaction' => $query->connection->getPdo()->inTransaction(),
+        ];
     }
 
     /** @return array<string, int|string> */
