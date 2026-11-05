@@ -145,6 +145,31 @@ final class DevcontainerImageContractTest extends TestCase
         }
     }
 
+    public function test_image_builds_bind_the_shared_preflight_before_buildx(): void
+    {
+        $commit = '18783be6bef737cc778e4c7282a8797e39daa61a';
+        $hash = '2a36a2417e8947357ea6f6cbc2f6c53a834f3c069f8013a34d6d861b7123d576';
+        foreach (['devcontainer-image-pr.yml' => 'qualify', 'devcontainer-image.yml' => 'build'] as $file => $job) {
+            $steps = Yaml::parseFile($this->path('.github/workflows/'.$file))['jobs'][$job]['steps'];
+            $checkouts = array_filter($steps, static fn (array $step): bool => ($step['with']['repository'] ?? null) === 'durable-workflow/.github');
+            $this->assertCount(1, $checkouts);
+            $index = array_key_first($checkouts);
+            $this->assertSame('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', $steps[$index]['uses']);
+            $this->assertSame($commit, $steps[$index]['with']['ref']);
+            $this->assertSame('.central-apt-source', $steps[$index]['with']['path']);
+            $this->assertFalse($steps[$index]['with']['persist-credentials']);
+            $verification = $steps[$index + 1]['run'];
+            $this->assertStringContainsString('test "$(git -C .central-apt-source rev-parse HEAD)" = '.$commit, $verification);
+            $this->assertStringContainsString($hash.'  .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh', $verification);
+            $this->assertStringContainsString('sha256sum --check --strict', $verification);
+            foreach ($steps as $position => $step) {
+                if (str_starts_with($step['uses'] ?? '', 'docker/setup-buildx-action@')) {
+                    $this->assertLessThan($position, $index + 1);
+                }
+            }
+        }
+    }
+
     public function test_main_publication_builds_both_architectures_before_promotion(): void
     {
         $workflow = Yaml::parseFile($this->path('.github/workflows/devcontainer-image.yml'));

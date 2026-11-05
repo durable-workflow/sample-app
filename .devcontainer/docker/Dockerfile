@@ -2,12 +2,14 @@ FROM node:22.23.4-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e20
 
 FROM composer:2.11.0@sha256:278dfc7bd35169965d03f87194816f43bf4e6b6ea61707c2114e52ad12fe24ce AS composer
 
-FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76 AS brotli-build
+FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe AS brotli-build
 
+COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY .devcontainer/docker/verify-php-trust.php /usr/local/share/sample-app/verify-php-trust.php
 COPY docker/brotli/version docker/brotli/install-vendor.sh docker/brotli/verify-runtime.php docker/brotli/verify-system-brotli.c /usr/src/brotli-inputs/
-RUN php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
+RUN /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh \
+    && php /usr/local/share/sample-app/verify-php-trust.php /usr/local/bin/composer \
     && sh /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs gcc libc6-dev \
     && mkdir -p /out \
     && cc -O2 /usr/src/brotli-inputs/verify-system-brotli.c -lbrotlidec -lbrotlienc -ldl -o /out/verify-system-brotli \
@@ -127,10 +129,12 @@ RUN set -eux; \
         .; \
     test -s /tmp/sample-app-mysql-seed.tar
 
-FROM php:8.4.27-cli-bookworm@sha256:54b467ede1db96c66675e7b78457dd43729d0e7be31978d4a1e5c069ceabcf76
+FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe
 
+COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
-RUN sh /usr/local/share/sample-app/brotli/install-vendor.sh /usr/local/share/sample-app/brotli \
+RUN /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh \
+    && sh /usr/local/share/sample-app/brotli/install-vendor.sh /usr/local/share/sample-app/brotli \
     && php /usr/local/share/sample-app/brotli/verify-runtime.php \
     && rm -rf /var/lib/apt/lists/*
 
@@ -174,6 +178,7 @@ RUN set -eux; \
     php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
     echo "${TZ}" > /etc/timezone; \
+    /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh; \
     apt-get update; \
     apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends \
@@ -357,6 +362,7 @@ RUN set -eux; \
     playwright_version="$(node -e 'const lock = require("/tmp/sample-app-package-lock.json"); process.stdout.write(lock.packages["node_modules/playwright"].version)')"; \
     test -n "$playwright_version"; \
     npm install --global --no-audit --no-fund "playwright@${playwright_version}"; \
+    /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh; \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 playwright install --with-deps --only-shell chromium; \
     python3 /usr/local/share/sample-app/python/build-pip.py --clean-seeds; \
     rm /usr/local/share/sample-app/python/build-pip.py /usr/local/share/sample-app/python/pip-urllib3.patch; \
