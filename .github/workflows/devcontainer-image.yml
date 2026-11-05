@@ -1,27 +1,8 @@
 name: devcontainer image
 
+# Source changes qualify through devcontainer-image-pr.yml. Dispatch publication
+# on main only after the image build path is qualified for publication.
 on:
-  push:
-    branches: [main]
-    paths:
-      - .devcontainer/**
-      - .github/workflows/devcontainer-image.yml
-      - .github/workflows/devcontainer-image-pr.yml
-      - playground/**
-      - polyglot/qualified-artifact-tuple.json
-      - app/Console/Commands/Init.php
-      - composer.json
-      - composer.lock
-      - docker/**
-      - microservice/composer.json
-      - microservice/composer.lock
-      - package.json
-      - package-lock.json
-      - scripts/ci/qualify-devcontainer-image.sh
-      - scripts/playground
-      - scripts/resolve-current-artifacts.sh
-  schedule:
-    - cron: '17 6 * * 1'
   workflow_dispatch:
 
 permissions:
