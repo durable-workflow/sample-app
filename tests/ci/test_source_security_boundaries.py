@@ -32,9 +32,11 @@ def require_https_downloads(source, url):
 
 
 def require_binary_yaml(source):
-    commands = re.findall(r"^\s*- run: (python -m pip install[^\n]*PyYAML==[^\n]+)", source, re.MULTILINE)
+    commands = re.findall(r"^\s*- run: (.+PyYAML==[^\n]+)", source, re.MULTILINE)
     assert commands, "Expected the action-policy YAML dependency installation"
     for command in commands:
+        if command[0] in ("'", '"') and command[-1] == command[0]:
+            command = command[1:-1]
         assert "--only-binary=:all:" in shlex.split(command), "YAML installation allows source builds"
 
 
