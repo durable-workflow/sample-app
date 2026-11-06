@@ -14,6 +14,7 @@ export SDK_UPDATES_FINISH_RACE_REPETITIONS="${SDK_UPDATES_FINISH_RACE_REPETITION
 export POLYGLOT_UPDATE_DIAGNOSTICS=1
 [[ "$SDK_UPDATES_FINISH_RACE_REPETITIONS" =~ ^([0-9]|1[0-9]|20)$ ]] || exit 2
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$repo_root/scripts/prepare-apt-build-source.sh"
 export COMPOSE_PROJECT_NAME="${SDK_UPDATES_COMPOSE_PROJECT_NAME:-sample-app-sdk-updates-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export DURABLE_WORKFLOW_UPDATE_ID="$COMPOSE_PROJECT_NAME"

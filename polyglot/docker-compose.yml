@@ -162,7 +162,8 @@ services:
 
   python-activity-worker:
     build:
-      context: ./python_worker
+      context: ..
+      dockerfile: polyglot/python_worker/Dockerfile
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
@@ -373,7 +374,8 @@ services:
   smoke:
     init: true
     build:
-      context: ./python_worker
+      context: ..
+      dockerfile: polyglot/python_worker/Dockerfile
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version
@@ -440,7 +442,8 @@ services:
 
   demo:
     build:
-      context: ./python_worker
+      context: ..
+      dockerfile: polyglot/python_worker/Dockerfile
       args:
         DURABLE_WORKFLOW_CLI_VERSION: *durable-cli-version
         DURABLE_WORKFLOW_PYTHON_SDK_VERSION: *durable-python-sdk-version

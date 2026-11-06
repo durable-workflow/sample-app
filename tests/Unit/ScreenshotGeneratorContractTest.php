@@ -83,6 +83,7 @@ final class ScreenshotGeneratorContractTest extends TestCase
         $this->assertContains('screenshots', $service['profiles'] ?? []);
         $this->assertContains('./screenshots:/app/screenshots', $service['volumes'] ?? []);
         $this->assertSame('/app/screenshots', $service['environment']['OUTPUT_DIR'] ?? null);
+        $this->assertSame('root', $service['user'] ?? null);
 
         $composeBaseUrl = $service['environment']['APP_URL'] ?? null;
 

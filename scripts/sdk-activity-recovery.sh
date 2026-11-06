@@ -17,6 +17,7 @@ if [[ -z "$result_dir" ]]; then result_dir="$(mktemp -d "${TMPDIR:-/tmp}/dw-sdk-
 mkdir -p "$result_dir/proof" "$result_dir/logs"
 result_dir="$(cd "$result_dir" && pwd)"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$repo_root/scripts/prepare-apt-build-source.sh"
 export COMPOSE_PROJECT_NAME="${SDK_ACTIVITY_RECOVERY_COMPOSE_PROJECT_NAME:-sample-app-activity-recovery-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export ACTIVITY_RECOVERY_PROOF_DIR="$result_dir/proof"

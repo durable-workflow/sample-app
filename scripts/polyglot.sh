@@ -43,6 +43,8 @@ case "${1:-}" in
     ;;
 esac
 
+"$repo_root/scripts/prepare-apt-build-source.sh"
+
 printf '==> PolyglotWorkflow: building PHP %s, Python %s, and Rust %s workers\n' \
   "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
   "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" \

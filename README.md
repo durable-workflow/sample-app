@@ -39,6 +39,13 @@ PHP workflow sends an order calculation to a Python activity, then sends that
 result to a Rust activity that produces a receipt. The final result identifies
 all three runtimes and the artifact versions used for the run.
 
+The build scripts prepare the pinned public central source and verify it before
+building. They use no credentials. For a manual Compose build, prepare it first:
+
+```bash
+scripts/prepare-apt-build-source.sh
+```
+
 The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
@@ -282,6 +289,7 @@ cp .env.example .env
 composer install
 npm install
 php artisan key:generate
+scripts/prepare-apt-build-source.sh
 docker compose up -d
 php artisan migrate
 composer run dev

@@ -20,6 +20,8 @@ trap cleanup EXIT HUP INT TERM
 curl \
     --fail \
     --location \
+    --proto '=https' \
+    --proto-redir '=https' \
     --silent \
     --show-error \
     --connect-timeout 10 \

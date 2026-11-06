@@ -29,9 +29,18 @@ jobs:
       SAMPLE_APP_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out the accepted central build source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: durable-workflow/.github
+          ref: 18783be6bef737cc778e4c7282a8797e39daa61a
+          path: .central-apt-source
+          persist-credentials: false
       - name: Build the production input without a prior cache
         run: |
           test "$(git rev-parse HEAD)" = "$SAMPLE_APP_COMMIT"
+          scripts/prepare-apt-build-source.sh
           docker compose build --pull --no-cache app
       - name: Start the qualified build
         run: docker compose up -d --wait app worker
@@ -43,6 +52,13 @@ jobs:
           test "$(docker image inspect "$image_id" --format '{{.Os}}/{{.Architecture}}')" = "$EXPECTED_PLATFORM"
           test "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SAMPLE_APP_COMMIT"
           docker image inspect "$image_id" --format 'image={{.Id}} platform={{.Os}}/{{.Architecture}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
+          for service in app worker; do
+            runtime_uid="$(docker compose exec -T "$service" id -u)"
+            printf '%s runtime uid=%s\n' "$service" "$runtime_uid"
+            test "$runtime_uid" != 0
+          done
+          docker compose exec -T app php -r 'foreach (["/app/storage", "/app/videos"] as $directory) { $path = tempnam($directory, "permission-"); if ($path === false || dirname($path) !== $directory || file_put_contents($path, "non-root storage probe") === false || !unlink($path)) { exit(1); } }'
+          docker compose exec -T app /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
           docker compose exec -T app node docker/verify-node-trust.mjs
           docker compose exec -T app node --test tests/Node/ProductionNodeTrustTest.mjs
           docker compose exec -T app php /usr/local/share/sample-app/verify-runtime-trust.php /usr/bin/composer

@@ -80,7 +80,7 @@ final class DevcontainerImageContractTest extends TestCase
         $lastInstall = strrpos($runtime, 'apt-get install');
         $recheck = strrpos($runtime, $verifier);
         $nodeCheck = strpos($runtime, 'node /usr/local/share/sample-app/verify-node-trust.mjs');
-        $cliDownload = strpos($runtime, 'curl -fsSL');
+        $cliDownload = strpos($runtime, 'https://durable-workflow.com/install.sh');
 
         foreach ([$firstCheck, $firstDownload, $lastInstall, $recheck, $nodeCheck, $cliDownload] as $position) {
             $this->assertIsInt($position);

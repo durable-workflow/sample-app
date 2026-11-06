@@ -36,6 +36,7 @@ fi
 [[ $# == 0 ]] || { printf '%s\n' 'Use --help for usage.' >&2; exit 2; }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$repo_root/scripts/prepare-apt-build-source.sh"
 export COMPOSE_PROJECT_NAME="${SDK_TIMERS_COMPOSE_PROJECT_NAME:-sample-app-sdk-timers-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export COMPOSE_PROFILES=timers

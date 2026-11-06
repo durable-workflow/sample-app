@@ -12,6 +12,9 @@ From the repository root:
 scripts/polyglot.sh
 ```
 
+The script prepares and verifies the pinned public central build source. Before
+invoking a Compose build directly, run `scripts/prepare-apt-build-source.sh` once.
+
 The command:
 
 1. reads the stable artifact versions in `qualified-artifact-tuple.json`;
@@ -71,6 +74,7 @@ an isolated project:
 ```bash
 while IFS= read -r assignment; do export "$assignment"; done \
   < <(scripts/resolve-current-artifacts.sh)
+scripts/prepare-apt-build-source.sh
 export COMPOSE_PROJECT_NAME="sample-app-polyglot-matrix-${USER:-user}"
 
 docker compose \
