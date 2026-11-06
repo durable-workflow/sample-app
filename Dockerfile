@@ -106,7 +106,7 @@ RUN /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh \
 
 COPY docker/entrypoint.sh /usr/local/bin/app-entrypoint
 RUN chmod +x /usr/local/bin/app-entrypoint \
-    && mkdir -p "$HOME" "$PLAYWRIGHT_BROWSERS_PATH" \
+    && mkdir -p /app/videos "$HOME" "$PLAYWRIGHT_BROWSERS_PATH" \
     && chown -R www-data:www-data /app "$HOME" "$PLAYWRIGHT_BROWSERS_PATH"
 
 USER www-data

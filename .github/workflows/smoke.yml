@@ -53,7 +53,7 @@ jobs:
           test "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SAMPLE_APP_COMMIT"
           docker image inspect "$image_id" --format 'image={{.Id}} platform={{.Os}}/{{.Architecture}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
           test "$(docker compose exec -T app id -u)" != 0
-          docker compose exec -T app php -r '$path = tempnam("/app/storage", "permission-"); if ($path === false || file_put_contents($path, "non-root storage probe") === false || !unlink($path)) { exit(1); }'
+          docker compose exec -T app php -r 'foreach (["/app/storage", "/app/videos"] as $directory) { $path = tempnam($directory, "permission-"); if ($path === false || dirname($path) !== $directory || file_put_contents($path, "non-root storage probe") === false || !unlink($path)) { exit(1); } }'
           docker compose exec -T app /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
           docker compose exec -T app node docker/verify-node-trust.mjs
           docker compose exec -T app node --test tests/Node/ProductionNodeTrustTest.mjs

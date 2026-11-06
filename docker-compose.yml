@@ -157,6 +157,9 @@ services:
 
   screenshots:
     build: *app-build
+    # This explicit local output tool keeps its prior host-bind write authority.
+    # App and worker services inherit the image's non-root runtime user.
+    user: root
     depends_on:
       app:
         condition: service_healthy

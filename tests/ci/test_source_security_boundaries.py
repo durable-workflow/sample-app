@@ -90,6 +90,7 @@ class SourceSecurityBoundaryTests(unittest.TestCase):
         final = re.split(r"^FROM ", source, flags=re.MULTILINE)[-1]
         self.assertIn("HOME=/home/www-data", final)
         self.assertIn("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright", final)
+        self.assertIn('mkdir -p /app/videos "$HOME" "$PLAYWRIGHT_BROWSERS_PATH"', final)
         self.assertRegex(final, r'chown -R www-data:www-data /app "\$HOME" "\$PLAYWRIGHT_BROWSERS_PATH"')
         self.assertLess(final.index("PLAYWRIGHT_BROWSERS_PATH="), final.index("playwright install"))
         self.assertLess(final.index("chown -R"), final.index("USER www-data"))
