@@ -23,6 +23,14 @@ jobs:
       SDK_TIMERS_COMPOSE_PROJECT_NAME: sample-app-sdk-package-timers-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out the accepted central build source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: durable-workflow/.github
+          ref: 18783be6bef737cc778e4c7282a8797e39daa61a
+          path: .central-apt-source
+          persist-credentials: false
       - name: Resolve the exact published tuple
         run: scripts/resolve-current-artifacts.sh >> "$GITHUB_ENV"
       - name: Replay original timers across installed SDK packages

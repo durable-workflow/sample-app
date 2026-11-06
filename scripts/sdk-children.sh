@@ -14,6 +14,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# == 0 ]] || exit 2
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$repo_root/scripts/prepare-apt-build-source.sh"
 export COMPOSE_PROJECT_NAME="${SDK_CHILDREN_COMPOSE_PROJECT_NAME:-sample-app-sdk-children-$(date -u +%Y%m%d%H%M%S)}"
 [[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || exit 2
 export DURABLE_WORKFLOW_CHILD_ID="$COMPOSE_PROJECT_NAME"
