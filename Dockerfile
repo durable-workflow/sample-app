@@ -73,7 +73,9 @@ RUN npm run build
 FROM base AS production
 
 ARG SAMPLE_APP_COMMIT=
-ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT}
+ENV SAMPLE_APP_COMMIT=${SAMPLE_APP_COMMIT} \
+    HOME=/home/www-data \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 LABEL org.opencontainers.image.revision="${SAMPLE_APP_COMMIT}"
 
 COPY --from=vendor /app /app
@@ -96,7 +98,11 @@ RUN node /usr/local/share/sample-app/verify-node-trust.mjs \
     && (php artisan vendor:publish --tag=waterline-assets --force 2>/dev/null || true)
 
 COPY docker/entrypoint.sh /usr/local/bin/app-entrypoint
-RUN chmod +x /usr/local/bin/app-entrypoint
+RUN chmod +x /usr/local/bin/app-entrypoint \
+    && mkdir -p "$HOME" "$PLAYWRIGHT_BROWSERS_PATH" \
+    && chown -R www-data:www-data /app "$HOME" "$PLAYWRIGHT_BROWSERS_PATH"
+
+USER www-data
 
 EXPOSE 8000
 

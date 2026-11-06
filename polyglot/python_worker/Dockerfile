@@ -18,7 +18,7 @@ RUN set -eux; \
     apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh \
+    && curl --proto '=https' --proto-redir '=https' -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh \
     && VERSION="${DURABLE_WORKFLOW_CLI_VERSION}" DURABLE_WORKFLOW_INSTALL_DIR=/usr/local/bin sh /tmp/dw-install.sh \
     && rm /tmp/dw-install.sh \
     && dw --version

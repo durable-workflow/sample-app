@@ -292,7 +292,7 @@ RUN set -eux; \
     sh /usr/local/bin/install-npm; \
     cli_version="${DURABLE_WORKFLOW_CLI_VERSION:-$(php -r '$tuple = json_decode(file_get_contents("/usr/local/share/sample-app/qualified-artifact-tuple.json"), true, flags: JSON_THROW_ON_ERROR); echo $tuple["artifacts"]["cli"];')}"; \
     test -n "$cli_version"; \
-    curl -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
+    curl --proto '=https' --proto-redir '=https' -fsSL https://durable-workflow.com/install.sh -o /tmp/dw-install.sh; \
     VERSION="$cli_version" \
         DURABLE_WORKFLOW_INSTALL_DIR=/usr/local/bin \
         sh /tmp/dw-install.sh; \
