@@ -25,7 +25,7 @@ if [[ ! -e "$source_dir" ]]; then
   mv -- "$source_temp" "$source_dir"
   trap - EXIT
 fi
-test "$(git -C "$source_dir" rev-parse HEAD)" = "$expected_commit"
+[[ "$(git -C "$source_dir" rev-parse HEAD)" == "$expected_commit" ]]
 cd "$source_dir"
 printf '%s\n' \
   '2a36a2417e8947357ea6f6cbc2f6c53a834f3c069f8013a34d6d861b7123d576  docker/apt/require-fixed-bookworm-apt.sh' \

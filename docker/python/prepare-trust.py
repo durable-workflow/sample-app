@@ -8,8 +8,8 @@ from export_trust import export_bundle
 
 
 def prepare():
-    state = Path("/tmp/sample-app-python-bootstrap")
-    state.mkdir(exist_ok=True)
+    state = Path("/usr/local/share/sample-app/python-bootstrap")
+    state.mkdir(mode=0o700, exist_ok=True)
     # This stage qualifies curl's system trust, not the parent's old pip.
     # pip remains offline until the existing wheel producer and pip guard pass.
     return export_bundle(

@@ -20,7 +20,7 @@ COPY .devcontainer/docker/verify-python-trust.py /usr/local/share/sample-app/ver
 RUN set -eux; \
     /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh; \
     python3 /usr/local/share/sample-app/python/prepare-trust.py; \
-    set -a; . /tmp/sample-app-python-bootstrap/trust.env; set +a; \
+    set -a; . /usr/local/share/sample-app/python-bootstrap/trust.env; set +a; \
     test -n "$DURABLE_WORKFLOW_CLI_VERSION"; \
     test -n "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"; \
     apt-get update \
@@ -32,12 +32,13 @@ RUN set -eux; \
     && dw --version
 
 RUN set -eux; \
-    set -a; . /tmp/sample-app-python-bootstrap/trust.env; set +a; \
+    set -a; . /usr/local/share/sample-app/python-bootstrap/trust.env; set +a; \
     python3 /usr/local/share/sample-app/python/build-pip.py /tmp/sample-app-python-wheels; \
     python3 -I -m pip --isolated --disable-pip-version-check install \
         --no-index --no-deps --upgrade /tmp/sample-app-python-wheels/*.whl; \
     rm -rf /tmp/sample-app-python-wheels; \
     python3 /usr/local/share/sample-app/verify-python-trust.py --pip-only; \
+    python3 -I -c 'import json, platform, pip; from importlib.metadata import version; from pip._vendor import urllib3; print(json.dumps({"python": platform.python_version(), "pip": pip.__version__, "urllib3": urllib3.__version__, "setuptools": version("setuptools")}))'; \
     python3 -I -m pip --isolated --disable-pip-version-check install \
         --cert "$SSL_CERT_FILE" --no-cache-dir \
         "fastavro==${FASTAVRO_PYTHON_VERSION}" \

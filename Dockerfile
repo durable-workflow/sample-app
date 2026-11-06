@@ -34,6 +34,7 @@ RUN /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh \
     curl ffmpeg git libnspr4 libnss3 libpq-dev libzip-dev unzip \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \
     && sh /usr/local/bin/install-phpredis \
+    && docker-php-source delete \
     && php /usr/local/share/sample-app/brotli/verify-runtime.php \
     && php /usr/local/share/sample-app/verify-runtime-trust.php "$(command -v composer)" \
     && rm -rf /var/lib/apt/lists/*

@@ -37,13 +37,16 @@ def require_binary_yaml(source):
     for command in commands:
         if command[0] in ("'", '"') and command[-1] == command[0]:
             command = command[1:-1]
-        assert "--only-binary=:all:" in shlex.split(command), "YAML installation allows source builds"
+        arguments = shlex.split(command)
+        assert "--only-binary" in arguments, "YAML installation allows source builds"
+        assert arguments[arguments.index("--only-binary") + 1] == ":all:", "YAML installation allows source builds"
 
 
 def require_nonroot_production(source):
     final = re.split(r"^FROM ", source, flags=re.MULTILINE)[-1]
     users = re.findall(r"^USER (\S+)", final, re.MULTILINE)
-    assert users and users[-1].split(":")[0] not in ("root", "0"), "Production runtime runs as root"
+    assert users, "Production runtime runs as root"
+    assert users[-1].split(":")[0] not in ("root", "0"), "Production runtime runs as root"
 
 
 class SourceSecurityBoundaryTests(unittest.TestCase):
@@ -62,15 +65,16 @@ class SourceSecurityBoundaryTests(unittest.TestCase):
                     position = changed.index(option)
                     del changed[position:position + 2]
                     self.assertNotEqual(arguments, changed)
+                    command = shlex.join(changed)
                     with self.assertRaisesRegex(AssertionError, "HTTPS protocol"):
-                        require_https_downloads(shlex.join(changed), url)
+                        require_https_downloads(command, url)
 
     def test_action_policy_yaml_installation_does_not_execute_source_builds(self):
         require_binary_yaml((ROOT / ".github/workflows/ci.yml").read_text())
 
     def test_binary_only_yaml_policy_cannot_be_removed(self):
         source = (ROOT / ".github/workflows/ci.yml").read_text()
-        changed = source.replace("--only-binary=:all:", "", 1)
+        changed = source.replace("--only-binary :all:", "", 1)
         self.assertNotEqual(source, changed)
         with self.assertRaisesRegex(AssertionError, "source builds"):
             require_binary_yaml(changed)
