@@ -54,4 +54,8 @@ COPY polyglot/python_worker/activities.py ./activities.py
 # configurations. The python_worker activity service ignores them.
 COPY polyglot/python_worker/scripts ./scripts
 
+# Check the synthetic task claims against the actual installed SDK before
+# runtime diagnostics rely on their codec-rejection evidence.
+RUN --network=none python scripts/task_codec_rejection_probe.py
+
 CMD ["python", "activities.py"]
