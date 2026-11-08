@@ -49,7 +49,7 @@ scripts/prepare-apt-build-source.sh
 The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
 pins every published artifact the journeys use: native Durable Workflow Server
-3.0.5 (by image digest), Workflow 2.20.4, Waterline 2.13.2, PHP SDK 3.9.4,
+3.3.0 (by image digest), Workflow 2.22.0, Waterline 2.13.2, PHP SDK 3.11.0,
 Python SDK 2.14.1, Rust SDK 4.12.0 and CLI 2.3.3. `artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
@@ -57,6 +57,10 @@ and runs timers, schedules and activity timeouts itself, so the stacks start no
 bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
 `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
 are accepted.
+
+Before reusing an existing Server database, follow the [Server 3.3 upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.3.0/docs/releases/3.3.0.md). The example tuple does not migrate an existing database for you.
+
+On Native 3.3, stop every older PHP worker that can consume a task queue, including standby and autoscaling workers, before starting any SDK 3.11 worker on it. Once an anchored condition wait exists, keep that queue on SDK 3.11 or newer. See the [PHP SDK upgrade guide](https://github.com/durable-workflow/sdk-php/blob/3.11.0/docs/portal/operate/upgrading.md).
 
 Upgrade Python workers sharing a task queue together. Once v2 condition waits
 are recorded, keep every worker on SDK 2.14.1 or newer. Older versions cannot
