@@ -5,6 +5,7 @@ import asyncio
 import importlib.metadata
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -117,6 +118,10 @@ def task(path: str, present: bool, codec: object, arguments: object) -> dict[str
             "query_task_id": "probe-query",
             "query_task_attempt": 1,
             "lease_owner": "probe-worker",
+            "task_queue": "probe-queue",
+            "lease_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ"
+            ),
             "workflow_id": "probe-query-id",
             "run_id": "probe-query-run",
             "workflow_type": "probe.workflow",
@@ -147,14 +152,14 @@ def diagnostic(failures: list[dict[str, Any]]) -> tuple[bool, bool]:
     return "unsupported_payload_codec" in document, "decode-must-not-run" in document
 
 
-async def run_sdk_path(path: str, payload: dict[str, Any]) -> None:
+async def run_sdk_path(path: str, payload: dict[str, Any]) -> str | None:
     runtime = worker(payload["client"])
     if path == "workflow":
-        await runtime._run_workflow_task(payload["task"])
+        return await runtime._run_workflow_task(payload["task"])
     elif path == "activity":
-        await runtime._run_activity_task(payload["task"])
+        return await runtime._run_activity_task(payload["task"])
     else:
-        await runtime._run_query_task(payload["task"])
+        return await runtime._run_query_task(payload["task"])
 
 
 def sdk_observation(path: str, client: ProbeClient) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -177,7 +182,7 @@ async def sdk_rejection(path: str, name: str, present: bool, codec: object) -> d
         codec,
         {"codec": "avro", "blob": "decode-must-not-run"},
     )
-    await run_sdk_path(path, {"client": client, "task": hostile})
+    worker_outcome = await run_sdk_path(path, {"client": client, "task": hostile})
     failures, completions = sdk_observation(path, client)
     unsupported, poison_observed = diagnostic(failures)
     handler_calls = ACTIVITY_CALLS + ProbeWorkflow.workflow_calls + ProbeWorkflow.query_calls
@@ -193,6 +198,7 @@ async def sdk_rejection(path: str, name: str, present: bool, codec: object) -> d
         "worker": "sdk",
         "path": path,
         "codec_case": name,
+        "worker_outcome": worker_outcome,
         "status": "rejected_before_decode_or_handler" if passed else "failed",
         "failure_count": len(failures),
         "completion_count": len(completions),
@@ -209,7 +215,7 @@ async def sdk_valid(path: str) -> dict[str, Any]:
     ProbeWorkflow.query_calls = 0
     client = ProbeClient()
     arguments = serializer.envelope(["input"], codec="avro")
-    await run_sdk_path(path, {"client": client, "task": task(path, True, "avro", arguments)})
+    worker_outcome = await run_sdk_path(path, {"client": client, "task": task(path, True, "avro", arguments)})
     failures, completions = sdk_observation(path, client)
     handler_calls = ACTIVITY_CALLS + ProbeWorkflow.workflow_calls + ProbeWorkflow.query_calls
     passed = not failures and len(completions) == 1 and handler_calls > 0
@@ -218,6 +224,7 @@ async def sdk_valid(path: str) -> dict[str, Any]:
         "worker": "sdk",
         "path": path,
         "codec_case": "avro",
+        "worker_outcome": worker_outcome,
         "status": "decoded_and_handled" if passed else "failed",
         "failure_count": len(failures),
         "completion_count": len(completions),
