@@ -43,7 +43,7 @@ RUN set -eux; \
     git apply --unidiff-zero --check /tmp/compose-go-net.patch; \
     git apply --unidiff-zero /tmp/compose-go-net.patch; \
     go build -mod=readonly -trimpath \
-        -ldflags='-s -w -X github.com/docker/compose/v5/internal.Version=5.6.1+sample.1' \
+        -ldflags='-s -w -X github.com/docker/compose/v5/internal.Version=5.6.1+sample.2' \
         -buildvcs=false -o /out/docker-compose ./cmd; \
     go mod verify; \
     go version -m /out/docker-compose; \
