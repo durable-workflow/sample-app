@@ -44,7 +44,7 @@ jobs:
           python-version: '3.13'
 
       - name: Select authenticated dependency trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@76f333804e68725059039fd54df241d40d855cd3 # clean-trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@edba47c8f9d3b9984731bc3fba4e1ab3299f1b9f # clean-trust
         with:
           clients: pip,python,composer,curl,git,npm
 
@@ -56,7 +56,7 @@ jobs:
           tools: composer:2.10.3
 
       - name: Verify actual Composer trust before advisory requests
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@76f333804e68725059039fd54df241d40d855cd3 # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@edba47c8f9d3b9984731bc3fba4e1ab3299f1b9f # clean-trust
 
       - name: Audit the committed lock inventory
         run: bash scripts/ci/audit-committed-composer-locks.sh
