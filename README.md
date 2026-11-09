@@ -48,9 +48,9 @@ scripts/prepare-apt-build-source.sh
 
 The qualified tuple in
 [`polyglot/qualified-artifact-tuple.json`](polyglot/qualified-artifact-tuple.json)
-pins every published artifact the journeys use: native Durable Workflow Server
-3.3.0 (by image digest), Workflow 2.22.0, Waterline 2.13.2, PHP SDK 3.11.0,
-Python SDK 2.14.1, Rust SDK 4.12.0 and CLI 2.3.3. `artifacts.workflow` selects
+pins every published artifact the journeys use: the native Server image by
+digest, Workflow, Waterline, the PHP/Python/Rust SDKs and the CLI.
+`artifacts.workflow` selects
 the embedded application's Composer package; the Composer lock must match it.
 Native Server is one process that creates its schema and `default` namespace
 and runs timers, schedules and activity timeouts itself, so the stacks start no
