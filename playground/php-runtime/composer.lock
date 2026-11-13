@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6349ced86db5156e7befc3e8559bfa8c",
+    "content-hash": "f6431a9519cc6c8a329b770d86151b97",
     "packages": [
         {
             "name": "apache/avro",
@@ -144,16 +144,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.17.0",
+            "version": "3.18.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "daa842c277059471ff246803a8272165b4097c52"
+                "reference": "345b124123b75710342f90125287817d1c64d2ae"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/daa842c277059471ff246803a8272165b4097c52",
-                "reference": "daa842c277059471ff246803a8272165b4097c52",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/345b124123b75710342f90125287817d1c64d2ae",
+                "reference": "345b124123b75710342f90125287817d1c64d2ae",
                 "shasum": ""
             },
             "require": {
@@ -205,7 +205,7 @@
                         "laravel": "^12.69.0|^13.30.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.17.0",
+                    "product-train": "3.18.0",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -275,7 +275,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-13T05:55:38+00:00"
+            "time": "2026-11-13T09:49:18+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
