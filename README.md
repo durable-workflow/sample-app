@@ -58,7 +58,12 @@ bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
 `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
 are accepted.
 
-Before reusing an existing Server database, follow the [Server 3.3 upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.3.0/docs/releases/3.3.0.md). The example tuple does not migrate an existing database for you.
+Before reusing an existing Server database, stop the Server, back up its database
+and storage, and run the selected image's `schema-upgrade` command. Follow the
+[Server upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.9.0/docs/releases/3.9.0.md#upgrade),
+including the intermediate steps when upgrading from an older release. Rolling
+back after a schema upgrade requires restoring the backup. The example tuple
+does not migrate an existing database for you.
 
 On Native 3.3, stop every older PHP worker that can consume a task queue, including standby and autoscaling workers, before starting any SDK 3.11 worker on it. Once an anchored condition wait exists, keep that queue on SDK 3.11 or newer. See the [PHP SDK upgrade guide](https://github.com/durable-workflow/sdk-php/blob/3.11.0/docs/portal/operate/upgrading.md).
 

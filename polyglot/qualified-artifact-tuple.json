@@ -5,11 +5,11 @@
   "serverImage": "durableworkflow/server:3.3.2@sha256:4aeceb423ee4c8931f00ec2936149ac6b2a75479243b3930f9c6336ccdebf912",
   "artifacts": {
     "cli": "2.3.3",
-    "sdk-php": "3.11.0",
+    "sdk-php": "3.17.0",
     "sdk-python": "2.14.1",
     "sdk-rust": "4.12.0",
     "server": "3.3.2",
-    "waterline": "2.13.2",
-    "workflow": "2.22.0"
+    "waterline": "2.18.0",
+    "workflow": "2.28.0"
   }
 }
