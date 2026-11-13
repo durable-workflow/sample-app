@@ -45,6 +45,8 @@ jobs:
           --health-retries=10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -57,13 +59,15 @@ jobs:
       - name: Disable APT download retries (CVE-2026-109518)
         run: echo 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99-no-retries >/dev/null
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
+      - name: Check out the accepted PHP container build source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, intl, pdo_mysql, redis, bcmath, gd, zip
-          coverage: none
-          tools: composer:2.10.3
+          repository: durable-workflow/.github
+          ref: 18783be6bef737cc778e4c7282a8797e39daa61a
+          path: .central-apt-source
+          persist-credentials: false
+      - name: Build the pinned PHP runtime and install launchers
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/setup-php-container.sh" "${{ matrix.php }}"
 
       - name: Verify actual Composer trust before dependency requests
         uses: durable-workflow/.github/.github/actions/verify-composer-trust@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust
@@ -157,6 +161,8 @@ jobs:
           --health-retries=20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -169,13 +175,15 @@ jobs:
       - name: Disable APT download retries (CVE-2026-109518)
         run: echo 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99-no-retries >/dev/null
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
+      - name: Check out the accepted PHP container build source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, intl, pdo_mysql, bcmath, gd, zip
-          coverage: none
-          tools: composer:2.10.3
+          repository: durable-workflow/.github
+          ref: 18783be6bef737cc778e4c7282a8797e39daa61a
+          path: .central-apt-source
+          persist-credentials: false
+      - name: Build the pinned PHP runtime and install launchers
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/setup-php-container.sh" "${{ matrix.php }}"
 
       - name: Verify actual Composer trust before dependency requests
         uses: durable-workflow/.github/.github/actions/verify-composer-trust@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust

@@ -128,7 +128,7 @@ final class DevcontainerImageContractTest extends TestCase
                     $this->assertSame('52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2', explode('@', $step['uses'])[1]);
                     $this->assertStringContainsString('composer,curl,git', $step['with']['clients']);
                 }
-                if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
+                if (str_contains($step['run'] ?? '', 'scripts/ci/setup-php-container.sh')) {
                     $setup = $index;
                     break;
                 }
@@ -136,7 +136,12 @@ final class DevcontainerImageContractTest extends TestCase
             $this->assertNotNull($bootstrap);
             $this->assertNotNull($setup);
             $this->assertLessThan($setup, $bootstrap);
-            $this->assertSame('composer:2.10.3', $steps[$setup]['with']['tools']);
+            $this->assertStringContainsString('"${{ matrix.php }}"', $steps[$setup]['run']);
+            $images = json_decode((string) file_get_contents($this->path('scripts/ci/php-container-images.json')), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(['8.4', '8.5'], array_keys($images));
+            foreach ($images as $minor => $image) {
+                $this->assertMatchesRegularExpression('/^php:'.preg_quote($minor, '/').'\.[0-9]+-cli-bookworm@sha256:[0-9a-f]{64}$/', $image);
+            }
             $this->assertSame(
                 'durable-workflow/.github/.github/actions/verify-composer-trust@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2',
                 $steps[$setup + 1]['uses'],
