@@ -46,6 +46,7 @@ class PhpContainerTlsTests(unittest.TestCase):
             openssl("x509", "-req", "-in", "server.csr", "-CA", "root.pem", "-CAkey", "root.key",
                     "-CAcreateserial", "-days", "1", "-extfile", "extensions.cnf", "-out", "server.pem")
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(project / "server.pem", project / "server.key")
             # The Docker source/state mounts must never expose the synthetic private keys.
             (project / "root.key").unlink()
