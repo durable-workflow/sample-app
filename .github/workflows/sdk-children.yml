@@ -37,6 +37,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Disable APT download retries (CVE-2026-109518)
+        run: echo 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99-no-retries >/dev/null
       - name: Install locked browser tooling
         run: |
           npm ci --ignore-scripts

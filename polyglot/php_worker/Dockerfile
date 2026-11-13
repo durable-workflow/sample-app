@@ -6,6 +6,9 @@ FROM php:8.4-cli
 ARG DURABLE_WORKFLOW_PHP_SDK_PIN=
 ARG DURABLE_WORKFLOW_PHP_SDK_VERSION
 
+# No APT download retries before the first networked apt-get: CVE-2026-109518
+# (durable-workflow/.github#295).
+RUN echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev unzip \
     && docker-php-ext-install curl pcntl \

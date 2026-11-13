@@ -54,6 +54,9 @@ jobs:
         with:
           clients: pip,python,composer,curl,git,npm
 
+      - name: Disable APT download retries (CVE-2026-109518)
+        run: echo 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99-no-retries >/dev/null
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
@@ -162,6 +165,9 @@ jobs:
         uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust
         with:
           clients: pip,python,composer,curl,git
+
+      - name: Disable APT download retries (CVE-2026-109518)
+        run: echo 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99-no-retries >/dev/null
 
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
