@@ -10,9 +10,9 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "durable-workflow/sdk": "^3.11.0",
-        "durable-workflow/workflow": "^2.22.0",
-        "durable-workflow/waterline": "^2.0",
+        "durable-workflow/sdk": "^3.18.2",
+        "durable-workflow/workflow": "^2.28.0",
+        "durable-workflow/waterline": "^2.18.0",
         "laravel/framework": "^12.69",
         "laravel/tinker": "^2.10.1"
     },
