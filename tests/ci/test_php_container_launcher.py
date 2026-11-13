@@ -25,7 +25,7 @@ class PhpContainerLauncherTests(unittest.TestCase):
                 "PATH": str(state / "bin") + os.pathsep + os.environ["PATH"],
                 "SAMPLE_APP_PHP_CI_ROOT": str(ROOT),
                 "SAMPLE_APP_PHP_CI_STATE": str(state),
-                "SAMPLE_APP_PHP_CI_IMAGE": "sample-app-php-ci:test",
+                "SAMPLE_APP_PHP_CI_IMAGE": "sha256:" + "f" * 64,
                 "SSL_CERT_FILE": str(bundle),
                 "COMPOSER_CAFILE": str(bundle),
                 "DW_CI_CA_SHA256": "1" * 64,
@@ -68,6 +68,11 @@ class PhpContainerLauncherTests(unittest.TestCase):
     def test_composer_uses_the_container_executable(self):
         invocation, _ = self.invoke(command="composer", arguments=("audit", "--locked"))
         self.assertEqual(invocation[-3:], ["composer", "audit", "--locked"])
+
+    def test_mutable_image_tag_refuses_before_docker(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            self.invoke(SAMPLE_APP_PHP_CI_IMAGE="sample-app-php-ci:mutable")
+        self.assertIn("inspected immutable image config ID", failure.exception.stderr)
 
     def test_missing_runtime_identity_refuses_before_docker(self):
         with tempfile.TemporaryDirectory() as directory:

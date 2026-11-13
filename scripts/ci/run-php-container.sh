@@ -6,6 +6,10 @@ case "$command" in php|composer) ;; *) echo 'Invoke this launcher as php or comp
 root="${SAMPLE_APP_PHP_CI_ROOT:?PHP CI repository root is required}"
 state="${SAMPLE_APP_PHP_CI_STATE:?PHP CI state directory is required}"
 image="${SAMPLE_APP_PHP_CI_IMAGE:?PHP CI image is required}"
+if [[ ! "$image" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo 'PHP CI must use the inspected immutable image config ID.' >&2
+    exit 1
+fi
 
 options=(--rm --init --interactive --name "sample-app-php-ci-${command}-${BASHPID}"
     --cpus 2 --memory 2g --pids-limit 512 --network host

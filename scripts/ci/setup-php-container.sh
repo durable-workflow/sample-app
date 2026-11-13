@@ -17,8 +17,9 @@ echo '2a36a2417e8947357ea6f6cbc2f6c53a834f3c069f8013a34d6d861b7123d576  '"$root/
 
 runtime="sample-app-php-ci:${minor}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 docker build --file "$root/docker/php-ci/Dockerfile" --build-arg "PHP_IMAGE=$image" --tag "$runtime" "$root"
+runtime_id="$(docker image inspect "$runtime" --format '{{.Id}}')"
 docker run --rm --init --name "sample-app-php-ci-probe-${minor}-${GITHUB_RUN_ID:-local}" \
-    --cpus 1 --memory 512m --pids-limit 64 --network none "$runtime" \
+    --cpus 1 --memory 512m --pids-limit 64 --network none "$runtime_id" \
     php -r '
         if (PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION !== $argv[1]) { throw new RuntimeException("The PHP matrix minor does not match the image."); }
         foreach (["mbstring", "intl", "pdo_mysql", "redis", "bcmath", "gd", "zip", "curl", "pcntl"] as $extension) {
@@ -28,14 +29,16 @@ docker run --rm --init --name "sample-app-php-ci-probe-${minor}-${GITHUB_RUN_ID:
         if (php_ini_loaded_file() !== "/usr/local/etc/php/php.ini") { throw new RuntimeException("Production INI must be loaded."); }
         echo json_encode(["php" => PHP_VERSION, "extensions" => get_loaded_extensions(), "ini" => php_ini_loaded_file(), "coverage" => "none"]), PHP_EOL;
     ' "$minor"
-docker image inspect "$runtime" --format 'php_ci_image={{.Id}}'
+printf 'php_ci_image=%s\n' "$runtime_id"
 
 state="${RUNNER_TEMP:?RUNNER_TEMP is required}/sample-app-php-ci"
 mkdir -p "$state/bin" "$state/tmp" "$state/composer-home/cache"
 ln -sf "$root/scripts/ci/run-php-container.sh" "$state/bin/php"
 ln -sf "$root/scripts/ci/run-php-container.sh" "$state/bin/composer"
+SAMPLE_APP_PHP_CI_TEST_IMAGE="$runtime_id" SAMPLE_APP_PHP_CI_ROOT="$root" SAMPLE_APP_PHP_CI_STATE="$state" \
+    python3 -m unittest discover -s "$root/tests/ci" -p test_php_container_tls.py -v
 {
-    echo "SAMPLE_APP_PHP_CI_IMAGE=$runtime"
+    echo "SAMPLE_APP_PHP_CI_IMAGE=$runtime_id"
     echo "SAMPLE_APP_PHP_CI_ROOT=$root"
     echo "SAMPLE_APP_PHP_CI_STATE=$state"
     echo "COMPOSER_HOME=$state/composer-home"
