@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3d8d6274929fb506497ff86798b915ca",
+    "content-hash": "798ff6d69f82d49b2ba898fa193ad6fe",
     "packages": [
         {
             "name": "apache/avro",
@@ -510,16 +510,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.18.0",
+            "version": "3.18.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "345b124123b75710342f90125287817d1c64d2ae"
+                "reference": "ffa67454b99e299624d46dc2c5a4f7eceab5b73f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/345b124123b75710342f90125287817d1c64d2ae",
-                "reference": "345b124123b75710342f90125287817d1c64d2ae",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/ffa67454b99e299624d46dc2c5a4f7eceab5b73f",
+                "reference": "ffa67454b99e299624d46dc2c5a4f7eceab5b73f",
                 "shasum": ""
             },
             "require": {
@@ -571,7 +571,7 @@
                         "laravel": "^12.69.0|^13.30.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.18.0",
+                    "product-train": "3.18.1",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -641,7 +641,7 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-13T09:49:18+00:00"
+            "time": "2026-11-13T14:05:47+00:00"
         },
         {
             "name": "durable-workflow/waterline",
