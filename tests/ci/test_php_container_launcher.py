@@ -1,7 +1,10 @@
 import json
 import os
 import pathlib
+import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -82,6 +85,95 @@ class PhpContainerLauncherTests(unittest.TestCase):
                                     text=True, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("PHP CI repository root is required", result.stderr)
+
+
+class PhpContainerSetupImportTests(unittest.TestCase):
+    def check_import_isolation(self, location, module="json"):
+        with tempfile.TemporaryDirectory() as directory:
+            state = pathlib.Path(directory)
+            source = state / "source"
+            for relative in (
+                "scripts/ci/setup-php-container.sh",
+                "scripts/ci/run-php-container.sh",
+                "scripts/ci/php-container-images.json",
+                "tests/ci/test_php_container_tls.py",
+            ):
+                destination = source / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, destination)
+            guard = source / ".central-apt-source/docker/apt/require-fixed-bookworm-apt.sh"
+            guard.parent.mkdir(parents=True)
+            guard.touch()
+            working_directory = state / "working-directory"
+            import_directory = state / "imports"
+            working_directory.mkdir()
+            import_directory.mkdir()
+            home = state / "home"
+            home.mkdir()
+            marker = state / "import-executed"
+            planted = {
+                "working-directory": working_directory,
+                "PYTHONPATH": import_directory,
+                "TLS-script-directory": source / "tests/ci",
+            }[location]
+            (planted / f"{module}.py").write_text(
+                f"open({str(marker)!r}, 'w').write('marker-only import\\n')\n"
+                "raise SystemExit(42)\n"
+            )
+            binary_directory = state / "bin"
+            binary_directory.mkdir()
+            # Native-command stubs keep this an import-only control: no build,
+            # container, certificate generation, network request or trust claim.
+            commands = {
+                "git": "printf '%s\\n' 18783be6bef737cc778e4c7282a8797e39daa61a\n",
+                "sha256sum": "cat >/dev/null\n",
+                "docker": (
+                    "case \"$1\" in\n"
+                    "  build|run) exit 0 ;;\n"
+                    f"  image) printf '%s\\n' sha256:{'f' * 64} ;;\n"
+                    "  *) exit 91 ;;\nesac\n"
+                ),
+                "python3": (
+                    # Import the real TLS control, but skip its runtime test.
+                    "unset SAMPLE_APP_PHP_CI_TEST_IMAGE\n"
+                    f"exec {shlex.quote(sys.executable)} \"$@\"\n"
+                ),
+            }
+            for name, body in commands.items():
+                command = binary_directory / name
+                command.write_text("#!/bin/sh\nset -eu\n" + body)
+                command.chmod(0o700)
+            environment = {
+                "PATH": str(binary_directory) + os.pathsep + os.defpath,
+                "HOME": str(home),
+                "TMPDIR": str(state),
+                "RUNNER_TEMP": str(state),
+                "GITHUB_ENV": str(state / "github-env"),
+                "GITHUB_PATH": str(state / "github-path"),
+            }
+            if location == "PYTHONPATH":
+                environment["PYTHONPATH"] = str(import_directory)
+            result = subprocess.run(
+                ["bash", str(source / "scripts/ci/setup-php-container.sh"), "8.4"],
+                cwd=working_directory, env=environment, text=True, capture_output=True, timeout=15,
+            )
+            self.assertFalse(marker.exists(), f"Executed {location}/{module}.py")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("skipped=1", result.stderr, "The real TLS test module must be imported")
+            self.assertIn("SAMPLE_APP_PHP_CI_IMAGE=sha256:", (state / "github-env").read_text())
+            self.assertEqual(list(source.rglob("__pycache__")), [])
+
+    def test_selector_ignores_working_directory_imports(self):
+        self.check_import_isolation("working-directory")
+
+    def test_selector_ignores_pythonpath_imports(self):
+        self.check_import_isolation("PYTHONPATH")
+
+    def test_startup_ignores_pythonpath_site_customization(self):
+        self.check_import_isolation("PYTHONPATH", "sitecustomize")
+
+    def test_tls_control_does_not_add_its_script_directory_to_imports(self):
+        self.check_import_isolation("TLS-script-directory")
 
 
 if __name__ == "__main__":
