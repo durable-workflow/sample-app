@@ -11,6 +11,9 @@ ARG DURABLE_WORKFLOW_WATERLINE_VERSION
 
 COPY docker/install-phpredis.sh /usr/local/bin/install-phpredis
 
+# No APT download retries before the first networked apt-get: CVE-2026-109518
+# (durable-workflow/.github#295).
+RUN echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 RUN apt-get update && apt-get install -y \
     curl libpq-dev libzip-dev unzip git \
     && docker-php-ext-install pdo pdo_mysql pcntl zip bcmath \

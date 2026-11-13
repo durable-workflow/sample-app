@@ -25,6 +25,9 @@ ARG APACHE_AVRO_RUST_VERSION=0.21.0
 ENV DURABLE_WORKFLOW_RUST_SDK_VERSION=${DURABLE_WORKFLOW_RUST_SDK_VERSION} \
     APACHE_AVRO_RUST_VERSION=${APACHE_AVRO_RUST_VERSION}
 
+# No APT download retries before the first networked apt-get: CVE-2026-109518
+# (durable-workflow/.github#295).
+RUN echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
