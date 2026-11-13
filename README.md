@@ -60,10 +60,15 @@ are accepted.
 
 Before reusing an existing Server database, stop the Server, back up its database
 and storage, and run the selected image's `schema-upgrade` command. Follow the
-[Server upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.9.0/docs/releases/3.9.0.md#upgrade),
+[Server upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.9.1/docs/releases/3.9.1.md#upgrade),
 including the intermediate steps when upgrading from an older release. Rolling
 back after a schema upgrade requires restoring the backup. The example tuple
 does not migrate an existing database for you.
+
+When upgrading an existing task queue, stop its older workers and restart with
+the tuple's SDKs. The selected Server settles open activities and timers when
+a run closes; replay requires the matching SDK support. See the
+[run-close behavior notes](https://github.com/durable-workflow/server/blob/3.9.1/docs/releases/3.9.1.md#a-runs-own-close-settles-its-open-activities-and-timers).
 
 On Native 3.3, stop every older PHP worker that can consume a task queue, including standby and autoscaling workers, before starting any SDK 3.11 worker on it. Once an anchored condition wait exists, keep that queue on SDK 3.11 or newer. See the [PHP SDK upgrade guide](https://github.com/durable-workflow/sdk-php/blob/3.11.0/docs/portal/operate/upgrading.md).
 
