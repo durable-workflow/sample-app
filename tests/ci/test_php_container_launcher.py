@@ -32,6 +32,10 @@ class PhpContainerLauncherTests(unittest.TestCase):
                 "DB_PORT": "12345",
                 "GITHUB_TOKEN": "must-not-enter-container",
                 "COMPOSER_AUTH": "must-not-enter-container",
+                "SAMPLE_APP_PLAYGROUND_SCENARIO": '{"input":["sample"]}',
+                "SAMPLE_APP_ROOT": str(ROOT),
+                "DURABLE_WORKFLOW_RUNTIME_URL": "http://127.0.0.1:8080",
+                "DURABLE_WORKFLOW_WORKER_TOKEN": "synthetic-worker",
                 **overrides,
             }
             arguments = [str(state / "bin/composer") if x == "{composer}" else x for x in arguments]
@@ -46,6 +50,10 @@ class PhpContainerLauncherTests(unittest.TestCase):
         self.assertIn("DW_CI_CA_SHA256", passed)
         self.assertNotIn("GITHUB_TOKEN", passed)
         self.assertNotIn("COMPOSER_AUTH", passed)
+        self.assertIn("SAMPLE_APP_PLAYGROUND_SCENARIO", passed)
+        self.assertIn("SAMPLE_APP_ROOT", passed)
+        self.assertIn("DURABLE_WORKFLOW_RUNTIME_URL", passed)
+        self.assertIn("DURABLE_WORKFLOW_WORKER_TOKEN", passed)
         mounts = [invocation[i + 1] for i, part in enumerate(invocation[:-1]) if part == "--mount"]
         self.assertEqual(mounts.count(f"type=bind,source={bundle},target={bundle},readonly"), 1)
         self.assertIn("host", invocation)

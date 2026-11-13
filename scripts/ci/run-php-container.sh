@@ -38,11 +38,15 @@ for variable in SSL_CERT_FILE CURL_CA_BUNDLE GIT_SSL_CAINFO COMPOSER_CAFILE \
     fi
 done
 
-# Pass only public CI settings and synthetic application configuration.
+# Pass the CI configuration and the playground's separate synthetic role credentials.
 while IFS= read -r variable; do
     case "$variable" in
         APP_*|DB_*|SHARED_DB_*|REDIS_*|CACHE_*|QUEUE_*|SESSION_*|MAIL_*|BCRYPT_ROUNDS|\
         COMPOSER_HOME|COMPOSER_CACHE_DIR|COMPOSER_MAX_PARALLEL_*|COMPOSER_IPRESOLVE|\
+        SAMPLE_APP_ROOT|SAMPLE_APP_PLAYGROUND_SCENARIO|SAMPLE_APP_PLAYGROUND_WORKFLOW_ID_PREFIX|\
+        DURABLE_WORKFLOW_RUNTIME_URL|DURABLE_WORKFLOW_SERVER_URL|DURABLE_WORKFLOW_NAMESPACE|\
+        DURABLE_WORKFLOW_TASK_QUEUE|DURABLE_WORKFLOW_WORKER_ID|\
+        DURABLE_WORKFLOW_WORKER_TOKEN|DURABLE_WORKFLOW_CLIENT_TOKEN|\
         DW_CI_CA_SHA256|GITHUB_ACTIONS|CI|TMPDIR|TZ)
             options+=(--env "$variable") ;;
     esac

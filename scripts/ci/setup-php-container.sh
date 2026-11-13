@@ -20,13 +20,14 @@ docker build --file "$root/docker/php-ci/Dockerfile" --build-arg "PHP_IMAGE=$ima
 docker run --rm --init --name "sample-app-php-ci-probe-${minor}-${GITHUB_RUN_ID:-local}" \
     --cpus 1 --memory 512m --pids-limit 64 --network none "$runtime" \
     php -r '
+        if (PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION !== $argv[1]) { throw new RuntimeException("The PHP matrix minor does not match the image."); }
         foreach (["mbstring", "intl", "pdo_mysql", "redis", "bcmath", "gd", "zip", "curl", "pcntl"] as $extension) {
             if (!extension_loaded($extension)) { throw new RuntimeException("Missing extension: ".$extension); }
         }
         if (extension_loaded("xdebug") || extension_loaded("pcov")) { throw new RuntimeException("Coverage must remain none."); }
         if (php_ini_loaded_file() !== "/usr/local/etc/php/php.ini") { throw new RuntimeException("Production INI must be loaded."); }
         echo json_encode(["php" => PHP_VERSION, "extensions" => get_loaded_extensions(), "ini" => php_ini_loaded_file(), "coverage" => "none"]), PHP_EOL;
-    '
+    ' "$minor"
 docker image inspect "$runtime" --format 'php_ci_image={{.Id}}'
 
 state="${RUNNER_TEMP:?RUNNER_TEMP is required}/sample-app-php-ci"
