@@ -6,7 +6,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "durable-workflow/sdk": "^3.18.1"
+        "durable-workflow/sdk": "^3.18.2"
     },
     "config": {
         "allow-plugins": false,
