@@ -13,7 +13,7 @@
         "durable-workflow/ai": "dev-main",
         "durable-workflow/sdk": "^3.11.0",
         "durable-workflow/waterline": "^2.0",
-        "durable-workflow/workflow": "^2.22.0",
+        "durable-workflow/workflow": "^2.28.1",
         "laravel/ai": "^0.6.0",
         "laravel/framework": "^13.41.0",
         "laravel/mcp": "^0.6.0",
