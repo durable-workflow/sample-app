@@ -11,9 +11,9 @@
     "require": {
         "php": "^8.4",
         "durable-workflow/sdk": "^3.11.0",
-        "durable-workflow/workflow": "^2.22.0",
+        "durable-workflow/workflow": "^2.28.1",
         "durable-workflow/waterline": "^2.0",
-        "laravel/framework": "^12.69",
+        "laravel/framework": "^12.72.0",
         "laravel/tinker": "^2.10.1"
     },
     "require-dev": {
