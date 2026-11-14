@@ -11,12 +11,68 @@ if [[ ! "$image" =~ ^sha256:[0-9a-f]{64}$ ]]; then
     exit 1
 fi
 
+# Container writes must never reach a host executable, wrapper or verifier.
+# Canonical paths also prevent a writable-data symlink becoming a control mount.
+require_directory() {
+    local path="$1"
+    if [[ "$path" != /* || -L "$path" || "$(realpath -m -- "$path")" != "$path" \
+        || ( -e "$path" && ! -d "$path" ) ]]; then
+        echo 'PHP CI data directories must be canonical and contain no symlinks.' >&2
+        exit 1
+    fi
+    mkdir -p -- "$path"
+}
+
+require_directory "$root"
+require_directory "$state"
+if [[ "$state/" == "$root/"* || "$root/" == "$state/"* ]]; then
+    echo 'PHP CI source and wrapper state must be separate directories.' >&2
+    exit 1
+fi
+
 options=(--rm --init --interactive --name "sample-app-php-ci-${command}-${BASHPID}"
     --cpus 2 --memory 2g --pids-limit 512 --network host
     --cap-drop ALL --security-opt no-new-privileges
     --user "$(id -u):$(id -g)" --workdir "$PWD"
-    --mount "type=bind,source=$root,target=$root"
-    --mount "type=bind,source=$state,target=$state")
+    --mount "type=bind,source=$root,target=$root,readonly"
+    --mount "type=bind,source=$state,target=$state,readonly")
+
+for relative in vendor bootstrap/cache storage .phpunit.cache \
+    microservice/vendor microservice/bootstrap/cache microservice/storage microservice/.phpunit.cache \
+    playground/php-runtime/vendor; do
+    require_directory "$root/$relative"
+    options+=(--mount "type=bind,source=$root/$relative,target=$root/$relative")
+done
+for relative in .env microservice/.env; do
+    path="$root/$relative"
+    if [[ -L "$path" || "$(realpath -m -- "$path")" != "$path" \
+        || ( -e "$path" && ! -f "$path" ) ]]; then
+        echo 'PHP CI environment data must be a regular file without symlinks.' >&2
+        exit 1
+    fi
+    if [[ ! -e "$path" ]]; then touch -- "$path"; fi
+    options+=(--mount "type=bind,source=$path,target=$path")
+done
+for relative in tmp composer-home source/php; do
+    require_directory "$state/$relative"
+    options+=(--mount "type=bind,source=$state/$relative,target=$state/$relative")
+done
+# The host runs the Python/Rust scaffolds. PHP may write only its own source.
+require_directory "$state/source/python"
+require_directory "$state/source/rust"
+
+# Preview tests create/remove public/hot. Keep these writes in disposable data,
+# rather than exposing the checkout's public scripts/assets to container writes.
+require_directory "$state/data"
+for application in root microservice; do
+    public="$root/public"
+    if [[ "$application" == microservice ]]; then public="$root/microservice/public"; fi
+    require_directory "$public"
+    snapshot="$state/data/public-$application"
+    if [[ ! -e "$snapshot" && ! -L "$snapshot" ]]; then cp -a -- "$public" "$snapshot"; fi
+    require_directory "$snapshot"
+    options+=(--mount "type=bind,source=$snapshot,target=$public")
+done
 
 # Composer's guard is a composite action outside the repository checkout.
 if [[ -n "${GITHUB_ACTION_PATH:-}" ]]; then

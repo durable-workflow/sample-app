@@ -38,6 +38,8 @@ ln -sf "$root/scripts/ci/run-php-container.sh" "$state/bin/composer"
 # Direct isolated execution keeps discovery from adding the checkout to sys.path.
 SAMPLE_APP_PHP_CI_TEST_IMAGE="$runtime_id" SAMPLE_APP_PHP_CI_ROOT="$root" SAMPLE_APP_PHP_CI_STATE="$state" \
     python3 -I -S -B "$root/tests/ci/test_php_container_tls.py" -v
+SAMPLE_APP_PHP_CI_TEST_IMAGE="$runtime_id" \
+    python3 -I -S -B "$root/tests/ci/test_php_container_isolation.py" -v
 {
     echo "SAMPLE_APP_PHP_CI_IMAGE=$runtime_id"
     echo "SAMPLE_APP_PHP_CI_ROOT=$root"

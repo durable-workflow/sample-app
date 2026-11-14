@@ -97,6 +97,7 @@ class PhpContainerSetupImportTests(unittest.TestCase):
                 "scripts/ci/run-php-container.sh",
                 "scripts/ci/php-container-images.json",
                 "tests/ci/test_php_container_tls.py",
+                "tests/ci/test_php_container_isolation.py",
             ):
                 destination = source / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
