@@ -16,17 +16,26 @@ LAUNCHER = ROOT / "scripts/ci/run-php-container.sh"
 class PhpContainerLauncherTests(unittest.TestCase):
     def invoke(self, command="php", arguments=(), **overrides):
         with tempfile.TemporaryDirectory() as directory:
-            state = pathlib.Path(directory)
+            fixture = pathlib.Path(directory)
+            root = fixture / "repository"
+            root.mkdir()
+            state = fixture / "state"
+            state.mkdir()
+            self.fixture_root = str(root)
+            self.fixture_state = str(state)
             (state / "bin").mkdir()
             (state / "bin" / command).symlink_to(LAUNCHER)
             docker = state / "bin/docker"
             docker.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
             docker.chmod(0o755)
+            git = state / "bin/git"
+            git.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(str(root / ".git")) + "\n")
+            git.chmod(0o755)
             bundle = state / "ca.pem"
             bundle.write_text("synthetic CA mount, never executed")
             environment = {
                 "PATH": str(state / "bin") + os.pathsep + os.environ["PATH"],
-                "SAMPLE_APP_PHP_CI_ROOT": str(ROOT),
+                "SAMPLE_APP_PHP_CI_ROOT": str(root),
                 "SAMPLE_APP_PHP_CI_STATE": str(state),
                 "SAMPLE_APP_PHP_CI_IMAGE": "sha256:" + "f" * 64,
                 "SSL_CERT_FILE": str(bundle),
@@ -36,13 +45,14 @@ class PhpContainerLauncherTests(unittest.TestCase):
                 "GITHUB_TOKEN": "must-not-enter-container",
                 "COMPOSER_AUTH": "must-not-enter-container",
                 "SAMPLE_APP_PLAYGROUND_SCENARIO": '{"input":["sample"]}',
-                "SAMPLE_APP_ROOT": str(ROOT),
+                "SAMPLE_APP_ROOT": str(root),
+                "TMPDIR": str(state / "tmp"),
                 "DURABLE_WORKFLOW_RUNTIME_URL": "http://127.0.0.1:8080",
                 "DURABLE_WORKFLOW_WORKER_TOKEN": "synthetic-worker",
                 **overrides,
             }
             arguments = [str(state / "bin/composer") if x == "{composer}" else x for x in arguments]
-            result = subprocess.run([str(state / "bin" / command), *arguments], cwd=ROOT,
+            result = subprocess.run([str(state / "bin" / command), *arguments], cwd=root,
                                     env=environment, text=True, capture_output=True, check=True)
             return json.loads(result.stdout), str(bundle)
 
@@ -71,6 +81,37 @@ class PhpContainerLauncherTests(unittest.TestCase):
     def test_composer_uses_the_container_executable(self):
         invocation, _ = self.invoke(command="composer", arguments=("audit", "--locked"))
         self.assertEqual(invocation[-3:], ["composer", "audit", "--locked"])
+
+    def test_constructed_mounts_keep_source_and_control_state_read_only(self):
+        invocation, _ = self.invoke()
+        mounts = [invocation[i + 1] for i, part in enumerate(invocation[:-1]) if part == "--mount"]
+        root, state = self.fixture_root, self.fixture_state
+        self.assertIn(f"type=bind,source={root},target={root},readonly", mounts)
+        self.assertIn(f"type=bind,source={state},target={state},readonly", mounts)
+        writable = {mount for mount in mounts if not mount.endswith(",readonly")}
+        expected = {
+            f"type=bind,source={root}/{relative},target={root}/{relative}"
+            for relative in (
+                "vendor", "bootstrap/cache", "storage", ".phpunit.cache", ".env",
+                "microservice/vendor", "microservice/bootstrap/cache", "microservice/storage",
+                "microservice/.phpunit.cache", "microservice/.env", "playground/php-runtime/vendor",
+            )
+        }
+        expected.update(
+            f"type=bind,source={state}/{relative},target={state}/{relative}"
+            for relative in ("data/php-tmp", "composer-home", "source/php")
+        )
+        expected.update({
+            f"type=bind,source={state}/data/public-root,target={root}/public",
+            f"type=bind,source={state}/data/public-microservice,target={root}/microservice/public",
+        })
+        self.assertEqual(writable, expected)
+
+    def test_constructed_environment_separates_php_and_host_temporary_data(self):
+        invocation, _ = self.invoke()
+        passed = [invocation[i + 1] for i, part in enumerate(invocation[:-1]) if part == "--env"]
+        temporary = [value for value in passed if value == "TMPDIR" or value.startswith("TMPDIR=")]
+        self.assertEqual(temporary, [f"TMPDIR={self.fixture_state}/data/php-tmp"])
 
     def test_mutable_image_tag_refuses_before_docker(self):
         with self.assertRaises(subprocess.CalledProcessError) as failure:
