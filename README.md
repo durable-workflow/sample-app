@@ -60,10 +60,14 @@ are accepted.
 
 Before reusing an existing Server database, stop the Server, back up its database
 and storage, and run the selected image's `schema-upgrade` command. Follow the
-[Server upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.9.1/docs/releases/3.9.1.md#upgrade),
-including the intermediate steps when upgrading from an older release. Rolling
-back after a schema upgrade requires restoring the backup. The example tuple
-does not migrate an existing database for you.
+[Server 3.12.0 upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.12.0/docs/releases/3.12.0.md#upgrade-and-rollback);
+the same command applies the intermediate steps when upgrading from an older
+release. Rolling back after a schema upgrade requires restoring the backup. The
+example tuple does not migrate an existing database for you.
+
+Workflow 2.29.0 adds additive application migrations. After updating an existing
+checkout, run `composer install` and then `php artisan migrate` in the root app
+and in `microservice/` before starting its workers.
 
 When upgrading an existing task queue, stop its older workers and restart with
 the tuple's SDKs. The selected Server settles open activities and timers when

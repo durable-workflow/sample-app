@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "29e59425a684cc4db8bb9eb3a556bdbb",
+    "content-hash": "0024f1f9609bb4d6fcf7939a170479df",
     "packages": [
         {
             "name": "apache/avro",
@@ -510,16 +510,16 @@
         },
         {
             "name": "durable-workflow/sdk",
-            "version": "3.18.2",
+            "version": "3.19.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/sdk-php.git",
-                "reference": "f9483bb2b5b45f591a82d9e5419c5b60a6e967c6"
+                "reference": "15e2daa51e3afc61eb243696109ad18059ecd65d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/f9483bb2b5b45f591a82d9e5419c5b60a6e967c6",
-                "reference": "f9483bb2b5b45f591a82d9e5419c5b60a6e967c6",
+                "url": "https://api.github.com/repos/durable-workflow/sdk-php/zipball/15e2daa51e3afc61eb243696109ad18059ecd65d",
+                "reference": "15e2daa51e3afc61eb243696109ad18059ecd65d",
                 "shasum": ""
             },
             "require": {
@@ -551,7 +551,7 @@
             },
             "suggest": {
                 "ext-pcntl": "Required by framework console workers for graceful SIGINT and SIGTERM handling.",
-                "laravel/framework": "Enables the auto-discovered service-mode bridge on Laravel 12.69.0 or 13.30.0 and later releases of each major (the patched minimums for GHSA-f9x3-7vq9-cph6).",
+                "laravel/framework": "Enables the auto-discovered service-mode bridge on Laravel 12.72.0 or 13.41.0 and later releases of each major (the patched November 2026 security minimums).",
                 "open-telemetry/api": "Optional worker tracing with the application's provider; supports API 1.10.1 and later in the 1.x line.",
                 "symfony/console": "Required with symfony/framework-bundle to run the Symfony 6.4, 7, and 8 worker command.",
                 "symfony/framework-bundle": "Enables the Symfony 6.4, 7, and 8 service-mode bundle."
@@ -568,10 +568,10 @@
                 },
                 "durable-workflow": {
                     "frameworks": {
-                        "laravel": "^12.69.0|^13.30.0",
+                        "laravel": "^12.72.0|^13.41.0",
                         "symfony": "^6.4|^7.0|^8.0"
                     },
-                    "product-train": "3.18.2",
+                    "product-train": "3.19.0",
                     "payload-codecs": [
                         "avro"
                     ],
@@ -641,20 +641,20 @@
                 "issues": "https://github.com/durable-workflow/sdk-php/issues",
                 "source": "https://github.com/durable-workflow/sdk-php"
             },
-            "time": "2026-11-13T15:44:45+00:00"
+            "time": "2026-11-17T21:42:06+00:00"
         },
         {
             "name": "durable-workflow/waterline",
-            "version": "2.18.0",
+            "version": "2.18.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/waterline.git",
-                "reference": "9c241c573f479a13982fa390c21b226ed19759d1"
+                "reference": "cfde350bbcfb83dbe3772ea4fe57d55326d0fdb3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/9c241c573f479a13982fa390c21b226ed19759d1",
-                "reference": "9c241c573f479a13982fa390c21b226ed19759d1",
+                "url": "https://api.github.com/repos/durable-workflow/waterline/zipball/cfde350bbcfb83dbe3772ea4fe57d55326d0fdb3",
+                "reference": "cfde350bbcfb83dbe3772ea4fe57d55326d0fdb3",
                 "shasum": ""
             },
             "require": {
@@ -691,7 +691,7 @@
                     "dev-main": "2.18.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.18.0",
+                    "product-train": "2.18.1",
                     "service-capacity-evidence": {
                         "schema": "durable-workflow.v2.namespace-capacity-evidence",
                         "schema-version": 1,
@@ -721,27 +721,27 @@
             "description": "Operational UI for Durable Workflow across embedded and service-mode deployments.",
             "support": {
                 "issues": "https://github.com/durable-workflow/waterline/issues",
-                "source": "https://github.com/durable-workflow/waterline/tree/2.18.0"
+                "source": "https://github.com/durable-workflow/waterline/tree/2.18.1"
             },
-            "time": "2026-11-13T03:33:32+00:00"
+            "time": "2026-11-17T03:11:53+00:00"
         },
         {
             "name": "durable-workflow/workflow",
-            "version": "2.28.0",
+            "version": "2.29.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/durable-workflow/workflow.git",
-                "reference": "8ac207dafcce76858941061fe65bd29810930fbf"
+                "reference": "12687fbd9b986a822c11dcee03fc972eac4179f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/8ac207dafcce76858941061fe65bd29810930fbf",
-                "reference": "8ac207dafcce76858941061fe65bd29810930fbf",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/12687fbd9b986a822c11dcee03fc972eac4179f1",
+                "reference": "12687fbd9b986a822c11dcee03fc972eac4179f1",
                 "shasum": ""
             },
             "require": {
                 "apache/avro": "^1.12",
-                "laravel/framework": "^12.69.0|^13.30.0",
+                "laravel/framework": "^12.72.0|^13.41.0",
                 "php": "^8.2",
                 "react/promise": "^2.9|^3.0",
                 "symfony/yaml": "^6.0|^7.0|^8.0"
@@ -777,7 +777,7 @@
                     "dev-main": "2.0.x-dev"
                 },
                 "durable-workflow": {
-                    "product-train": "2.28.0",
+                    "product-train": "2.29.0",
                     "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
                     "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
                 }
@@ -804,9 +804,9 @@
             "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
             "support": {
                 "issues": "https://github.com/durable-workflow/workflow/issues",
-                "source": "https://github.com/durable-workflow/workflow/tree/2.28.0"
+                "source": "https://github.com/durable-workflow/workflow/tree/2.29.0"
             },
-            "time": "2026-11-13T03:08:03+00:00"
+            "time": "2026-11-17T22:31:59+00:00"
         },
         {
             "name": "egulias/email-validator",
@@ -1427,16 +1427,16 @@
         },
         {
             "name": "laravel/framework",
-            "version": "v12.69.3",
+            "version": "v12.72.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/framework.git",
-                "reference": "58ea544a2a80dc03c168e13a5dc9a1d176a88717"
+                "reference": "b089d3020e508f49b3625726ab4a2c897f1b78d5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/framework/zipball/58ea544a2a80dc03c168e13a5dc9a1d176a88717",
-                "reference": "58ea544a2a80dc03c168e13a5dc9a1d176a88717",
+                "url": "https://api.github.com/repos/laravel/framework/zipball/b089d3020e508f49b3625726ab4a2c897f1b78d5",
+                "reference": "b089d3020e508f49b3625726ab4a2c897f1b78d5",
                 "shasum": ""
             },
             "require": {
@@ -1549,10 +1549,10 @@
                 "league/flysystem-sftp-v3": "^3.25.1",
                 "mockery/mockery": "^1.6.10",
                 "opis/json-schema": "^2.4.1",
-                "orchestra/testbench-core": "^10.9.0",
+                "orchestra/testbench-core": "^10.15.0",
                 "pda/pheanstalk": "^5.0.6|^7.0.0",
                 "php-http/discovery": "^1.15",
-                "phpstan/phpstan": "^2.1.41",
+                "phpstan/phpstan": "2.2.13",
                 "phpunit/phpunit": "^10.5.35|^11.5.3|^12.0.1",
                 "predis/predis": "^2.3|^3.0",
                 "resend/resend-php": "^0.10.0|^1.0",
@@ -1645,7 +1645,7 @@
                 "issues": "https://github.com/laravel/framework/issues",
                 "source": "https://github.com/laravel/framework"
             },
-            "time": "2026-09-29T12:53:25+00:00"
+            "time": "2026-11-10T15:45:11+00:00"
         },
         {
             "name": "laravel/prompts",
@@ -6647,12 +6647,12 @@
             "version": "v5.7.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/vlucas/phpdotenv.git",
+                "url": "https://github.com/phpdotenv/phpdotenv.git",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/vlucas/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
+                "url": "https://api.github.com/repos/phpdotenv/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40",
                 "shasum": ""
             },

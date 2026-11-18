@@ -32,7 +32,7 @@ docker run --rm --init --name "sample-app-php-ci-probe-${minor}-${GITHUB_RUN_ID:
 printf 'php_ci_image=%s\n' "$runtime_id"
 
 state="${RUNNER_TEMP:?RUNNER_TEMP is required}/sample-app-php-ci"
-mkdir -p "$state/bin" "$state/tmp" "$state/composer-home/cache"
+mkdir -p "$state/bin" "$state/tmp" "$state/data/php-tmp" "$state/composer-home/cache"
 ln -sf "$root/scripts/ci/run-php-container.sh" "$state/bin/php"
 ln -sf "$root/scripts/ci/run-php-container.sh" "$state/bin/composer"
 # Direct isolated execution keeps discovery from adding the checkout to sys.path.

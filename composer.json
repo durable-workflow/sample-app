@@ -11,11 +11,11 @@
     "require": {
         "php": "^8.4",
         "durable-workflow/ai": "dev-main",
-        "durable-workflow/sdk": "^3.18.2",
-        "durable-workflow/waterline": "^2.18.0",
-        "durable-workflow/workflow": "^2.28.0",
+        "durable-workflow/sdk": "^3.19.0",
+        "durable-workflow/waterline": "^2.18.1",
+        "durable-workflow/workflow": "^2.29.0",
         "laravel/ai": "^0.6.0",
-        "laravel/framework": "^13.30",
+        "laravel/framework": "^13.41.0",
         "laravel/mcp": "^0.6.0",
         "laravel/tinker": "^3.0"
     },
