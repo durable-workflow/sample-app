@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Select authenticated dependency trust
-        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@69941853cc52ea2ed3d3629c06fe156a6f91b48b # clean-trust
+        uses: durable-workflow/.github/.github/actions/bootstrap-patched-pip@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust
         with:
           clients: pip,python,composer,curl,git
 
@@ -48,10 +48,10 @@ jobs:
         run: bash "$GITHUB_WORKSPACE/scripts/ci/setup-php-container.sh" "8.4"
 
       - name: Verify actual Composer trust before dependency requests
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@69941853cc52ea2ed3d3629c06fe156a6f91b48b # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust
 
       - name: Verify the playground Composer configuration
-        uses: durable-workflow/.github/.github/actions/verify-composer-trust@69941853cc52ea2ed3d3629c06fe156a6f91b48b # clean-trust
+        uses: durable-workflow/.github/.github/actions/verify-composer-trust@52283e2e8ea9a2cf7e3865ee30f2a72a38b098a2 # clean-trust
         with:
           working-directory: playground/php-runtime
 
