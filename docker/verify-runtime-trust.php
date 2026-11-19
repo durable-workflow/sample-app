@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 final class ProductionTrustRefused extends RuntimeException {}
 
-if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 4 || PHP_VERSION_ID < 80427) {
-    throw new ProductionTrustRefused('PHP 8.4.27 or newer on the 8.4 line is required.');
+if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 4 || PHP_VERSION_ID < 80428) {
+    throw new ProductionTrustRefused('PHP 8.4.28 or newer on the 8.4 line is required.');
 }
 Phar::loadPhar($argv[1]);
 require_once 'phar://composer.phar/vendor/autoload.php';

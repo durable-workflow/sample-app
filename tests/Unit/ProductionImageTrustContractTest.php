@@ -20,7 +20,7 @@ final class ProductionImageTrustContractTest extends TestCase
         }
         $this->assertStringContainsString('node:22.23.4-bookworm-slim@', $source);
         $this->assertStringContainsString('composer:2.11.0@', $source);
-        $this->assertStringContainsString('php:8.4.27-cli-bookworm@', $source);
+        $this->assertStringContainsString('php:8.4.28-cli-bookworm@', $source);
     }
 
     public function test_node_is_checked_before_asset_and_final_browser_downloads(): void
