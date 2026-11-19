@@ -2,7 +2,7 @@ FROM node:22.23.4-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e20
 
 FROM composer:2.11.0@sha256:278dfc7bd35169965d03f87194816f43bf4e6b6ea61707c2114e52ad12fe24ce AS composer
 
-FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe AS brotli-build
+FROM php:8.4.28-cli-bookworm@sha256:85da896b3eeb8bcd83fe612e51a529b7d5983a1fab92ef5f63c7ac6e2842fc46 AS brotli-build
 
 COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
@@ -129,7 +129,7 @@ RUN set -eux; \
         .; \
     test -s /tmp/sample-app-mysql-seed.tar
 
-FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe
+FROM php:8.4.28-cli-bookworm@sha256:85da896b3eeb8bcd83fe612e51a529b7d5983a1fab92ef5f63c7ac6e2842fc46
 
 COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli
@@ -174,7 +174,7 @@ COPY docker/install-npm.sh /usr/local/bin/install-npm
 COPY .devcontainer/docker/verify-php-trust.php .devcontainer/docker/verify-node-trust.mjs /usr/local/share/sample-app/
 
 RUN set -eux; \
-    php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 4 && PHP_VERSION_ID >= 80427 ? 0 : 1);'; \
+    php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 4 && PHP_VERSION_ID >= 80428 ? 0 : 1);'; \
     php /usr/local/share/sample-app/verify-php-trust.php "$(command -v composer)"; \
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
     echo "${TZ}" > /etc/timezone; \

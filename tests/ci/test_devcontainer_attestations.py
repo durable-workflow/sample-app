@@ -28,10 +28,10 @@ def bundle(platform="linux/amd64", change=None):
     metadata = {"vcs": {"source": "https://github.com/durable-workflow/sample-app",
                         "revision": REVISION, "localdir:dockerfile": ".devcontainer/docker"},
                 "source": {"infos": [{"filename": "Dockerfile", "language": "Dockerfile",
-                                      "data": base64.b64encode(f"FROM php:8.4.27-cli-bookworm@{BASE}\n".encode()).decode()}]}}
+                                      "data": base64.b64encode(f"FROM php:8.4.28-cli-bookworm@{BASE}\n".encode()).decode()}]}}
     provenance = {"runDetails": {"metadata": {"buildkit_metadata": metadata}},
                   "buildDefinition": {"resolvedDependencies": [
-                      {"uri": f"pkg:docker/php@8.4.27-cli-bookworm?digest={BASE}&platform={platform}",
+                      {"uri": f"pkg:docker/php@8.4.28-cli-bookworm?digest={BASE}&platform={platform}",
                        "digest": {"sha256": BASE[7:]}}]}}
 
     def statement(kind, predicate):
@@ -134,7 +134,7 @@ class AttestationTests(unittest.TestCase):
             self.verify(change)
 
     def test_mutable_or_other_distribution_base_is_refused(self):
-        for base in ("php:8.4.27-cli-bookworm", "php:8.4.27-cli-trixie@" + BASE):
+        for base in ("php:8.4.28-cli-bookworm", "php:8.4.28-cli-trixie@" + BASE):
             def change(values):
                 info = values[VERIFIER.SLSA]["predicate"]["runDetails"]["metadata"]["buildkit_metadata"]["source"]["infos"][0]
                 info["data"] = base64.b64encode(f"FROM {base}\n".encode()).decode()

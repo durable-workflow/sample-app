@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONTEXT_SOURCE = ".central-apt-source/docker/apt/require-fixed-bookworm-apt.sh"
 GUARD_PATH = "/usr/local/share/sample-app/require-fixed-bookworm-apt.sh"
 GUARD = "/bin/sh " + GUARD_PATH
-PARENT = "php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe"
+PARENT = "php:8.4.28-cli-bookworm@sha256:85da896b3eeb8bcd83fe612e51a529b7d5983a1fab92ef5f63c7ac6e2842fc46"
 
 
 def instructions(source):

@@ -1,6 +1,6 @@
 FROM composer:2.11.0@sha256:278dfc7bd35169965d03f87194816f43bf4e6b6ea61707c2114e52ad12fe24ce AS composer
 
-FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe AS brotli-build
+FROM php:8.4.28-cli-bookworm@sha256:85da896b3eeb8bcd83fe612e51a529b7d5983a1fab92ef5f63c7ac6e2842fc46 AS brotli-build
 
 COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
@@ -14,7 +14,7 @@ RUN /bin/sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh \
     && /out/verify-system-brotli \
     && cp /usr/src/brotli-inputs/version /usr/src/brotli-inputs/install-vendor.sh /usr/src/brotli-inputs/verify-runtime.php /out/
 
-FROM php:8.4.27-cli-bookworm@sha256:b3e907a1108629c562c4bb313ce3449e34d49991f6bb2487913f6146f47200fe AS base
+FROM php:8.4.28-cli-bookworm@sha256:85da896b3eeb8bcd83fe612e51a529b7d5983a1fab92ef5f63c7ac6e2842fc46 AS base
 
 COPY .central-apt-source/docker/apt/require-fixed-bookworm-apt.sh /usr/local/share/sample-app/require-fixed-bookworm-apt.sh
 COPY --from=brotli-build /out /usr/local/share/sample-app/brotli

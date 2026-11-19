@@ -1,11 +1,13 @@
 # Development image build inputs
 
-The development recipe uses the same pinned PHP 8.4.27 Bookworm index for its
+The development recipe uses the same pinned PHP 8.4.28 Bookworm index for its
 Brotli builder and final stage, on both amd64 and arm64. Its shared APT preflight
 comes from the accepted immutable source in
 [central `docker/apt`](https://github.com/durable-workflow/.github/tree/18783be6bef737cc778e4c7282a8797e39daa61a/docker/apt).
-That source records the exact parent descriptors and publisher SPDX package
-inventory; installed-image acceptance is a separate result.
+That source records the exact descriptors and publisher SPDX package inventory of
+the earlier PHP 8.4.27 parent; it does not record the 8.4.28 parent. The preflight
+itself does not depend on the parent digest: it checks the installed native
+APT/libapt pair in each stage. Installed-image acceptance is a separate result.
 
 Both image workflows check out that exact central commit without persisted
 credentials into `.central-apt-source`, then verify its actual HEAD and the
