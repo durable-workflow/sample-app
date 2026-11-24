@@ -1,16 +1,21 @@
-"""Prove a Python-created schedule fires into a published Rust SDK worker."""
+"""Prove a Python-created schedule fires into a published SDK worker."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import sys
 import uuid
 
 from durable_workflow import Client, ScheduleAction, ScheduleSpec
 
 
-WORKFLOW_TYPE = "polyglot.rust.greeter"
+QUEUE_VARIABLES = {
+    "php": "POLYGLOT_PHP_TASK_QUEUE",
+    "python": "POLYGLOT_PY_TASK_QUEUE",
+    "rust": "DURABLE_WORKFLOW_TASK_QUEUE",
+}
 REQUIRED_WORKFLOW_EVENTS = (
     "WorkflowStarted",
     "ScheduleTriggered",
@@ -27,22 +32,44 @@ def required(name: str) -> str:
     return value
 
 
-async def main() -> None:
-    queue = required("DURABLE_WORKFLOW_TASK_QUEUE")
-    marker = f"python-schedule-rust-{uuid.uuid4().hex[:12]}"
-    schedule_id = marker
+def activity_matches(runtime: str, result: dict, marker: str) -> bool:
+    match runtime, result:
+        case "php", {
+            "activity_runtime": "php",
+            "php_marker": {"name": name},
+            "php_description": {"runtime": "php"},
+        }:
+            return name == marker
+        case "python", {
+            "greeting": {"language": "python", "greeting": greeting},
+            "summary": {"language": "python"},
+        }:
+            return greeting == f"hello, {marker}"
+        case "rust", {
+            "activity_runtime": "rust",
+            "echo": {"runtime": "rust", "value": value},
+        }:
+            return value == marker
+    return False
+
+
+async def main(runtime: str = "rust") -> None:
+    workflow_type = f"polyglot.{runtime}.greeter"
+    queue = required(QUEUE_VARIABLES[runtime])
+    marker = f"python-schedule-{runtime}-{uuid.uuid4().hex[:12]}"
+    request = marker if runtime == "rust" else {"name": marker, "locale": "en"}
     async with Client(
         required("DURABLE_WORKFLOW_RUNTIME_URL"),
         namespace=required("DURABLE_WORKFLOW_NAMESPACE"),
         control_token=required("DURABLE_WORKFLOW_CLIENT_TOKEN"),
     ) as client:
         schedule = await client.create_schedule(
-            schedule_id=schedule_id,
+            schedule_id=marker,
             spec=ScheduleSpec(intervals=[{"every": "PT10S"}], timezone="UTC"),
             action=ScheduleAction(
-                workflow_type=WORKFLOW_TYPE,
+                workflow_type=workflow_type,
                 task_queue=queue,
-                input=[marker],
+                input=[request],
             ),
         )
         try:
@@ -56,18 +83,15 @@ async def main() -> None:
                 await asyncio.sleep(0.5)
 
             workflow_id = description.latest_workflow_instance_id
-            handle = client.get_workflow_handle(workflow_id, workflow_type=WORKFLOW_TYPE)
+            handle = client.get_workflow_handle(workflow_id, workflow_type=workflow_type)
             result = await handle.result(timeout=90, poll_interval=0.5)
             if (
                 not isinstance(result, dict)
-                or result.get("workflow_runtime") != "rust"
-                or result.get("activity_runtime") != "rust"
-                or result.get("request") != marker
-                or not isinstance(result.get("echo"), dict)
-                or result["echo"].get("runtime") != "rust"
-                or result["echo"].get("value") != marker
+                or result.get("workflow_runtime") != runtime
+                or result.get("request") != request
+                or not activity_matches(runtime, result, marker)
             ):
-                raise RuntimeError(f"Unexpected Rust workflow result: {result!r}")
+                raise RuntimeError(f"Unexpected {runtime} workflow result: {result!r}")
 
             execution = await handle.describe()
             if not execution.run_id or execution.status != "completed":
@@ -96,15 +120,15 @@ async def main() -> None:
             ]
             if not triggered:
                 raise RuntimeError(
-                    "Schedule history has no trigger linked to the completed Rust run."
+                    "Schedule history has no trigger linked to the completed run."
                 )
 
             print(
                 json.dumps(
                     {
                         "schedule_creator": "python",
-                        "workflow_runtime": "rust",
-                        "schedule_id": schedule_id,
+                        "workflow_runtime": runtime,
+                        "schedule_id": marker,
                         "workflow_id": workflow_id,
                         "run_id": execution.run_id,
                         "fires_count": description.fires_count,
@@ -118,10 +142,12 @@ async def main() -> None:
                 ),
                 flush=True,
             )
-            print("Python-created schedule -> Rust worker completed", flush=True)
+            print(f"Python-created schedule -> {runtime.capitalize()} worker completed", flush=True)
         finally:
             await schedule.delete()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] not in QUEUE_VARIABLES):
+        raise SystemExit("Pass at most one workflow runtime: php, python, or rust.")
+    asyncio.run(main(*sys.argv[1:]))
