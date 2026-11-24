@@ -72,8 +72,8 @@ start_workers() {
   ')
   python_version=$("${compose[@]}" exec -T python-workflow-worker \
     python -c 'from importlib.metadata import version; print(version("durable-workflow"))')
-  test "$php_version" = "$DURABLE_WORKFLOW_PHP_SDK_VERSION"
-  test "$python_version" = "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION"
+  [[ "$php_version" == "$DURABLE_WORKFLOW_PHP_SDK_VERSION" ]]
+  [[ "$python_version" == "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" ]]
 }
 
 run_creators() {
@@ -142,15 +142,15 @@ run_creators restart > "$scratch/originals.jsonl"
 
 "${compose[@]}" stop -t 5 "${workers[@]}" >&2
 "${compose[@]}" stop -t 5 server >&2
-test "$(docker inspect --format '{{.State.Running}}' "$server_id")" = false
+[[ "$(docker inspect --format '{{.State.Running}}' "$server_id")" == false ]]
 stopped_at=$(docker inspect --format '{{.State.FinishedAt}}' "$server_id")
 sleep 12
 "${compose[@]}" up -d --wait --wait-timeout 90 --no-build --no-deps server >&2
-test "$("${compose[@]}" ps -q server)" = "$server_id"
-test "$("${compose[@]}" ps -q mysql)" = "$database_id"
-test "$(docker inspect --format '{{.State.StartedAt}}' "$database_id")" = "$database_start"
+[[ "$("${compose[@]}" ps -q server)" == "$server_id" ]]
+[[ "$("${compose[@]}" ps -q mysql)" == "$database_id" ]]
+[[ "$(docker inspect --format '{{.State.StartedAt}}' "$database_id")" == "$database_start" ]]
 restarted_at=$(docker inspect --format '{{.State.StartedAt}}' "$server_id")
-test "$restarted_at" != "$original_start"
+[[ "$restarted_at" != "$original_start" ]]
 printf 'Server stopped at %s and restarted at %s.\n' "$stopped_at" "$restarted_at" >&2
 start_workers
 "${compose[@]}" run -T --rm --no-deps smoke python /app/scripts/verify_schedule_restart.py \

@@ -6,13 +6,13 @@ use DurableWorkflow\Client;
 use DurableWorkflow\Model\ScheduleAction;
 use DurableWorkflow\Model\ScheduleSpec;
 
-require __DIR__.'/vendor/autoload.php';
+require_once __DIR__.'/vendor/autoload.php';
 
 if (count($argv) !== 4) {
     throw new InvalidArgumentException('Pass the backfill phase, workflow runtime, and two-digit UTC hour.');
 }
 [$phase, $runtime, $hour] = array_slice($argv, 1);
-if (! in_array($phase, ['initial', 'repeat', 'timeout', 'recover'], true) || preg_match('/^(?:[01][0-9]|2[0-3])$/D', $hour) !== 1) {
+if (! in_array($phase, ['initial', 'repeat', 'timeout', 'recover'], true) || preg_match('/^(?:[01]\d|2[0-3])$/D', $hour) !== 1) {
     throw new InvalidArgumentException('Pass the backfill phase, workflow runtime, and two-digit UTC hour.');
 }
 $queueVariable = match ($runtime) {
@@ -29,9 +29,10 @@ $client = new Client(
 );
 $waiting = $phase === 'timeout';
 $workflow = $waiting ? 'signal-query' : 'greeter';
-$request = $waiting
-    ? ['workflow_runtime' => $runtime]
-    : ($runtime === 'rust' ? $id : ['name' => $id, 'locale' => 'en']);
+$request = $runtime === 'rust' ? $id : ['name' => $id, 'locale' => 'en'];
+if ($waiting) {
+    $request = ['workflow_runtime' => $runtime];
+}
 $action = new ScheduleAction(
     "polyglot.{$runtime}.{$workflow}",
     (string) getenv($queueVariable),
