@@ -18,15 +18,20 @@ function requiredScheduleEnv(string $name): string
     return $value;
 }
 
-$runtime = $argv[1] ?? 'rust';
+$arguments = array_slice($argv, 1);
+$keepSchedule = end($arguments) === '--keep-schedule';
+if ($keepSchedule) {
+    array_pop($arguments);
+}
+$runtime = $arguments[0] ?? 'rust';
 $queueVariable = match ($runtime) {
     'php' => 'POLYGLOT_PHP_TASK_QUEUE',
     'python' => 'POLYGLOT_PY_TASK_QUEUE',
     'rust' => 'POLYGLOT_RUST_TASK_QUEUE',
     default => throw new InvalidArgumentException('Choose php, python, or rust as the workflow runtime.'),
 };
-if (count($argv) > 2) {
-    throw new InvalidArgumentException('Pass at most one workflow runtime.');
+if (count($arguments) > 1) {
+    throw new InvalidArgumentException('Pass one optional workflow runtime followed by --keep-schedule.');
 }
 
 $marker = "php-schedule-{$runtime}-".bin2hex(random_bytes(6));
@@ -40,8 +45,10 @@ $schedule = $client->createSchedule(
     new ScheduleSpec(intervals: [['every' => 'PT10S']], timezone: 'UTC'),
     new ScheduleAction("polyglot.{$runtime}.greeter", requiredScheduleEnv($queueVariable), [$request]),
     scheduleId: $marker,
+    maxRuns: $keepSchedule ? 12 : null,
 );
 
+$verified = false;
 try {
     $deadline = microtime(true) + 120;
     do {
@@ -127,6 +134,9 @@ try {
         'result' => $result,
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).PHP_EOL;
     echo 'PHP-created schedule -> '.ucfirst($runtime).' worker completed'.PHP_EOL;
+    $verified = true;
 } finally {
-    $schedule->delete();
+    if (! $keepSchedule || ! $verified) {
+        $schedule->delete();
+    }
 }
