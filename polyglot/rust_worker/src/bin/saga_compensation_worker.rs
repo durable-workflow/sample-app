@@ -21,19 +21,46 @@ async fn main() -> Result<()> {
         .worker_token(Some(required("DURABLE_WORKFLOW_WORKER_TOKEN")))
         .build()?;
     let mut worker = Worker::new(client, queue)
-        .worker_id(format!("sample-saga-rust-{}", std::process::id()))
+        .worker_id(format!(
+            "sample-saga-rust-{}-{}",
+            std::env::var("HOSTNAME").unwrap_or_default(),
+            std::process::id(),
+        ))
         .poll_timeout(Duration::from_secs(3));
 
     for step in ["first", "second"] {
         worker.register_activity(format!("sample-app.saga.reserve-{step}"), move |_ctx, args| async move {
             Ok(json!({"step": step, "marker": args.get(0)}))
         });
-        worker.register_activity(format!("sample-app.saga.rust.undo-{step}"), move |_ctx, args| async move {
+        worker.register_activity(format!("sample-app.saga.rust.undo-{step}"), move |ctx, args| async move {
             if step == "second"
                 && args.get(0).and_then(|value| value.as_str())
                     .is_some_and(|marker| marker.starts_with("saga-fail-compensation-"))
             {
                 return Err(Error::WorkerLoop("planned undo-second compensation failure".to_string()));
+            }
+            if step == "second" && args.get(1).and_then(|value| value.as_bool()) == Some(true) {
+                let marker = args[0].as_str().ok_or_else(|| Error::WorkerLoop("Missing saga marker".into()))?;
+                let receipt: serde_json::Value = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .map_err(|error| Error::WorkerLoop(error.to_string()))?
+                    .post(format!("{}/effects", required("ACTIVITY_EFFECTS_URL")))
+                    .json(&json!({
+                        "operation_key": format!("{marker}:undo-second"),
+                        "attempt_id": ctx.activity_attempt_id,
+                        "input": {"operation": "undo-second", "marker": marker},
+                    }))
+                    .send().await.map_err(|error| Error::WorkerLoop(error.to_string()))?
+                    .error_for_status().map_err(|error| Error::WorkerLoop(error.to_string()))?
+                    .json().await.map_err(|error| Error::WorkerLoop(error.to_string()))?;
+                if receipt["reused"].as_bool() != Some(ctx.attempt_number == 2) {
+                    return Err(Error::WorkerLoop("Unexpected downstream compensation receipt.".into()));
+                }
+                if ctx.attempt_number == 1 {
+                    tokio::time::sleep(Duration::from_secs(45)).await;
+                    return Err(Error::WorkerLoop("Fixture did not stop the first compensation worker.".into()));
+                }
             }
             Ok(json!({"step": step, "marker": args.get(0), "runtime": "rust"}))
         });
@@ -48,20 +75,26 @@ async fn main() -> Result<()> {
             workflow_type.clone(),
             move |context, input| async move {
                 let marker = input.get(0).cloned().unwrap_or_else(|| json!(null));
-                let restart_check =
-                    input.get(1).and_then(|value| value.as_str()) == Some("restart-check");
+                let scenario = input.get(1).and_then(|value| value.as_str());
                 let mut saga = context.saga();
                 let outcome = async {
                     for step in ["first", "second"] {
                         context
                             .activity(format!("sample-app.saga.reserve-{step}"), json!([marker]))
                             .await?;
+                        let recover_step = scenario == Some("recover-effect") && step == "second";
+                        let mut options = ActivityOptions::new().retry_policy(ActivityRetryPolicy::new(1));
+                        if recover_step {
+                            options = options
+                                .start_to_close_timeout(Duration::from_secs(20))
+                                .retry_policy(ActivityRetryPolicy::new(2).backoff_intervals([Duration::from_secs(1)]));
+                        }
                         saga.add_compensation_with_options(
                             format!("sample-app.saga.{language}.undo-{step}"),
-                            ActivityOptions::new().retry_policy(ActivityRetryPolicy::new(1)),
-                            json!([marker]),
+                            options,
+                            if recover_step { json!([marker, true]) } else { json!([marker]) },
                         )?;
-                        if restart_check && step == "first" {
+                        if scenario == Some("restart-check") && step == "first" {
                             context.wait_signal(RESTART_SIGNAL).await?;
                         }
                     }

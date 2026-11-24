@@ -1,0 +1,72 @@
+x-saga-env: &saga-env
+  DURABLE_WORKFLOW_RUNTIME_URL: http://server:8080
+  DURABLE_WORKFLOW_NAMESPACE: default
+  DURABLE_WORKFLOW_TASK_QUEUE: sample-app-saga-recovery
+  DURABLE_WORKFLOW_WORKER_TOKEN: ${SAGA_FIXTURE_TOKEN:?set the disposable fixture token}
+  DURABLE_WORKFLOW_CLIENT_TOKEN: ${SAGA_FIXTURE_TOKEN:?set the disposable fixture token}
+  ACTIVITY_EFFECTS_URL: http://recovery-effects:8080
+
+x-saga-worker: &saga-worker
+  init: true
+  cpus: 0.75
+  mem_limit: 384m
+  pids_limit: 128
+  environment: *saga-env
+  depends_on:
+    server:
+      condition: service_healthy
+    recovery-effects:
+      condition: service_healthy
+
+services:
+  mysql:
+    init: true
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 128
+
+  server:
+    cpus: 1.5
+    mem_limit: 768m
+    pids_limit: 128
+    environment:
+      DW_AUTH_TOKEN: ${SAGA_FIXTURE_TOKEN:?set the disposable fixture token}
+
+  recovery-effects:
+    pids_limit: 64
+    volumes:
+      - ./python_worker/scripts/activity_effects_service.py:/app/activity_effects_service.py:ro
+    command: ["python", "/app/activity_effects_service.py"]
+
+  php-same-workflow-worker:
+    <<: *saga-worker
+    volumes:
+      - ./sagas/php_worker.php:/app/polyglot/sagas/php_worker.php:ro
+    command: ["php", "/app/polyglot/sagas/php_worker.php"]
+
+  saga-python:
+    <<: *saga-worker
+    image: "${COMPOSE_PROJECT_NAME}-smoke:latest"
+    volumes:
+      - ./sagas:/app/sagas:ro
+    command: ["python", "/app/sagas/python_worker.py"]
+
+  rust-workflow-worker:
+    <<: *saga-worker
+    build:
+      args:
+        CARGO_BUILD_JOBS: "2"
+    entrypoint: ["/usr/local/bin/saga-compensation-worker"]
+
+  smoke:
+    init: true
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 64
+    environment: *saga-env
+    volumes:
+      - ./sagas:/app/sagas:ro
+
+networks:
+  default:
+    internal: true

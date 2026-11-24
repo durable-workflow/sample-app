@@ -2,6 +2,7 @@ FROM rust:1.86-bookworm AS build
 
 ARG DURABLE_WORKFLOW_RUST_SDK_VERSION
 ARG APACHE_AVRO_RUST_VERSION=0.21.0
+ARG CARGO_BUILD_JOBS
 
 WORKDIR /build
 
@@ -36,6 +37,7 @@ COPY --from=build /build/target/release/durable-workflow-polyglot-rust-worker /u
 COPY --from=build /build/target/release/task_codec_rejection_probe /usr/local/bin/task-codec-rejection-probe
 COPY --from=build /build/target/release/activity_recovery_worker /usr/local/bin/activity-recovery-worker
 COPY --from=build /build/target/release/activity_upgrade_worker /usr/local/bin/activity-upgrade-worker
+COPY --from=build /build/target/release/saga_compensation_worker /usr/local/bin/saga-compensation-worker
 
 USER 65532:65532
 

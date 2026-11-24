@@ -30,10 +30,28 @@ final class PhpSagaCompensations
     }
 
     #[Activity('sample-app.saga.php.undo-second')]
-    public function undoSecond(ActivityContext $context, string $marker): array
+    public function undoSecond(ActivityContext $context, string $marker, bool $recoverEffect = false): array
     {
         if (str_starts_with($marker, 'saga-fail-compensation-')) {
             throw new RuntimeException('planned undo-second compensation failure');
+        }
+
+        if ($recoverEffect) {
+            $response = (new GuzzleHttp\Client(['timeout' => 5]))->post(required('ACTIVITY_EFFECTS_URL').'/effects', [
+                'json' => [
+                    'operation_key' => $marker.':undo-second',
+                    'attempt_id' => $context->activityAttemptId,
+                    'input' => ['operation' => 'undo-second', 'marker' => $marker],
+                ],
+            ]);
+            $receipt = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+            if ($receipt['reused'] !== ($context->attemptNumber === 2)) {
+                throw new RuntimeException('Unexpected downstream compensation receipt.');
+            }
+            if ($context->attemptNumber === 1) {
+                sleep(45);
+                throw new RuntimeException('Fixture did not stop the first compensation worker.');
+            }
         }
 
         return ['step' => 'second', 'marker' => $marker, 'runtime' => 'php'];
@@ -45,16 +63,20 @@ function runSaga(
     string $marker,
     string $compensationRuntime,
     bool $waitForRestart = false,
+    bool $recoverEffect = false,
 ): array {
     $saga = $context->saga();
 
     try {
         foreach (['first', 'second'] as $step) {
             $context->activity("sample-app.saga.reserve-{$step}", [$marker]);
+            $recoverStep = $recoverEffect && $step === 'second';
             $saga->addCompensation(
                 "sample-app.saga.{$compensationRuntime}.undo-{$step}",
-                [$marker],
-                ['retry_policy' => ['max_attempts' => 1]],
+                $recoverStep ? [$marker, true] : [$marker],
+                $recoverStep
+                    ? ['start_to_close_timeout' => 20, 'retry_policy' => ['max_attempts' => 2, 'backoff_seconds' => [1]]]
+                    : ['retry_policy' => ['max_attempts' => 1]],
             );
             if ($waitForRestart && $step === 'first') {
                 $context->waitCondition(
@@ -91,7 +113,9 @@ $worker = Worker::create($client, required('DURABLE_WORKFLOW_TASK_QUEUE'))
 foreach (['php', 'python', 'rust'] as $runtime) {
     $worker->registerWorkflow(
         "sample-app.saga.php.compensate-{$runtime}",
-        static fn (WorkflowContext $context, string $marker): array => runSaga($context, $marker, $runtime),
+        static fn (WorkflowContext $context, string $marker, string $scenario = ''): array => runSaga(
+            $context, $marker, $runtime, recoverEffect: $scenario === 'recover-effect',
+        ),
     );
     $restartType = "sample-app.saga.php.restart-compensate-{$runtime}";
     $worker->registerWorkflow(
