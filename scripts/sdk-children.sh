@@ -3,7 +3,8 @@ set -euo pipefail
 
 if [[ "${1:-}" == --help ]]; then
   printf '%s\n' 'Usage: scripts/sdk-children.sh' \
-    'Runs nine PHP/Python/Rust child directions and five Rust-involving typed failure, recovery and cancellation directions.' \
+    'Runs all nine PHP/Python/Rust child directions for completion, typed failure and cold recovery.' \
+    'Runs cooperative cancellation in the five directions involving Rust.' \
     'Requires original cooperative requester attribution despite forged metadata, duplicates and cold cleanup recovery.' \
     'Also executes all three cancellation clients with operator credentials, rejecting worker and missing credentials.' \
     'Checks actual published Waterline browser cascades for every cancellation direction and access mode.' \
@@ -107,6 +108,10 @@ callers() {
   DURABLE_WORKFLOW_CANCELLATION_RESPONSES="$(cat "$proof/$phase-php.jsonl" "$proof/$phase-python.jsonl" "$proof/$phase-rust.jsonl")"
 }
 
+inspect_worker() {
+  docker inspect "$1" | jq '.[0] | {Id,State:{Pid:.State.Pid,StartedAt:.State.StartedAt,FinishedAt:.State.FinishedAt,ExitCode:.State.ExitCode,OOMKilled:.State.OOMKilled,Running:.State.Running}}'
+}
+
 observer matrix
 observer failure
 if ! DURABLE_WORKFLOW_CHILD_RUNS="$(observer park)"; then
@@ -115,9 +120,31 @@ if ! DURABLE_WORKFLOW_CHILD_RUNS="$(observer park)"; then
 fi
 export DURABLE_WORKFLOW_CHILD_RUNS
 printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
+recovery_proof="$CHILD_PROOF_DIR/recovery"
+mkdir "$recovery_proof"
+declare -A original_child_workers
+for worker in "${workers[@]}"; do
+  original_child_workers[$worker]="$("${compose[@]}" ps -q "$worker")"
+  inspect_worker "${original_child_workers[$worker]}" > "$recovery_proof/$worker-before.json"
+  jq -e '.State.Running == true and .State.Pid > 0' "$recovery_proof/$worker-before.json" >/dev/null
+done
 "${compose[@]}" kill --signal SIGKILL "${workers[@]}"
-observer release
-"${compose[@]}" up -d --wait --no-build "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "${original_child_workers[$worker]}" > "$recovery_proof/$worker-killed.json"
+  jq -e '.State.ExitCode == 137 and .State.OOMKilled == false and .State.Running == false' \
+    "$recovery_proof/$worker-killed.json" >/dev/null
+done
+if ! DURABLE_WORKFLOW_CHILD_RUNS="$(observer release)"; then
+  printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS" >&2
+  exit 1
+fi
+printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
+"${compose[@]}" up -d --wait --no-build --no-deps --force-recreate "${workers[@]}"
+for worker in "${workers[@]}"; do
+  inspect_worker "$("${compose[@]}" ps -q "$worker")" > "$recovery_proof/$worker-replacement.json"
+  jq -e --arg old "${original_child_workers[$worker]}" '.Id != $old and .State.Running == true and .State.Pid > 0' \
+    "$recovery_proof/$worker-replacement.json" >/dev/null
+done
 observer recovery
 export POLYGLOT_TIMER_COOPERATIVE=1
 "${compose[@]}" up -d --wait --no-build --force-recreate "${workers[@]}"
@@ -128,9 +155,6 @@ for phase in cancellation_start cancellation_request cancellation_park; do
   fi
   printf '%s\n' "$DURABLE_WORKFLOW_CHILD_RUNS"
 done
-inspect_worker() {
-  docker inspect "$1" | jq '.[0] | {Id,State:{Pid:.State.Pid,StartedAt:.State.StartedAt,FinishedAt:.State.FinishedAt,ExitCode:.State.ExitCode,OOMKilled:.State.OOMKilled,Running:.State.Running}}'
-}
 declare -A original_cancel_workers
 recover_cancellation() {
   local proof="$CHILD_PROOF_DIR${CHILD_BATCH_MODE:+/$CHILD_BATCH_MODE}"

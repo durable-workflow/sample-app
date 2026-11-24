@@ -38,11 +38,11 @@ def emit(**record):
         path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n")
 
 
-def records():
+def records(directions=RUST_DIRECTIONS):
     pending = [json.loads(line) for line in required("DURABLE_WORKFLOW_CHILD_RUNS").splitlines()]
-    if (len(pending) != len(RUST_DIRECTIONS)
-            or {(record["parent"], record["child"]) for record in pending} != set(RUST_DIRECTIONS)):
-        raise RuntimeError("Missing or repeated parked child recovery directions.")
+    if (len(pending) != len(directions)
+            or {(record["parent"], record["child"]) for record in pending} != set(directions)):
+        raise RuntimeError("Missing or repeated child workflow directions.")
     for record in pending:
         record.pop("scenario", None)
     return pending
@@ -88,6 +88,7 @@ def verify_resume(history, record):
     resolved_kind = "SignalApplied" if signal_wait else "ConditionWaitSatisfied"
     resolved = one(history, resolved_kind)["payload"]
     if (received.get("signal_name") != "child-finish" or not received.get("signal_id")
+            or received["signal_id"] != record["signal_id"]
             or received["signal_id"] != resolved.get("signal_id" if signal_wait else "workflow_signal_id")
             or resolved.get("signal_name") != "child-finish"
             or resolved.get("signal_wait_id" if signal_wait else "condition_wait_id") != record["wait_id"]
@@ -198,13 +199,14 @@ async def matrix(client):
 
 
 async def failure(client):
-    for parent, child in RUST_DIRECTIONS:
+    for parent, child in DIRECTIONS:
         handle, record = await start(client, parent, child, "fail")
         await verify(client, handle, record, failed=True)
 
 
 async def park(client, behavior="wait"):
-    for parent, child in RUST_DIRECTIONS:
+    directions = RUST_DIRECTIONS if behavior == "cancel" else DIRECTIONS
+    for parent, child in directions:
         _, record = await start(client, parent, child, behavior)
         deadline = asyncio.get_running_loop().time() + 90
         while asyncio.get_running_loop().time() < deadline:
@@ -227,7 +229,7 @@ async def park(client, behavior="wait"):
 
 
 async def release(client):
-    for record in records():
+    for record in records(DIRECTIONS):
         handle = client.get_workflow_handle(record["child_workflow_instance_id"], run_id=record["child_workflow_run_id"])
         await handle.signal("child-finish")
         _, parent_history = await observe(client, record["parent_workflow_id"], record["parent_run_id"])
@@ -243,7 +245,7 @@ async def release(client):
 
 
 async def recovery(client):
-    for record in records():
+    for record in records(DIRECTIONS):
         handle = client.get_workflow_handle(record["parent_workflow_id"], run_id=record["parent_run_id"])
         await verify(client, handle, record, recovered=True)
 
