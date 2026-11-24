@@ -70,3 +70,34 @@ The runner prints the exact artifacts, the downtime and one receipt per SDK
 direction. It verifies ordinary cadence after restart. Overlap and explicit
 backfill have separate acceptance criteria. The disposable Compose project
 and its schedules are removed on exit.
+
+## Backfill, skip overlap, and recovery after a timeout
+
+```bash
+scripts/sdk-schedules.sh backfill
+```
+
+PHP and Python each backfill the same half-open range into PHP, Python, and
+Rust workflows. The test chooses a daily UTC schedule whose next automatic
+fire is hours away. The range begins on the first past occurrence and ends
+on the third, so it includes exactly two occurrences.
+
+With workers stopped, the first occurrence creates an open run. The
+`skip` policy skips the second occurrence, and the schedule history records
+`overlap_policy_skip`. Start the workers and wait for each original run to
+complete. Submit the identical range again. The completed occurrence records
+`already_fired_occurrence`, while the previously skipped occurrence starts
+one new run. Both runs must return the authored result and link their
+workflow histories to their respective schedule occurrences.
+
+Next, both creator SDKs update the schedules to start a workflow that waits
+for a signal, with a ten-second execution deadline. No signal is sent, so the
+workers open a durable wait and the runtime records the timeout. The creators
+restore the original action and backfill a range containing the timed-out
+occurrence and the next occurrence. The original timeout must stay terminal
+under its original run ID. The next occurrence must complete with the
+expected result.
+
+The runner prints one receipt per SDK direction and removes the disposable
+stack. Cadence after restart remains available through
+`scripts/sdk-schedule-restart.sh`.
