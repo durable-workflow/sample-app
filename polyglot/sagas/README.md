@@ -2,11 +2,11 @@
 
 This experiment runs Rust, PHP and Python workflows that reserve two steps,
 encounter an intentional activity failure, then compensate in reverse order.
-It covers Rust workflows with Rust, PHP and Python compensation, plus PHP and
-Python workflows with Rust compensation. It checks the completed result and
-persisted activity order, not external business side effects. This complements
-the published Server saga runner, which currently executes PHP/Python scenarios
-but no Rust handler.
+Each workflow runtime runs compensation in PHP, Python, and Rust. The nine
+directions check the completed result, persisted activity order, and outputs
+from both compensation activities. The planned reservations and compensation
+use fixture activities. The published Server saga runner has separate
+PHP/Python scenarios.
 
 Run inside the prepared Sample App development environment. Use only a
 disposable local Server, never a customer namespace. The first playground
@@ -50,12 +50,13 @@ Then run the client from a fourth terminal:
 python polyglot/sagas/client.py
 ```
 
-The client reports each completed direction and ends with `5/5 Rust-involving
-saga compensation directions completed`. A missing handler, mismatched activity
-type, absent planned failure, or out-of-order compensation fails the run.
+The client reports each completed direction and ends with
+`9/9 saga compensation directions completed`. A missing handler, mismatched
+activity result, absent planned failure, or out-of-order compensation fails the
+run.
 
 With the same disposable stack and workers, exercise a terminal compensation
-failure in all five directions:
+failure in all nine directions:
 
 ```sh
 python polyglot/sagas/client.py --compensation-failure
@@ -67,20 +68,15 @@ failures, and no scheduled `undo-first`. The ordinary client command above
 still checks that both compensations complete in reverse order.
 
 To check cold replay before compensation, leave the disposable stack and all
-three workers up. Run each of these five directions in turn:
-
-| Workflow runtime | Compensation runtime | Start/verify flags | Worker to restart |
-| --- | --- | --- | --- |
-| Rust | Rust | `--workflow-runtime rust --compensation-runtime rust` | Rust |
-| Rust | PHP | `--workflow-runtime rust --compensation-runtime php` | Rust |
-| Rust | Python | `--workflow-runtime rust --compensation-runtime python` | Rust |
-| PHP | Rust | `--workflow-runtime php` | PHP |
-| Python | Rust | `--workflow-runtime python` | Python |
+three workers up. Choose each combination of `php`, `python`, and `rust`
+for the workflow and compensation flags. Restart the worker for the workflow
+language in each pair. The commands below show PHP with Python compensation.
 
 For each row, start one workflow with its flags:
 
 ```sh
-python polyglot/sagas/restart_client.py start --workflow-runtime php
+python polyglot/sagas/restart_client.py start \
+  --workflow-runtime php --compensation-runtime python
 ```
 
 After it prints `restart_boundary`, stop the selected parent worker and wait
@@ -88,29 +84,32 @@ for that process to exit. While it is stopped, deliver the signal using the
 printed ID and the same flags:
 
 ```sh
-python polyglot/sagas/restart_client.py signal <workflow-id> --workflow-runtime php
+python polyglot/sagas/restart_client.py signal <workflow-id> \
+  --workflow-runtime php --compensation-runtime python
 ```
 
 Start a new process for that parent worker, keeping the other workers running,
 then verify the resumed run with the same flags:
 
 ```sh
-python polyglot/sagas/restart_client.py verify <workflow-id> --workflow-runtime php
+python polyglot/sagas/restart_client.py verify <workflow-id> \
+  --workflow-runtime php --compensation-runtime python
 ```
 
 The boundary is a persisted signal wait after the first reserve; verification
-requires exactly one wait and signal, no duplicated reserve, and reverse-order
-compensation by the selected runtime. PHP and Python use a signal-derived
-`ConditionWaitOpened`; Rust records `SignalWaitOpened`. Record both parent
-worker process identities and the signal/verify order for each run. These
-checks do not cover process loss during an activity.
+requires exactly one wait and signal before the second reservation, one
+completion of each reserve, and reverse-order compensation by the selected
+runtime. PHP and Python use a signal-derived `ConditionWaitOpened`. Rust
+records `SignalWaitOpened`. Match the run ID from `start` to the run ID from
+`verify`. Record both parent worker process identities and the signal/verify
+order for each run.
 
 Record the UTC time, exact published Server, PHP, Python and Rust versions,
-five completed directions, five terminal-compensation-failure directions,
-five restart outcomes and any unexpected failure on the owning GitHub issue.
-The failure case proves persisted failure identity and stop-at-first-failure;
-it does not prove external side-effect recovery, duplicate delivery, or worker
-loss during compensation.
+nine completed directions, nine terminal-compensation-failure directions, and
+nine restart outcomes on the
+[conformance audit](https://github.com/durable-workflow/.github/issues/122).
+Worker loss during an activity, duplicate delivery, and recovery of external
+effects need separate exercises.
 
 Stop the workers, then remove only this local stack and its volumes:
 

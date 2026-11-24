@@ -4,6 +4,8 @@ use durable_workflow::{
     json, ActivityOptions, ActivityRetryPolicy, Client, Error, Result, Worker,
 };
 
+const RESTART_SIGNAL: &str = "sample-app.saga.restart-continue";
+
 fn required(name: &str) -> String {
     std::env::var(name)
         .ok()
@@ -41,8 +43,9 @@ async fn main() -> Result<()> {
     });
 
     for language in ["rust", "php", "python"] {
+        let workflow_type = format!("sample-app.saga.rust.compensate-{language}");
         worker.register_workflow(
-            format!("sample-app.saga.rust.compensate-{language}"),
+            workflow_type.clone(),
             move |context, input| async move {
                 let marker = input.get(0).cloned().unwrap_or_else(|| json!(null));
                 let restart_check =
@@ -59,9 +62,7 @@ async fn main() -> Result<()> {
                             json!([marker]),
                         )?;
                         if restart_check && step == "first" {
-                            context
-                                .wait_signal("sample-app.saga.restart-continue")
-                                .await?;
+                            context.wait_signal(RESTART_SIGNAL).await?;
                         }
                     }
                     context
@@ -87,6 +88,7 @@ async fn main() -> Result<()> {
                 }
             },
         );
+        worker.declare_workflow_signals(&workflow_type, &[RESTART_SIGNAL])?;
     }
 
     worker.run().await
