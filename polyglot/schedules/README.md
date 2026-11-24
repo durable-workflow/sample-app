@@ -14,6 +14,7 @@ artifact tuple:
 
 ```bash
 scripts/playground doctor
+scripts/prepare-apt-build-source.sh
 (
   set -euo pipefail
   assignments=$(scripts/resolve-current-artifacts.sh)
