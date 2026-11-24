@@ -18,7 +18,19 @@ function requiredScheduleEnv(string $name): string
     return $value;
 }
 
-$marker = 'php-schedule-rust-'.bin2hex(random_bytes(6));
+$runtime = $argv[1] ?? 'rust';
+$queueVariable = match ($runtime) {
+    'php' => 'POLYGLOT_PHP_TASK_QUEUE',
+    'python' => 'POLYGLOT_PY_TASK_QUEUE',
+    'rust' => 'POLYGLOT_RUST_TASK_QUEUE',
+    default => throw new InvalidArgumentException('Choose php, python, or rust as the workflow runtime.'),
+};
+if (count($argv) > 2) {
+    throw new InvalidArgumentException('Pass at most one workflow runtime.');
+}
+
+$marker = "php-schedule-{$runtime}-".bin2hex(random_bytes(6));
+$request = $runtime === 'rust' ? $marker : ['name' => $marker, 'locale' => 'en'];
 $client = new Client(
     requiredScheduleEnv('DURABLE_WORKFLOW_SERVER_URL'),
     namespace: requiredScheduleEnv('DURABLE_WORKFLOW_NAMESPACE'),
@@ -26,7 +38,7 @@ $client = new Client(
 );
 $schedule = $client->createSchedule(
     new ScheduleSpec(intervals: [['every' => 'PT10S']], timezone: 'UTC'),
-    new ScheduleAction('polyglot.rust.greeter', requiredScheduleEnv('POLYGLOT_RUST_TASK_QUEUE'), [$marker]),
+    new ScheduleAction("polyglot.{$runtime}.greeter", requiredScheduleEnv($queueVariable), [$request]),
     scheduleId: $marker,
 );
 
@@ -45,15 +57,29 @@ try {
     } while (true);
 
     $result = $client->workflowHandle($workflowId)->result(90, 0.5);
-    if (
-        ! is_array($result)
-        || ($result['workflow_runtime'] ?? null) !== 'rust'
-        || ($result['activity_runtime'] ?? null) !== 'rust'
-        || ($result['request'] ?? null) !== $marker
-        || ($result['echo']['runtime'] ?? null) !== 'rust'
-        || ($result['echo']['value'] ?? null) !== $marker
-    ) {
-        throw new RuntimeException('Unexpected Rust workflow result: '.var_export($result, true));
+    if (! is_array($result) || ($result['workflow_runtime'] ?? null) !== $runtime) {
+        throw new RuntimeException("Unexpected {$runtime} workflow result: ".var_export($result, true));
+    }
+    $observedRequest = $result['request'] ?? null;
+    $requestMatches = $runtime === 'rust'
+        ? $observedRequest === $marker
+        : is_array($observedRequest)
+            && count($observedRequest) === 2
+            && ($observedRequest['name'] ?? null) === $marker
+            && ($observedRequest['locale'] ?? null) === 'en';
+    $activityMatches = match ($runtime) {
+        'php' => ($result['activity_runtime'] ?? null) === 'php'
+            && ($result['php_marker']['name'] ?? null) === $marker
+            && ($result['php_description']['runtime'] ?? null) === 'php',
+        'python' => ($result['greeting']['language'] ?? null) === 'python'
+            && ($result['greeting']['greeting'] ?? null) === "hello, {$marker}"
+            && ($result['summary']['language'] ?? null) === 'python',
+        'rust' => ($result['activity_runtime'] ?? null) === 'rust'
+            && ($result['echo']['runtime'] ?? null) === 'rust'
+            && ($result['echo']['value'] ?? null) === $marker,
+    };
+    if (! $requestMatches || ! $activityMatches) {
+        throw new RuntimeException("Unexpected {$runtime} workflow result: ".var_export($result, true));
     }
 
     $execution = $client->describeWorkflow($workflowId);
@@ -86,12 +112,12 @@ try {
             && ($event['workflow_run_id'] ?? null) === $execution->runId,
     );
     if (! $linkedTrigger) {
-        throw new RuntimeException('Schedule history has no trigger linked to the completed Rust run.');
+        throw new RuntimeException('Schedule history has no trigger linked to the completed run.');
     }
 
     echo json_encode([
         'schedule_creator' => 'php',
-        'workflow_runtime' => 'rust',
+        'workflow_runtime' => $runtime,
         'schedule_id' => $marker,
         'workflow_id' => $workflowId,
         'run_id' => $execution->runId,
@@ -100,7 +126,7 @@ try {
         'workflow_events' => $workflowEvents,
         'result' => $result,
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).PHP_EOL;
-    echo 'PHP-created schedule -> Rust worker completed'.PHP_EOL;
+    echo 'PHP-created schedule -> '.ucfirst($runtime).' worker completed'.PHP_EOL;
 } finally {
     $schedule->delete();
 }
