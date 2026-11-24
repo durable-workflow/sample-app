@@ -3,21 +3,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import time
 import uuid
 
 from durable_workflow import Client
 
+from client import RUNTIMES, required, verify_compensation_outputs
+
 
 SIGNAL = "sample-app.saga.restart-continue"
-
-
-def required(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Set {name} before starting the client.")
-    return value
 
 
 def wait_event_type(workflow_runtime: str) -> str:
@@ -46,18 +40,16 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Verify saga compensation after a worker restart.")
     parser.add_argument("phase", choices=("start", "signal", "verify"))
     parser.add_argument("workflow_id", nargs="?")
-    parser.add_argument("--workflow-runtime", choices=("rust", "php", "python"), default="rust")
-    parser.add_argument("--compensation-runtime", choices=("rust", "php", "python"), default="rust")
+    parser.add_argument("--workflow-runtime", choices=RUNTIMES, default="rust")
+    parser.add_argument("--compensation-runtime", choices=RUNTIMES, default="rust")
     args = parser.parse_args()
     if args.phase != "start" and not args.workflow_id:
         parser.error("signal and verify require the workflow ID printed by start")
-    if args.workflow_runtime != "rust" and args.compensation_runtime != "rust":
-        parser.error("PHP and Python restart workflows use Rust compensation")
     queue = required("DURABLE_WORKFLOW_TASK_QUEUE")
     workflow_type = (
         f"sample-app.saga.rust.compensate-{args.compensation_runtime}"
         if args.workflow_runtime == "rust"
-        else f"sample-app.saga.{args.workflow_runtime}.restart-compensate-rust"
+        else f"sample-app.saga.{args.workflow_runtime}.restart-compensate-{args.compensation_runtime}"
     )
 
     async with Client(
@@ -132,12 +124,22 @@ async def main() -> None:
         ]
         if failed != [expected[2]]:
             raise RuntimeError(f"Unexpected failed activities: {failed!r}")
-        if [event["event_type"] for event in events].count(wait_event_type(args.workflow_runtime)) != 1:
+        kinds = [event["event_type"] for event in events]
+        wait_kind = wait_event_type(args.workflow_runtime)
+        if kinds.count(wait_kind) != 1:
             raise RuntimeError("The durable restart wait was not recorded exactly once.")
-        if [event["event_type"] for event in events].count("SignalReceived") != 1:
+        if kinds.count("SignalReceived") != 1:
             raise RuntimeError("The offline signal was not recorded exactly once.")
+        second_reserve = next(
+            index for index, event in enumerate(events)
+            if event["event_type"] == "ActivityScheduled"
+            and event["payload"]["activity_type"] == expected[1]
+        )
+        if not kinds.index(wait_kind) < kinds.index("SignalReceived") < second_reserve:
+            raise RuntimeError("The second reservation must follow the persisted wait and offline signal.")
         if events[-1]["event_type"] != "WorkflowCompleted":
             raise RuntimeError("The workflow did not complete after compensation.")
+        verify_compensation_outputs(events, args.compensation_runtime, workflow_id)
         print(json.dumps({"phase": "verified", "workflow_id": workflow_id, "run_id": handle.run_id,
                           "workflow_runtime": args.workflow_runtime,
                           "compensation_runtime": args.compensation_runtime,

@@ -5,8 +5,6 @@ declare(strict_types=1);
 require __DIR__.'/../../vendor/autoload.php';
 
 use DurableWorkflow\Attribute\Activity;
-use DurableWorkflow\Attribute\Signal;
-use DurableWorkflow\Attribute\Workflow;
 use DurableWorkflow\Client;
 use DurableWorkflow\Exception\ActivityFailed;
 use DurableWorkflow\Worker;
@@ -42,72 +40,43 @@ final class PhpSagaCompensations
     }
 }
 
-final class PhpSagaWorkflow
-{
-    #[Workflow('sample-app.saga.php.compensate-rust')]
-    public function run(WorkflowContext $context, string $marker): array
-    {
-        $saga = $context->saga();
+function runSaga(
+    WorkflowContext $context,
+    string $marker,
+    string $compensationRuntime,
+    bool $waitForRestart = false,
+): array {
+    $saga = $context->saga();
 
-        try {
-            foreach (['first', 'second'] as $step) {
-                $context->activity("sample-app.saga.reserve-{$step}", [$marker]);
-                $saga->addCompensation("sample-app.saga.rust.undo-{$step}", [$marker], ['retry_policy' => ['max_attempts' => 1]]);
-            }
-
-            $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
-
-            return ['unexpected_success' => true];
-        } catch (ActivityFailed $failure) {
-            $saga->compensate($failure);
-
-            return [
-                'status' => 'compensated',
-                'workflow_runtime' => 'php',
-                'compensation_runtime' => 'rust',
-                'marker' => $marker,
-                'initiating_failure' => $failure->getMessage(),
-            ];
-        }
-    }
-}
-
-final class PhpSagaRestartWorkflow
-{
-    #[Workflow('sample-app.saga.php.restart-compensate-rust')]
-    public function run(WorkflowContext $context, string $marker): array
-    {
-        $saga = $context->saga();
-
-        try {
-            $context->activity('sample-app.saga.reserve-first', [$marker]);
-            $saga->addCompensation('sample-app.saga.rust.undo-first', [$marker], ['retry_policy' => ['max_attempts' => 1]]);
-            $context->waitCondition(
-                fn (): bool => $context->signals('sample-app.saga.restart-continue') !== [],
-                key: 'saga-restart-continue',
+    try {
+        foreach (['first', 'second'] as $step) {
+            $context->activity("sample-app.saga.reserve-{$step}", [$marker]);
+            $saga->addCompensation(
+                "sample-app.saga.{$compensationRuntime}.undo-{$step}",
+                [$marker],
+                ['retry_policy' => ['max_attempts' => 1]],
             );
-            $context->activity('sample-app.saga.reserve-second', [$marker]);
-            $saga->addCompensation('sample-app.saga.rust.undo-second', [$marker], ['retry_policy' => ['max_attempts' => 1]]);
-            $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
-
-            return ['unexpected_success' => true];
-        } catch (ActivityFailed $failure) {
-            $saga->compensate($failure);
-
-            return [
-                'status' => 'compensated',
-                'workflow_runtime' => 'php',
-                'compensation_runtime' => 'rust',
-                'marker' => $marker,
-                'initiating_failure' => $failure->getMessage(),
-            ];
+            if ($waitForRestart && $step === 'first') {
+                $context->waitCondition(
+                    fn (): bool => $context->signals('sample-app.saga.restart-continue') !== [],
+                    key: 'saga-restart-continue',
+                );
+            }
         }
-    }
 
-    #[Signal('sample-app.saga.restart-continue')]
-    public function resume(): void
-    {
-        // The committed signal is read from history by the wait predicate.
+        $context->activity('sample-app.saga.decline', [], ['retry_policy' => ['max_attempts' => 1]]);
+
+        return ['unexpected_success' => true];
+    } catch (ActivityFailed $failure) {
+        $saga->compensate($failure);
+
+        return [
+            'status' => 'compensated',
+            'workflow_runtime' => 'php',
+            'compensation_runtime' => $compensationRuntime,
+            'marker' => $marker,
+            'initiating_failure' => $failure->getMessage(),
+        ];
     }
 }
 
@@ -117,6 +86,18 @@ $client = new Client(
     workerToken: required('DURABLE_WORKFLOW_WORKER_TOKEN'),
 );
 
-Worker::create($client, required('DURABLE_WORKFLOW_TASK_QUEUE'))
-    ->register(PhpSagaCompensations::class, PhpSagaWorkflow::class, PhpSagaRestartWorkflow::class)
-    ->run();
+$worker = Worker::create($client, required('DURABLE_WORKFLOW_TASK_QUEUE'))
+    ->register(PhpSagaCompensations::class);
+foreach (['php', 'python', 'rust'] as $runtime) {
+    $worker->registerWorkflow(
+        "sample-app.saga.php.compensate-{$runtime}",
+        static fn (WorkflowContext $context, string $marker): array => runSaga($context, $marker, $runtime),
+    );
+    $restartType = "sample-app.saga.php.restart-compensate-{$runtime}";
+    $worker->registerWorkflow(
+        $restartType,
+        static fn (WorkflowContext $context, string $marker): array => runSaga($context, $marker, $runtime, true),
+    );
+    $worker->declareSignal($restartType, 'sample-app.saga.restart-continue');
+}
+$worker->run();

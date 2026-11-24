@@ -5,8 +5,12 @@ import argparse
 import json
 import os
 import uuid
+from itertools import product
 
-from durable_workflow import Client, WorkflowFailed
+from durable_workflow import Client, WorkflowFailed, serializer
+
+
+RUNTIMES = ("php", "python", "rust")
 
 
 def required(name: str) -> str:
@@ -16,19 +20,27 @@ def required(name: str) -> str:
     return value
 
 
+def verify_compensation_outputs(events: list[dict], runtime: str, marker: str) -> None:
+    steps = ("second", "first")
+    compensation_types = {f"sample-app.saga.{runtime}.undo-{step}" for step in steps}
+    observed = [
+        serializer.decode_envelope(event["payload"]["result"], codec="avro")
+        for event in events
+        if event["event_type"] == "ActivityCompleted"
+        and event["payload"]["activity_type"] in compensation_types
+    ]
+    expected = [{"step": step, "marker": marker, "runtime": runtime} for step in steps]
+    if observed != expected:
+        raise RuntimeError(f"{runtime}: unexpected persisted compensation outputs {observed!r}")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Run cross-SDK saga compensation checks.")
     parser.add_argument("--compensation-failure", action="store_true")
     args = parser.parse_args()
     queue = required("DURABLE_WORKFLOW_TASK_QUEUE")
     marker = f"{'saga-fail-compensation' if args.compensation_failure else 'saga'}-{uuid.uuid4().hex[:12]}"
-    directions = (
-        ("rust", "rust"),
-        ("rust", "php"),
-        ("rust", "python"),
-        ("php", "rust"),
-        ("python", "rust"),
-    )
+    directions = tuple(product(RUNTIMES, repeat=2))
     async with Client(
         required("DURABLE_WORKFLOW_RUNTIME_URL"),
         namespace=required("DURABLE_WORKFLOW_NAMESPACE"),
@@ -52,7 +64,8 @@ async def main() -> None:
                 if args.compensation_failure:
                     raise RuntimeError(f"{workflow_runtime}/{compensation_runtime}: compensation unexpectedly succeeded")
                 if (
-                    result.get("status") != "compensated"
+                    not isinstance(result, dict)
+                    or result.get("status") != "compensated"
                     or result.get("workflow_runtime") != workflow_runtime
                     or result.get("compensation_runtime") != compensation_runtime
                     or result.get("marker") != marker
@@ -122,6 +135,8 @@ async def main() -> None:
                     or expected[3] not in compensation_detail
                 ):
                     raise RuntimeError(f"{workflow_runtime}/{compensation_runtime}: initiating or compensation failure was lost")
+            else:
+                verify_compensation_outputs(events, compensation_runtime, marker)
 
             print(json.dumps({
                 "workflow_id": workflow_id,
@@ -135,7 +150,7 @@ async def main() -> None:
             }, sort_keys=True), flush=True)
 
     outcome = "failed as expected" if args.compensation_failure else "completed"
-    print(f"5/5 Rust-involving saga compensation directions {outcome}", flush=True)
+    print(f"{len(directions)}/{len(directions)} saga compensation directions {outcome}", flush=True)
 
 
 if __name__ == "__main__":
