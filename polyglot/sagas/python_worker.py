@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import socket
+from urllib.request import Request, urlopen
 
 from durable_workflow import ActivityFailed, Client, Worker, activity, workflow
 
@@ -19,9 +22,31 @@ async def undo_first(marker: str) -> dict[str, str]:
 
 
 @activity.defn(name="sample-app.saga.python.undo-second")
-async def undo_second(marker: str) -> dict[str, str]:
+async def undo_second(marker: str, recover_effect: bool = False) -> dict[str, str]:
     if marker.startswith("saga-fail-compensation-"):
         raise RuntimeError("planned undo-second compensation failure")
+    if recover_effect:
+        info = activity.context().info
+        request = Request(
+            required("ACTIVITY_EFFECTS_URL") + "/effects",
+            data=json.dumps({
+                "operation_key": marker + ":undo-second",
+                "attempt_id": info.activity_attempt_id,
+                "input": {"operation": "undo-second", "marker": marker},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+        def apply_effect():
+            with urlopen(request, timeout=5) as response:
+                return json.load(response)
+
+        receipt = await asyncio.to_thread(apply_effect)
+        if receipt["reused"] is not (info.attempt_number == 2):
+            raise RuntimeError("Unexpected downstream compensation receipt.")
+        if info.attempt_number == 1:
+            await asyncio.sleep(45)
+            raise RuntimeError("Fixture did not stop the first compensation worker.")
     return {"step": "second", "marker": marker, "runtime": "python"}
 
 
@@ -32,17 +57,24 @@ class SagaWorkflow:
     def __init__(self) -> None:
         self.released = False
 
-    def run(self, context, marker: str):
+    def run(self, context, marker: str, scenario: str = ""):
         saga = context.saga()
         try:
             for step in ("first", "second"):
                 yield context.schedule_activity(
                     f"sample-app.saga.reserve-{step}", [marker]
                 )
+                recover_step = scenario == "recover-effect" and step == "second"
+                options = {"retry_policy": {"max_attempts": 1}}
+                if recover_step:
+                    options = {
+                        "start_to_close_timeout": 20,
+                        "retry_policy": {"max_attempts": 2, "backoff_seconds": [1]},
+                    }
                 saga.add_compensation(
                     f"sample-app.saga.{self.compensation_runtime}.undo-{step}",
-                    [marker],
-                    retry_policy={"max_attempts": 1},
+                    [marker, True] if recover_step else [marker],
+                    **options,
                 )
                 if self.wait_for_restart and step == "first":
                     yield context.wait_condition(lambda: self.released, key="saga-restart-continue")
@@ -109,7 +141,7 @@ async def main() -> None:
         worker = Worker(
             client,
             task_queue=required("DURABLE_WORKFLOW_TASK_QUEUE"),
-            worker_id=f"sample-saga-python-{os.getpid()}",
+            worker_id=f"sample-saga-python-{socket.gethostname()}-{os.getpid()}",
             workflows=[
                 PhpCompensation, PythonCompensation, RustCompensation,
                 PhpCompensationAfterRestart, PythonCompensationAfterRestart, RustCompensationAfterRestart,

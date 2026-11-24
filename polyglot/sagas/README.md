@@ -108,11 +108,35 @@ Record the UTC time, exact published Server, PHP, Python and Rust versions,
 nine completed directions, nine terminal-compensation-failure directions, and
 nine restart outcomes on the
 [conformance audit](https://github.com/durable-workflow/.github/issues/122).
-Worker loss during an activity, duplicate delivery, and recovery of external
-effects need separate exercises.
 
 Stop the workers, then remove only this local stack and its volumes:
 
 ```sh
 PLAYGROUND_COMPOSE_PROJECT=sample-app-saga scripts/playground down rust
 ```
+
+## Recover after a compensation commits an external effect
+
+Run this from the repository root with Docker Compose available:
+
+```sh
+scripts/sdk-saga-effect-recovery.sh
+```
+
+The command uses the repository's pinned published Server and SDKs and
+creates its own isolated stack. It runs all nine workflow and compensation
+language pairs. In each pair, the second-step compensation commits a reversal
+in a separate SQLite service and waits before reporting completion. The runner
+observes the commit, kills the compensation worker, and starts a new container.
+
+The replacement must retry the same compensation with a new attempt ID. The
+downstream service returns the original reversal for the same operation key.
+The client checks both delivery receipts, the original run ID, the timeout
+that caused the retry, and the completed reverse-order compensation results.
+Each JSON line identifies the run, the two attempts, their worker containers,
+and the single downstream effect.
+The runner removes its containers, network and disposable ledger on exit.
+
+The downstream service owns idempotency for the operation key. Use an
+equivalent application contract when a worker can stop between committing a
+reversal and reporting its completion.
