@@ -88,7 +88,7 @@ def verify_resume(history, record):
     resolved_kind = "SignalApplied" if signal_wait else "ConditionWaitSatisfied"
     resolved = one(history, resolved_kind)["payload"]
     if (received.get("signal_name") != "child-finish" or not received.get("signal_id")
-            or received["signal_id"] != record["signal_id"]
+            or received["signal_id"] != record.get("signal_id")
             or received["signal_id"] != resolved.get("signal_id" if signal_wait else "workflow_signal_id")
             or resolved.get("signal_name") != "child-finish"
             or resolved.get("signal_wait_id" if signal_wait else "condition_wait_id") != record["wait_id"]
