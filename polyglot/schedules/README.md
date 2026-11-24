@@ -101,3 +101,20 @@ expected result.
 The runner prints one receipt per SDK direction and removes the disposable
 stack. Cadence after restart remains available through
 `scripts/sdk-schedule-restart.sh`.
+
+## Daylight-saving transitions
+
+```bash
+scripts/sdk-schedules.sh calendar
+```
+
+The published Python client backfills historical New York clock changes on
+Native Server. A daily 02:30 scheduled during the spring gap moves forward
+to 03:30. In the repeated autumn hour, a daily 01:30 fires on the first pass
+only, and a backfill starting in the second pass finds no daily occurrence.
+An hourly schedule at minute 30 fires on both passes.
+
+The test checks the exact UTC instants and starts the authored Rust workflow
+once for every admitted occurrence. It verifies the workflow and activity
+results and their audit links. Repeating the windows keeps the original
+fire counts. The runner removes the disposable Compose project on exit.
