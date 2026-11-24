@@ -12,16 +12,17 @@ SDK_CHILDREN_COMPOSE_PROJECT_NAME=sample-app-sdk-children scripts/sdk-children.s
 ```
 
 It builds the existing PHP, Python and Rust workers from the frozen published
-tuple, starts an isolated native Server/MySQL stack and runs all nine successful
-parent/child directions. For the five directions involving Rust, it also
-requires a typed child failure matched to durable history and a cold recovery.
-The child waits for a declared signal. All three workers are SIGKILLed, then the
-signal is acknowledged while they are absent. Fresh worker processes must
-complete the original parent and child runs with one schedule, start and
-completion, without duplicating work. Results and failures must match the
-persisted parent and child histories, including their original relationship.
+tuple, starts an isolated native Server/MySQL stack and runs all nine
+parent/child directions through completion, typed child failure, and cold
+recovery. For recovery, every child waits for a declared signal. The runner
+records all three workers exiting after SIGKILL, then records the signal
+acknowledged for each child while the workers are absent. Three replacement
+containers must resolve those exact signals against the original child waits.
+Each pair keeps its original parent, child, and relationship identities with
+one schedule, start, and completion. Results and failures must match the
+persisted parent and child histories.
 
-Those five directions also use cooperative cancellation with
+The five directions involving Rust also use cooperative cancellation with
 `WAIT_CANCELLATION_COMPLETED` and `RequestCancellation`. Each request gets one
 30-second cleanup budget. The child records its cancellation context and starts
 a shielded cleanup timer. All workers are killed during that timer. Duplicate
@@ -156,11 +157,10 @@ worker or type-name mismatch fails the run instead of being counted as a pass.
 
 Record the actual Server, Waterline, CLI, PHP, Python, and Rust versions from
 the playground output and installed package/lockfiles with the run's UTC time
-and nine results on the owning GitHub issue. A published artifact that merely
-installed is not evidence of an executed direction. The manual client checks
-successful child completion. The automated command above adds the five
-Rust-involving typed failure, worker recovery and cooperative cancellation
-cases. Saga compensation has a separate experiment.
+and nine results on the owning GitHub issue. The manual client checks
+successful child completion. The automated command above adds typed failure
+and cold recovery for all nine pairs, plus cooperative cancellation in the
+five directions involving Rust. Saga compensation has a separate experiment.
 
 Stop the workers, then remove only this local stack and its volumes:
 

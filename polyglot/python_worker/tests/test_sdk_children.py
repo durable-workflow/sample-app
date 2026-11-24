@@ -168,9 +168,15 @@ class ChildRelationshipTest(unittest.TestCase):
                 event(resolved_kind, **{wait_key: "original-wait", "sequence": 1,
                     signal_key: "accepted-signal", "signal_name": "child-finish"}),
                 event("WorkflowCompleted")]}
-            record = {**self.record, "child": runtime, "wait_id": "original-wait", "wait_sequence": 1}
+            record = {**self.record, "child": runtime, "wait_id": "original-wait",
+                      "wait_sequence": 1, "signal_id": "accepted-signal"}
             with self.subTest(runtime=runtime):
                 children.verify_resume(history, record)
+            changed = copy.deepcopy(history)
+            changed["events"][1]["payload"]["signal_id"] = "replacement"
+            changed["events"][2]["payload"][signal_key] = "replacement"
+            with self.subTest(runtime=runtime, replaced_signal=True), self.assertRaises(RuntimeError):
+                children.verify_resume(changed, record)
             for index, key in ((0, wait_key), (2, wait_key), (2, signal_key), (2, "sequence"), (2, "signal_name")):
                 changed = copy.deepcopy(history)
                 changed["events"][index]["payload"][key] = "replacement"
