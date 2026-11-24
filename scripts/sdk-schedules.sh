@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# != 1 || ! "${1:-}" =~ ^(restart|backfill)$ ]]; then
-  printf 'Run scripts/sdk-schedules.sh with restart or backfill.\n' >&2
+if [[ $# != 1 || ! "${1:-}" =~ ^(restart|backfill|calendar)$ ]]; then
+  printf 'Run scripts/sdk-schedules.sh with restart, backfill, or calendar.\n' >&2
   exit 2
 fi
 scenario=$1
@@ -57,11 +57,21 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-"${compose[@]}" build php-same-workflow-worker python-workflow-worker rust-workflow-worker smoke >&2
+build_services=(rust-workflow-worker smoke)
+if [[ "$scenario" != calendar ]]; then
+  build_services+=(php-same-workflow-worker python-workflow-worker)
+fi
+"${compose[@]}" build "${build_services[@]}" >&2
 "${compose[@]}" up -d --wait --wait-timeout 150 --no-build server >&2
 printf 'Sample App %s with Server %s and SDKs PHP %s, Python %s, Rust %s\n' \
   "$(git rev-parse HEAD)" "$DURABLE_SERVER_IMAGE" "$DURABLE_WORKFLOW_PHP_SDK_VERSION" \
   "$DURABLE_WORKFLOW_PYTHON_SDK_VERSION" "$DURABLE_WORKFLOW_RUST_SDK_VERSION" >&2
+
+if [[ "$scenario" == calendar ]]; then
+  "${compose[@]}" up -d --wait --wait-timeout 90 --no-build --no-deps rust-workflow-worker >&2
+  "${compose[@]}" run -T --rm --no-deps smoke python /app/scripts/verify_schedule_calendar.py
+  exit
+fi
 
 start_workers() {
   local php_version python_version
