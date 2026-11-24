@@ -1,0 +1,25 @@
+x-schedule-worker: &schedule-worker
+  init: true
+  cpus: 0.75
+  mem_limit: 384m
+  pids_limit: 96
+
+services:
+  mysql:
+    init: true
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 128
+  server:
+    cpus: 1.5
+    mem_limit: 768m
+    pids_limit: 128
+  php-same-workflow-worker: *schedule-worker
+  php-same-activity-worker: *schedule-worker
+  python-workflow-worker: *schedule-worker
+  rust-workflow-worker: *schedule-worker
+  smoke: *schedule-worker
+
+networks:
+  default:
+    internal: true

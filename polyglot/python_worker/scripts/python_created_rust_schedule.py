@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
-import sys
 import uuid
 
 from durable_workflow import Client, ScheduleAction, ScheduleSpec
@@ -53,7 +53,7 @@ def activity_matches(runtime: str, result: dict, marker: str) -> bool:
     return False
 
 
-async def main(runtime: str = "rust") -> None:
+async def main(runtime: str, keep_schedule: bool) -> None:
     workflow_type = f"polyglot.{runtime}.greeter"
     queue = required(QUEUE_VARIABLES[runtime])
     marker = f"python-schedule-{runtime}-{uuid.uuid4().hex[:12]}"
@@ -71,7 +71,9 @@ async def main(runtime: str = "rust") -> None:
                 task_queue=queue,
                 input=[request],
             ),
+            max_runs=12 if keep_schedule else None,
         )
+        verified = False
         try:
             deadline = asyncio.get_running_loop().time() + 120
             while True:
@@ -143,11 +145,15 @@ async def main(runtime: str = "rust") -> None:
                 flush=True,
             )
             print(f"Python-created schedule -> {runtime.capitalize()} worker completed", flush=True)
+            verified = True
         finally:
-            await schedule.delete()
+            if not keep_schedule or not verified:
+                await schedule.delete()
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] not in QUEUE_VARIABLES):
-        raise SystemExit("Pass at most one workflow runtime: php, python, or rust.")
-    asyncio.run(main(*sys.argv[1:]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("runtime", nargs="?", default="rust", choices=QUEUE_VARIABLES)
+    parser.add_argument("--keep-schedule", action="store_true", help="Retain a successful schedule for the isolated restart fixture.")
+    args = parser.parse_args()
+    asyncio.run(main(args.runtime, args.keep_schedule))
