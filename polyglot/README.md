@@ -93,6 +93,22 @@ Avro values, failures, replay, signals, queries, CLI control, and Waterline
 rendering. It is a development diagnostic; the concise `scripts/polyglot.sh`
 journey is the supported first-run path.
 
+## Managed worker presence
+
+From the repository root with Docker Compose available, run:
+
+```sh
+scripts/sdk-worker-presence.sh
+```
+
+The isolated stack uses the pinned published Server and all three SDKs.
+It observes advancing heartbeat timestamps on one idle registration for
+each normal managed worker. An interrupt lets the worker deregister. A
+separate worker killed with SIGKILL becomes stale after the configured
+nine-second window. Its replacement registers under a fresh ID and returns
+the authored workflow and activity results. The command prints one JSON
+receipt per SDK and removes its stack on exit.
+
 ## Artifact overrides
 
 The checked-in tuple keeps the sample reproducible. To test another stable

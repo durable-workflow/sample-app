@@ -81,11 +81,14 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
     let python_queue = env_value("POLYGLOT_PHP2PY_TASK_QUEUE", "polyglot-php-to-python");
     let php_queue = env_value("POLYGLOT_PY2PHP_TASK_QUEUE", "polyglot-python-to-php");
     let worker_id = env_value("POLYGLOT_RUST_WORKER_ID", "rust-workflow-worker");
+    let poll_timeout = env_value("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS", "5")
+        .parse::<u64>()
+        .expect("DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS must be an integer");
     let mut worker = Worker::new(client, rust_queue.clone())
         .worker_id(worker_id.clone())
         .recover_transient_outages(true)
         .cooperative_cancellation(env_value("POLYGLOT_TIMER_COOPERATIVE", "0") == "1")
-        .poll_timeout(Duration::from_secs(5));
+        .poll_timeout(Duration::from_secs(poll_timeout));
 
     updates::register(&mut worker);
     children::register(&mut worker, None);
@@ -241,7 +244,13 @@ async fn run_workflow_worker(client: Client) -> Result<()> {
         required_env("DURABLE_WORKFLOW_RUST_SDK_VERSION"),
         required_env("APACHE_AVRO_RUST_VERSION"),
     );
-    worker.run().await
+    worker
+        .run_until(async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("install the worker interrupt handler");
+        })
+        .await
 }
 
 fn register_type_roundtrip_workflow(
