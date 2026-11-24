@@ -1,0 +1,21 @@
+services:
+  server:
+    environment:
+      DW_WORKER_HEARTBEAT_INTERVAL_SECONDS: "2"
+      DW_WORKER_STALE_AFTER_SECONDS: "9"
+
+  php-same-workflow-worker:
+    command: ["php", "/app/worker.php", "--task-queue=polyglot-php", "--poll-timeout=1", "--worker-id=${SDK_PRESENCE_PHP_ID:?set the PHP worker ID}"]
+
+  python-workflow-worker:
+    environment:
+      DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS: "1"
+      POLYGLOT_PY_WORKER_ID: "${SDK_PRESENCE_PYTHON_ID:?set the Python worker ID}"
+
+  rust-workflow-worker:
+    build:
+      args:
+        CARGO_BUILD_JOBS: "2"
+    environment:
+      DURABLE_WORKFLOW_POLL_TIMEOUT_SECONDS: "1"
+      POLYGLOT_RUST_WORKER_ID: "${SDK_PRESENCE_RUST_ID:?set the Rust worker ID}"
