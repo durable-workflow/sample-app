@@ -58,12 +58,13 @@ bootstrap job, queue worker, scheduler or Server Redis. Override the Server with
 `SAMPLE_APP_SERVER_VERSION` or `SAMPLE_APP_SERVER_IMAGE`; only native 3.x images
 are accepted.
 
-Before reusing an existing Server database, stop the Server, back up its database
-and storage, and run the selected image's `schema-upgrade` command. Follow the
-[Server 3.12.0 upgrade and rollback notes](https://github.com/durable-workflow/server/blob/3.12.0/docs/releases/3.12.0.md#upgrade-and-rollback);
-the same command applies the intermediate steps when upgrading from an older
-release. Rolling back after a schema upgrade requires restoring the backup. The
-example tuple does not migrate an existing database for you.
+Before reusing a database from an older Server, stop every Server process and
+back up the database and external payload storage. Follow the selected release's
+[upgrade notes](https://github.com/durable-workflow/server/blob/3.31.2/docs/releases/3.31.2.md#upgrade-from-3300)
+and the [native schema-upgrade procedure](https://github.com/durable-workflow/server/blob/3.31.2/rust/README.md#native-schema-upgrades).
+Run `schema-upgrade` before starting the new image when the schema changes.
+Rolling back across a schema upgrade requires restoring the backup. For a clean
+example install alongside the existing data, use a separate Compose project.
 
 Workflow 2.29.0 adds additive application migrations. After updating an existing
 checkout, run `composer install` and then `php artisan migrate` in the root app
