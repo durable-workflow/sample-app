@@ -92,6 +92,8 @@ x-runtime-images:
 services:
   mysql:
     image: mysql:8.0
+    # The disposable database can install the native checkpoint function without binlogging.
+    command: ["--disable-log-bin"]
     environment:
       MYSQL_DATABASE: durable_workflow
       MYSQL_USER: workflow

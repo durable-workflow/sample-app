@@ -2,13 +2,13 @@
   "schema": "durable-workflow.sample-app.polyglot-qualified-artifact-tuple",
   "schemaVersion": 1,
   "source": "polyglot/qualified-artifact-tuple.json",
-  "serverImage": "durableworkflow/server:3.12.0@sha256:33c7ec1d61dbbdf5c1c2248da609208bdaa8a0f8d25f3f016686c486fc7ed7f8",
+  "serverImage": "durableworkflow/server:3.31.2@sha256:828491c2c5fda7346b5fe79f6e2776ea178b84a611f4bd55d648d84f7cb86209",
   "artifacts": {
     "cli": "2.10.0",
     "sdk-php": "3.19.0",
     "sdk-python": "2.17.2",
     "sdk-rust": "4.18.0",
-    "server": "3.12.0",
+    "server": "3.31.2",
     "waterline": "2.18.1",
     "workflow": "2.39.1"
   }
